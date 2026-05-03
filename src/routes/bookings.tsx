@@ -1,20 +1,114 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Clock, MapPin, X } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 import { TypeBadge } from "@/components/TypeBadge";
-import { upcomingBookings, pastClasses, getGuide } from "@/data/mock";
 import { formatTime, formatDayLabel } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { supabase } from "@/lib/supabase";
+import { displayClassType, type ClassType } from "@/types/studio";
 
 export const Route = createFileRoute("/bookings")({
   component: BookingsPage,
 });
 
+type ClassJoin = {
+  name: string;
+  class_type: string;
+  location: string;
+  starts_at: string;
+  guides?: {
+    profiles: { first_name: string } | { first_name: string }[] | null;
+  } | null;
+};
+
+type RawBooking = {
+  id: string;
+  status: string;
+  classes: ClassJoin | ClassJoin[] | null;
+};
+
+type BookingListRow = {
+  id: string;
+  status: string;
+  className: string;
+  classType: ClassType;
+  location: string;
+  startsAt: Date;
+  guideFirst: string | null;
+};
+
+function one<T>(v: T | T[] | null | undefined): T | null {
+  if (v == null) return null;
+  return Array.isArray(v) ? (v[0] ?? null) : v;
+}
+
+function guideFirstFromClass(cls: ClassJoin | null): string | null {
+  const g = cls?.guides;
+  if (!g) return null;
+  const p = g.profiles;
+  const prof = one(p);
+  return prof?.first_name?.trim() || null;
+}
+
 function BookingsPage() {
   const [tab, setTab] = useState<"upcoming" | "past">("upcoming");
-  const upcoming = upcomingBookings();
+  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState<BookingListRow[]>([]);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) {
+      setRows([]);
+      setLoading(false);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("bookings")
+      .select(
+        `id, status,
+         classes ( name, class_type, location, starts_at,
+           guides ( profiles ( first_name ) ) )`,
+      )
+      .eq("profile_id", user.id)
+      .in("status", ["confirmed", "attended"])
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error(error);
+      setRows([]);
+      setLoading(false);
+      return;
+    }
+
+    const mapped: BookingListRow[] = (data as unknown as RawBooking[] | null)?.map((raw) => {
+      const cls = one(raw.classes);
+      return {
+        id: raw.id,
+        status: raw.status,
+        className: cls?.name ?? "Class",
+        classType: displayClassType(cls?.class_type),
+        location: cls?.location ?? "",
+        startsAt: new Date(cls?.starts_at ?? Date.now()),
+        guideFirst: guideFirstFromClass(cls),
+      };
+    }) ?? [];
+
+    setRows(mapped);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const upcoming = rows.filter((r) => r.status === "confirmed");
+  const past = rows.filter((r) => r.status === "attended");
 
   return (
     <AppShell>
@@ -40,51 +134,57 @@ function BookingsPage() {
       </div>
 
       <main className="flex-1 space-y-3 px-5 pt-4">
-        {tab === "upcoming" && upcoming.length === 0 && (
-          <Empty text="No upcoming bookings yet — head to Schedule to book." />
-        )}
-        {tab === "upcoming" &&
-          upcoming.map(({ booking, session }) => {
-            const guide = getGuide(session.guideId);
-            return (
-              <article key={booking.id} className="rounded-2xl border border-border bg-card p-4">
-                <div className="mb-1 flex items-center gap-2">
-                  <TypeBadge type={session.type} />
-                </div>
-                <h3 className="font-display text-lg font-semibold">{session.name}</h3>
-                <div className="mt-1 text-xs text-muted-foreground">
-                  {formatDayLabel(session.startsAt)}
-                </div>
-                <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                  <span className="inline-flex items-center gap-1">
-                    <Clock className="h-3 w-3" /> {formatTime(session.startsAt)}
-                  </span>
-                  <span className="inline-flex items-center gap-1">
-                    <MapPin className="h-3 w-3" /> {session.location}
-                  </span>
-                  {guide && <span>with {guide.name.split(" ")[0]}</span>}
-                </div>
-                <button
-                  onClick={() => toast("Booking cancelled", { description: "Credit refunded." })}
-                  className="mt-3 inline-flex items-center gap-1 rounded-full border border-border px-3 py-1 text-xs font-medium text-muted-foreground"
-                >
-                  <X className="h-3 w-3" /> Cancel booking
-                </button>
-              </article>
-            );
-          })}
+        {loading ? (
+          <div className="flex justify-center py-10">
+            <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+          </div>
+        ) : (
+          <>
+            {tab === "upcoming" && upcoming.length === 0 && (
+              <Empty text="No upcoming bookings yet — head to Schedule to book." />
+            )}
+            {tab === "upcoming" &&
+              upcoming.map((b) => (
+                <article key={b.id} className="rounded-2xl border border-border bg-card p-4">
+                  <div className="mb-1 flex items-center gap-2">
+                    <TypeBadge type={b.classType} />
+                  </div>
+                  <h3 className="font-display text-lg font-semibold">{b.className}</h3>
+                  <div className="mt-1 text-xs text-muted-foreground">{formatDayLabel(b.startsAt)}</div>
+                  <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                    <span className="inline-flex items-center gap-1">
+                      <Clock className="h-3 w-3" /> {formatTime(b.startsAt)}
+                    </span>
+                    <span className="inline-flex items-center gap-1">
+                      <MapPin className="h-3 w-3" /> {b.location}
+                    </span>
+                    {b.guideFirst && <span>with {b.guideFirst}</span>}
+                  </div>
+                  <button
+                    onClick={() => toast("Booking cancelled", { description: "Credit refunded." })}
+                    className="mt-3 inline-flex items-center gap-1 rounded-full border border-border px-3 py-1 text-xs font-medium text-muted-foreground"
+                  >
+                    <X className="h-3 w-3" /> Cancel booking
+                  </button>
+                </article>
+              ))}
 
-        {tab === "past" &&
-          Object.entries(pastClasses).map(([id, c]) => (
-            <article key={id} className="rounded-2xl border border-border bg-card p-4 opacity-90">
-              <div className="mb-1 flex items-center gap-2">
-                <TypeBadge type={c.type} />
-                <span className="text-[10px] uppercase tracking-wide text-success">Attended</span>
-              </div>
-              <h3 className="font-display text-lg font-semibold">{c.name}</h3>
-              <div className="mt-1 text-xs text-muted-foreground">{formatDayLabel(c.startsAt)}</div>
-            </article>
-          ))}
+            {tab === "past" && past.length === 0 && (
+              <Empty text="No past classes yet — your attended sessions will show here." />
+            )}
+            {tab === "past" &&
+              past.map((b) => (
+                <article key={b.id} className="rounded-2xl border border-border bg-card p-4 opacity-90">
+                  <div className="mb-1 flex items-center gap-2">
+                    <TypeBadge type={b.classType} />
+                    <span className="text-[10px] uppercase tracking-wide text-success">Attended</span>
+                  </div>
+                  <h3 className="font-display text-lg font-semibold">{b.className}</h3>
+                  <div className="mt-1 text-xs text-muted-foreground">{formatDayLabel(b.startsAt)}</div>
+                </article>
+              ))}
+          </>
+        )}
       </main>
     </AppShell>
   );

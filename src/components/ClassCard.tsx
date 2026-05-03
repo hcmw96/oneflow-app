@@ -1,12 +1,24 @@
 import { Link } from "@tanstack/react-router";
 import { Clock, MapPin, Users } from "lucide-react";
-import { type ClassSession, getGuide } from "@/data/mock";
+import { type ClassType } from "@/types/studio";
 import { TypeBadge } from "./TypeBadge";
 import { formatTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-export function ClassCard({ session }: { session: ClassSession }) {
-  const guide = getGuide(session.guideId);
+export type ClassCardSession = {
+  id: string;
+  name: string;
+  type: ClassType;
+  startsAt: Date;
+  durationMin: number;
+  location: string;
+  capacity: number;
+  booked: number;
+  guide?: { name: string; initials: string; color: string } | null;
+};
+
+export function ClassCard({ session }: { session: ClassCardSession }) {
+  const guide = session.guide;
   const fillRatio = session.booked / session.capacity;
   const almostFull = fillRatio >= 0.8 && fillRatio < 1;
   const full = fillRatio >= 1;
