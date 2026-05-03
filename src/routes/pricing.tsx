@@ -146,7 +146,7 @@ function PricingPage() {
       body: {
         pack_id: packId,
         profile_id: user.id,
-        success_url: `${origin}/payment/success`,
+        success_url: `${origin}/payment/success?pack_id=${packId}&profile_id=${user.id}`,
         cancel_url: `${origin}/pricing`,
       },
     });

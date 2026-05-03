@@ -10,7 +10,14 @@ import {
   SheetTitle,
   SheetDescription,
 } from "@/components/ui/sheet";
-import type { ChallengeCheckIn } from "@/types/studio";
+import {
+  challenge,
+  challengeCheckIns,
+  getChallengeCheckInsForDay,
+  getStampedDays,
+  isChallengeComplete,
+  type ChallengeCheckIn,
+} from "@/data/mock";
 import { cn } from "@/lib/utils";
 import challengeBg from "@/assets/challenge-bg.jpg";
 
@@ -33,27 +40,6 @@ export const Route = createFileRoute("/challenge")({
   }),
   component: ChallengePage,
 });
-
-const CHALLENGE_YEAR = new Date().getFullYear();
-const CHALLENGE_MONTH = 4;
-const challenge = {
-  startDate: new Date(CHALLENGE_YEAR, CHALLENGE_MONTH, 1),
-  totalDays: 31,
-};
-
-const challengeCheckIns: ChallengeCheckIn[] = [];
-
-function getStampedDays(): Set<number> {
-  return new Set<number>();
-}
-
-function getChallengeCheckInsForDay(_day: number): ChallengeCheckIn[] {
-  return [];
-}
-
-function isChallengeComplete(): boolean {
-  return false;
-}
 
 function ChallengePage() {
   const stamped = getStampedDays();
@@ -86,6 +72,7 @@ function ChallengePage() {
       </div>
 
       <main className="flex-1 space-y-5 px-5 pt-3">
+        {/* Hero */}
         <section className="relative overflow-hidden rounded-3xl">
           <img
             src={challengeBg}
@@ -115,6 +102,7 @@ function ChallengePage() {
           </div>
         </section>
 
+        {/* Stamp card */}
         <section className="rounded-3xl border border-border bg-card p-5">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="font-display text-lg font-bold">Your stamp card</h2>
@@ -165,14 +153,17 @@ function ChallengePage() {
 
           <p className="mt-5 text-[11px] leading-relaxed text-muted-foreground">
             Yoga classes and Sauna Journeys count toward your streak. Unguided Wellzone sessions
-            don&apos;t count. Maximum 2 stamps per day.
+            don't count. Maximum 2 stamps per day.
           </p>
         </section>
 
+        {/* Completion reward */}
         <section
           className={cn(
             "overflow-hidden rounded-3xl border p-5",
-            complete ? "border-primary bg-primary/10" : "border-border bg-card",
+            complete
+              ? "border-primary bg-primary/10"
+              : "border-border bg-card",
           )}
         >
           <div className="flex items-center gap-2">
@@ -216,11 +207,17 @@ function ChallengePage() {
         </section>
       </main>
 
+      {/* Day detail sheet */}
       <Sheet open={activeDay != null} onOpenChange={(o) => !o && setActiveDay(null)}>
-        <SheetContent side="bottom" className="rounded-t-3xl border-0 bg-background p-0">
+        <SheetContent
+          side="bottom"
+          className="rounded-t-3xl border-0 bg-background p-0"
+        >
           <div className="px-6 pb-8 pt-6">
             <SheetHeader className="text-center">
-              <SheetTitle className="font-display text-2xl font-bold">May {activeDay}</SheetTitle>
+              <SheetTitle className="font-display text-2xl font-bold">
+                May {activeDay}
+              </SheetTitle>
               <SheetDescription className="text-sm text-muted-foreground">
                 {dayCheckIns.length} stamp{dayCheckIns.length === 1 ? "" : "s"} earned
               </SheetDescription>

@@ -1,56 +1,16 @@
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
+import { packs, type Pack } from "@/data/mock";
 import { formatRand } from "@/lib/format";
 
 export const Route = createFileRoute("/packages")({
   component: PackagesPage,
 });
 
-type Pack = {
-  id: string;
-  name: string;
-  category: "Class Packs" | "Wellzone" | "Power Packs";
-  description: string;
-  priceCents: number;
-  badge?: string;
-};
-
-const DEFAULT_PACKS: Pack[] = [
-  {
-    id: "p1",
-    name: "6 Class Pack",
-    category: "Class Packs",
-    description: "Six classes, valid 3 months.",
-    priceCents: 90000,
-  },
-  {
-    id: "p2",
-    name: "12 Class Pack",
-    category: "Class Packs",
-    description: "Twelve classes, valid 6 months.",
-    priceCents: 168000,
-    badge: "Popular",
-  },
-  {
-    id: "p5",
-    name: "Wellzone Unlimited",
-    category: "Wellzone",
-    description: "Unlimited Wellzone access, 30 days.",
-    priceCents: 120000,
-  },
-  {
-    id: "p9",
-    name: "Seeker",
-    category: "Power Packs",
-    description: "All studio classes, monthly.",
-    priceCents: 195000,
-  },
-];
-
 function PackagesPage() {
   const router = useRouter();
-  const grouped = DEFAULT_PACKS.reduce<Record<string, Pack[]>>((acc, p) => {
+  const grouped = packs.reduce<Record<string, Pack[]>>((acc, p) => {
     (acc[p.category] ||= []).push(p);
     return acc;
   }, {});
