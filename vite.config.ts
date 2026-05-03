@@ -1,14 +1,8 @@
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
+import { defineConfig } from '@lovable.dev/vite-tanstack-config'
 import { VitePWA } from 'vite-plugin-pwa'
-import path from 'path'
-import { fileURLToPath } from 'url'
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 export default defineConfig({
   plugins: [
-    react(),
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'oneflow-logo.webp'],
@@ -33,8 +27,5 @@ export default defineConfig({
         navigateFallback: null
       }
     })
-  ],
-  resolve: {
-    alias: { '@': path.resolve(__dirname, './src') }
-  }
+  ]
 })
