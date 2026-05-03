@@ -473,12 +473,6 @@ function Stat({ label, value }: { label: string; value: string | number }) {
   );
 }
 
-const walkInPaymentMap: Record<string, string> = {
-  "Drop-in": "drop_in",
-  Pack: "pack",
-  Bill: "bill",
-};
-
 function WalkInSheet({
   open,
   onOpenChange,
@@ -490,34 +484,17 @@ function WalkInSheet({
   todayClasses: TodayClass[];
   onDone: () => void;
 }) {
-  const [members, setMembers] = useState<{ id: string; label: string }[]>([]);
-  const [memberId, setMemberId] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [email, setEmail] = useState("");
   const [classId, setClassId] = useState("");
-  const [credit, setCredit] = useState("Drop-in");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!open) return;
-    void (async () => {
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("id, first_name, last_name, email")
-        .or("role.eq.member,role.eq.customer")
-        .order("first_name")
-        .limit(300);
-      if (error) {
-        console.error(error);
-        toast.error("Could not load members");
-        return;
-      }
-      const opts =
-        data?.map((p) => ({
-          id: p.id,
-          label: `${p.first_name ?? ""} ${p.last_name ?? ""}`.trim() || (p.email ?? p.id),
-        })) ?? [];
-      setMembers(opts);
-      setMemberId((id) => id || opts[0]?.id || "");
-    })();
+    setFirstName("");
+    setLastName("");
+    setEmail("");
   }, [open]);
 
   useEffect(() => {
@@ -527,24 +504,74 @@ function WalkInSheet({
   }, [todayClasses]);
 
   const submit = async () => {
-    if (!memberId || !classId) {
-      toast.error("Choose a member and class");
+    const fn = firstName.trim();
+    const ln = lastName.trim();
+    const em = email.trim().toLowerCase();
+    if (!fn || !ln || !em) {
+      toast.error("First name, last name, and email are required.");
       return;
     }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) {
+      toast.error("Enter a valid email address.");
+      return;
+    }
+    if (!classId) {
+      toast.error("Choose a class.");
+      return;
+    }
+
+    const displayName = `${fn} ${ln}`.trim();
+
     setSaving(true);
-    const payment_method = walkInPaymentMap[credit] ?? "drop_in";
-    const { error } = await supabase.from("bookings").insert({
-      profile_id: memberId,
+
+    const { data: existing, error: findErr } = await supabase
+      .from("profiles")
+      .select("id")
+      .ilike("email", em)
+      .maybeSingle();
+
+    if (findErr) {
+      console.error(findErr);
+      toast.error(findErr.message);
+      setSaving(false);
+      return;
+    }
+
+    let profileId = existing?.id as string | undefined;
+
+    if (!profileId) {
+      const { data: created, error: createErr } = await supabase
+        .from("profiles")
+        .insert({
+          first_name: fn,
+          last_name: ln,
+          email: em,
+          role: "customer",
+        })
+        .select("id")
+        .single();
+
+      if (createErr || !created?.id) {
+        console.error(createErr);
+        toast.error(createErr?.message ?? "Could not create profile.");
+        setSaving(false);
+        return;
+      }
+      profileId = created.id as string;
+    }
+
+    const { error: bookErr } = await supabase.from("bookings").insert({
+      profile_id: profileId,
       class_id: classId,
       status: "attended",
-      payment_method,
+      payment_method: "drop_in",
     });
     setSaving(false);
-    if (error) {
-      toast.error(error.message);
+    if (bookErr) {
+      toast.error(bookErr.message);
       return;
     }
-    toast.success("Walk-in checked in");
+    toast.success(`${displayName} checked in`);
     onOpenChange(false);
     onDone();
   };
@@ -558,20 +585,42 @@ function WalkInSheet({
         <div className="mt-6 space-y-4">
           <div>
             <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Member
+              First name <span className="text-destructive">*</span>
             </label>
-            <Select value={memberId} onValueChange={setMemberId}>
-              <SelectTrigger className="mt-1">
-                <SelectValue placeholder="Select member" />
-              </SelectTrigger>
-              <SelectContent>
-                {members.map((m) => (
-                  <SelectItem key={m.id} value={m.id}>
-                    {m.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <input
+              type="text"
+              required
+              autoComplete="given-name"
+              value={firstName}
+              onChange={(e) => setFirstName(e.target.value)}
+              className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Last name <span className="text-destructive">*</span>
+            </label>
+            <input
+              type="text"
+              required
+              autoComplete="family-name"
+              value={lastName}
+              onChange={(e) => setLastName(e.target.value)}
+              className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Email <span className="text-destructive">*</span>
+            </label>
+            <input
+              type="email"
+              required
+              autoComplete="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
+            />
           </div>
           <div>
             <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -587,21 +636,6 @@ function WalkInSheet({
                     {c.name} · {formatClassTime(c.starts_at)}
                   </SelectItem>
                 ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Credit
-            </label>
-            <Select value={credit} onValueChange={setCredit}>
-              <SelectTrigger className="mt-1">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Drop-in">Drop-in (charge now)</SelectItem>
-                <SelectItem value="Pack">From class pack</SelectItem>
-                <SelectItem value="Bill">Add to bill</SelectItem>
               </SelectContent>
             </Select>
           </div>
