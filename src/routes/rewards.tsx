@@ -1,9 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useState } from "react";
 import { Sparkles, Gift, Award, Zap } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
+import { user, pointsHistory } from "@/data/mock";
 import { formatDayLabel } from "@/lib/format";
-import { supabase } from "@/lib/supabase";
 
 export const Route = createFileRoute("/rewards")({
   component: RewardsPage,
@@ -18,44 +17,7 @@ const badges = [
   { name: "Yoga 100", earned: false, icon: "🧘" },
 ];
 
-type PointsRow = { id: string; points: number; reason: string | null; created_at: string };
-
 function RewardsPage() {
-  const [balance, setBalance] = useState(0);
-  const [activity, setActivity] = useState<PointsRow[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) {
-      setBalance(0);
-      setActivity([]);
-      setLoading(false);
-      return;
-    }
-
-    const [{ data: bal }, { data: log }] = await Promise.all([
-      supabase.from("flow_points_balance").select("balance").eq("profile_id", user.id).maybeSingle(),
-      supabase
-        .from("flow_points")
-        .select("id, points, reason, created_at")
-        .eq("profile_id", user.id)
-        .order("created_at", { ascending: false })
-        .limit(25),
-    ]);
-
-    setBalance(bal?.balance ?? 0);
-    setActivity((log ?? []) as PointsRow[]);
-    setLoading(false);
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
   return (
     <AppShell>
       <header className="safe-top px-5 pt-3 pb-3">
@@ -68,7 +30,7 @@ function RewardsPage() {
             <Sparkles className="h-3.5 w-3.5" /> Flow Points
           </div>
           <p className="mt-1 font-display text-5xl font-semibold leading-none">
-            {loading ? "…" : balance.toLocaleString()}
+            {user.pointsBalance.toLocaleString()}
           </p>
           <p className="mt-2 text-sm opacity-80">100 pts = R10, redeemable at One Flow.</p>
         </section>
@@ -114,30 +76,22 @@ function RewardsPage() {
           <h3 className="mb-3 flex items-center gap-1.5 font-display text-base font-semibold">
             <Gift className="h-4 w-4" /> Recent activity
           </h3>
-          {activity.length === 0 && !loading ? (
-            <p className="rounded-2xl border border-dashed border-border bg-card/50 p-6 text-center text-sm text-muted-foreground">
-              No point activity yet.
-            </p>
-          ) : (
-            <ul className="overflow-hidden rounded-2xl border border-border bg-card">
-              {activity.map((p, i) => (
-                <li
-                  key={p.id}
-                  className={"flex items-center justify-between px-4 py-3 " + (i > 0 ? "border-t border-border" : "")}
-                >
-                  <div>
-                    <p className="text-sm font-medium">{p.reason?.replace(/_/g, " ") || "Points"}</p>
-                    <p className="text-[11px] text-muted-foreground">
-                      {formatDayLabel(new Date(p.created_at))}
-                    </p>
-                  </div>
-                  <span className="text-sm font-semibold tabular-nums text-primary">
-                    +{Number(p.points).toLocaleString()}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
+          <ul className="overflow-hidden rounded-2xl border border-border bg-card">
+            {pointsHistory.map((p, i) => (
+              <li
+                key={p.id}
+                className={"flex items-center justify-between px-4 py-3 " + (i > 0 ? "border-t border-border" : "")}
+              >
+                <div>
+                  <p className="text-sm font-medium">{p.label}</p>
+                  <p className="text-[11px] text-muted-foreground">{formatDayLabel(p.date)}</p>
+                </div>
+                <span className="text-sm font-semibold tabular-nums text-primary">
+                  +{p.delta.toLocaleString()}
+                </span>
+              </li>
+            ))}
+          </ul>
         </section>
       </main>
     </AppShell>

@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   User as UserIcon,
   CreditCard,
@@ -17,9 +17,9 @@ import {
   LayoutGrid,
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
+import { user, pointsHistory, packs } from "@/data/mock";
 import { formatRand } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { supabase } from "@/lib/supabase";
 
 export const Route = createFileRoute("/me")({
   component: MePage,
@@ -35,79 +35,8 @@ const TABS: { id: Tab; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: "settings", icon: Settings },
 ];
 
-const MOCK_FRIENDS = [
-  { id: "f1", name: "Asha Naidoo", initials: "AN" },
-  { id: "f2", name: "Liam Pretorius", initials: "LP" },
-  { id: "f3", name: "Zinhle Khumalo", initials: "ZK" },
-];
-
-type ProfileRow = {
-  first_name: string | null;
-  last_name: string | null;
-  email: string | null;
-  phone: string | null;
-};
-
 function MePage() {
   const [tab, setTab] = useState<Tab>("personal");
-  const [loading, setLoading] = useState(true);
-  const [email, setEmail] = useState("");
-  const [profile, setProfile] = useState<ProfileRow | null>(null);
-  const [historyRows, setHistoryRows] = useState<{ id: string; label: string; date: Date }[]>([]);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) {
-      setProfile(null);
-      setEmail("");
-      setHistoryRows([]);
-      setLoading(false);
-      return;
-    }
-
-    setEmail(user.email ?? "");
-
-    const [{ data: prof }, { data: hist }] = await Promise.all([
-      supabase
-        .from("profiles")
-        .select("first_name, last_name, email, phone")
-        .eq("id", user.id)
-        .maybeSingle(),
-      supabase
-        .from("bookings")
-        .select("id, classes ( name, starts_at )")
-        .eq("profile_id", user.id)
-        .eq("status", "attended")
-        .order("created_at", { ascending: false })
-        .limit(12),
-    ]);
-
-    setProfile(prof as ProfileRow | null);
-
-    const rows =
-      (hist ?? []).map((raw: Record<string, unknown>) => {
-        const cls = raw.classes as { name: string; starts_at: string } | { name: string; starts_at: string }[] | null;
-        const c = Array.isArray(cls) ? cls[0] : cls;
-        return {
-          id: raw.id as string,
-          label: c?.name ?? "Class",
-          date: new Date(c?.starts_at ?? Date.now()),
-        };
-      }) ?? [];
-    setHistoryRows(rows);
-    setLoading(false);
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  const displayName = [profile?.first_name, profile?.last_name].filter(Boolean).join(" ").trim();
-  const first = profile?.first_name?.trim() || "Member";
-  const initials = (first.charAt(0) + (profile?.last_name?.charAt(0) || first.charAt(0))).toUpperCase();
 
   return (
     <AppShell>
@@ -121,10 +50,12 @@ function MePage() {
       </div>
 
       <main className="flex-1 space-y-4 px-5 pt-3">
+        {/* Profile header card */}
         <section className="flex items-center gap-4 rounded-2xl border border-border bg-card p-5">
           <div className="relative">
             <div className="flex h-20 w-20 items-center justify-center rounded-full bg-muted text-xl font-bold text-foreground">
-              {loading ? "…" : initials.slice(0, 2)}
+              {user.name.charAt(0)}
+              {user.name.charAt(0)}
             </div>
             <button
               aria-label="Change photo"
@@ -134,17 +65,16 @@ function MePage() {
             </button>
           </div>
           <div className="min-w-0 flex-1">
-            <h2 className="truncate font-display text-xl font-bold">
-              {loading ? "…" : displayName || first}
-            </h2>
-            <p className="truncate text-sm text-muted-foreground">{email || profile?.email || "—"}</p>
-            <p className="truncate text-sm text-muted-foreground">{profile?.phone || "—"}</p>
+            <h2 className="truncate font-display text-xl font-bold">{user.name} Koles…</h2>
+            <p className="truncate text-sm text-muted-foreground">{user.email}</p>
+            <p className="truncate text-sm text-muted-foreground">06322554444</p>
           </div>
           <button aria-label="Sign out" className="text-foreground/70">
             <LogOut className="h-5 w-5" />
           </button>
         </section>
 
+        {/* Sub tabs */}
         <nav className="flex items-center justify-between rounded-xl bg-muted p-1">
           {TABS.map(({ id, icon: Icon }) => {
             const active = tab === id;
@@ -164,15 +94,10 @@ function MePage() {
           })}
         </nav>
 
-        {tab === "personal" && (
-          <PersonalPanel
-            first={profile?.first_name ?? ""}
-            last={profile?.last_name ?? ""}
-            phone={profile?.phone ?? ""}
-          />
-        )}
+        {/* Tab content */}
+        {tab === "personal" && <PersonalPanel />}
         {tab === "billing" && <BillingPanel />}
-        {tab === "history" && <HistoryPanel rows={historyRows} />}
+        {tab === "history" && <HistoryPanel />}
         {tab === "friends" && <FriendsPanel />}
         {tab === "settings" && <SettingsPanel />}
       </main>
@@ -201,13 +126,13 @@ function Field({ label, value }: { label: string; value: string }) {
   );
 }
 
-function PersonalPanel({ first, last, phone }: { first: string; last: string; phone: string }) {
+function PersonalPanel() {
   return (
     <Panel title="Personal details">
-      <Field label="First name" value={first} />
-      <Field label="Last name" value={last} />
-      <Field label="Phone" value={phone} />
-      <Field label="Date of birth" value="" />
+      <Field label="First name" value="Mia" />
+      <Field label="Last name" value="Naidoo" />
+      <Field label="Phone" value="0832004499" />
+      <Field label="Date of birth" value="1995-04-12" />
       <button className="mt-2 w-full rounded-xl bg-primary py-3 text-sm font-semibold text-primary-foreground">
         Save changes
       </button>
@@ -216,15 +141,20 @@ function PersonalPanel({ first, last, phone }: { first: string; last: string; ph
 }
 
 function BillingPanel() {
-  const invoices = [
-    { id: "sample-1", name: "Studio pass (sample)", date: "—", amount: 0 },
-  ];
+  // Mock past invoices using packs
+  const invoices = packs.slice(0, 4).map((p, i) => ({
+    id: p.id,
+    name: p.name,
+    date: new Date(Date.now() - (i + 1) * 1000 * 60 * 60 * 24 * 21).toLocaleDateString("en-ZA", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    }),
+    amount: p.priceCents,
+  }));
 
   return (
     <Panel title="Billing history">
-      <p className="text-sm text-muted-foreground">
-        Purchases via Yoco and in-studio payments will appear here once linked.
-      </p>
       <ul className="divide-y divide-border">
         {invoices.map((inv) => (
           <li key={inv.id} className="flex items-center justify-between py-3 first:pt-0">
@@ -232,9 +162,7 @@ function BillingPanel() {
               <p className="truncate text-sm font-semibold">{inv.name}</p>
               <p className="text-xs text-muted-foreground">{inv.date}</p>
             </div>
-            <span className="text-sm font-semibold tabular-nums">
-              {inv.amount > 0 ? formatRand(inv.amount) : "—"}
-            </span>
+            <span className="text-sm font-semibold tabular-nums">{formatRand(inv.amount)}</span>
           </li>
         ))}
       </ul>
@@ -242,14 +170,13 @@ function BillingPanel() {
   );
 }
 
-function HistoryPanel({ rows }: { rows: { id: string; label: string; date: Date }[] }) {
+function HistoryPanel() {
   return (
     <Panel title="Class history">
-      {rows.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No attended classes yet.</p>
-      ) : (
-        <ul className="divide-y divide-border">
-          {rows.map((p) => (
+      <ul className="divide-y divide-border">
+        {pointsHistory
+          .filter((p) => p.delta <= 5)
+          .map((p) => (
             <li key={p.id} className="flex items-center justify-between py-3 first:pt-0">
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold">{p.label}</p>
@@ -262,16 +189,24 @@ function HistoryPanel({ rows }: { rows: { id: string; label: string; date: Date 
               </span>
             </li>
           ))}
-        </ul>
-      )}
+      </ul>
     </Panel>
   );
 }
 
+const MOCK_FRIENDS = [
+  { id: "f1", name: "Asha Naidoo", initials: "AN" },
+  { id: "f2", name: "Liam Pretorius", initials: "LP" },
+  { id: "f3", name: "Zinhle Khumalo", initials: "ZK" },
+  { id: "f4", name: "Mika Sato", initials: "MS" },
+  { id: "f5", name: "Tendai Moyo", initials: "TM" },
+];
+
 function FriendsPanel() {
   const [q, setQ] = useState("");
   const filtered = useMemo(
-    () => MOCK_FRIENDS.filter((f) => f.name.toLowerCase().includes(q.toLowerCase())),
+    () =>
+      MOCK_FRIENDS.filter((f) => f.name.toLowerCase().includes(q.toLowerCase())),
     [q],
   );
 
@@ -293,7 +228,7 @@ function FriendsPanel() {
               {f.initials}
             </div>
             <p className="flex-1 text-sm font-semibold">{f.name}</p>
-            <button type="button" className="text-muted-foreground">
+            <button className="text-muted-foreground">
               <ChevronRight className="h-4 w-4" />
             </button>
           </li>
@@ -302,10 +237,7 @@ function FriendsPanel() {
           <li className="py-4 text-center text-sm text-muted-foreground">No friends found.</li>
         )}
       </ul>
-      <button
-        type="button"
-        className="flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-card py-3 text-sm font-semibold"
-      >
+      <button className="flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-card py-3 text-sm font-semibold">
         <UserPlus className="h-4 w-4" /> Invite a friend
       </button>
     </Panel>
@@ -343,10 +275,7 @@ function Row({
   danger?: boolean;
 }) {
   return (
-    <button
-      type="button"
-      className="flex w-full items-center gap-3 rounded-xl border border-border bg-card px-4 py-3 text-left"
-    >
+    <button className="flex w-full items-center gap-3 rounded-xl border border-border bg-card px-4 py-3 text-left">
       <span
         className={cn(
           "flex h-8 w-8 items-center justify-center rounded-full",

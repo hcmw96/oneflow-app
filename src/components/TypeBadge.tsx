@@ -1,4 +1,4 @@
-import { type ClassType } from "@/types/studio";
+import { type ClassType } from "@/data/mock";
 import { cn } from "@/lib/utils";
 
 const styles: Record<ClassType, string> = {
@@ -11,13 +11,7 @@ const styles: Record<ClassType, string> = {
 
 export function TypeBadge({ type, className }: { type: ClassType; className?: string }) {
   return (
-    <span
-      className={cn(
-        "inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide",
-        styles[type],
-        className,
-      )}
-    >
+    <span className={cn("inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide", styles[type], className)}>
       {type}
     </span>
   );

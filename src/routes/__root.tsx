@@ -1,5 +1,7 @@
-import { Outlet, Link, createRootRoute, HeadContent } from "@tanstack/react-router";
+import { Outlet, Link, createRootRoute, HeadContent, Scripts } from "@tanstack/react-router";
 import { Toaster } from "@/components/ui/sonner";
+
+import appCss from "../styles.css?url";
 
 function NotFoundComponent() {
   return (
@@ -8,7 +10,7 @@ function NotFoundComponent() {
         <h1 className="text-7xl font-bold text-foreground">404</h1>
         <h2 className="mt-4 text-xl font-semibold text-foreground">Page not found</h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          The page you&apos;re looking for doesn&apos;t exist or has been moved.
+          The page you're looking for doesn't exist or has been moved.
         </p>
         <div className="mt-6">
           <Link
@@ -36,16 +38,40 @@ export const Route = createRootRoute({
       { property: "og:description", content: "Book classes, track Flow Points, and manage your One Flow journey." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
+      { name: "twitter:site", content: "@Lovable" },
+    ],
+    links: [
+      { rel: "preconnect", href: "https://fonts.googleapis.com" },
+      { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
+      {
+        rel: "stylesheet",
+        href: "https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&display=swap",
+      },
+      { rel: "stylesheet", href: appCss },
     ],
   }),
+  shellComponent: RootShell,
   component: RootComponent,
   notFoundComponent: NotFoundComponent,
 });
 
+function RootShell({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en">
+      <head>
+        <HeadContent />
+      </head>
+      <body>
+        {children}
+        <Scripts />
+      </body>
+    </html>
+  );
+}
+
 function RootComponent() {
   return (
     <>
-      <HeadContent />
       <Outlet />
       <Toaster position="top-center" />
     </>
