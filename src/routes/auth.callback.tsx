@@ -28,6 +28,22 @@ export default function AuthCallback() {
     const run = async () => {
       if (done.current) return
 
+      const urlParams = new URLSearchParams(window.location.search)
+      const tokenHash = urlParams.get('token_hash')
+      const type = urlParams.get('type')
+      if (tokenHash) {
+        const { data, error } = await supabase.auth.verifyOtp({
+          token_hash: tokenHash,
+          type: 'magiclink',
+        })
+        if (!error && data.session?.user) {
+          done.current = true
+          const dest = await resolveDestination(data.session.user.id)
+          navigate({ to: dest })
+          return
+        }
+      }
+
       const savedHash =
         typeof sessionStorage !== 'undefined'
           ? (sessionStorage.getItem('supabase_hash') ?? window.location.hash)
