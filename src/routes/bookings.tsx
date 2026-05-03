@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
+import QRCode from "qrcode";
 import { Clock, MapPin, X } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
@@ -26,12 +27,14 @@ type ClassJoin = {
 type RawBooking = {
   id: string;
   status: string;
+  qr_token: string | null;
   classes: ClassJoin | ClassJoin[] | null;
 };
 
 type BookingListRow = {
   id: string;
   status: string;
+  qrToken: string | null;
   className: string;
   classType: ClassType;
   location: string;
@@ -71,7 +74,7 @@ function BookingsPage() {
     const { data, error } = await supabase
       .from("bookings")
       .select(
-        `id, status,
+        `id, status, qr_token,
          classes ( name, class_type, location, starts_at,
            guides ( profiles ( first_name ) ) )`,
       )
@@ -91,6 +94,7 @@ function BookingsPage() {
       return {
         id: raw.id,
         status: raw.status,
+        qrToken: raw.qr_token ?? null,
         className: cls?.name ?? "Class",
         classType: displayClassType(cls?.class_type),
         location: cls?.location ?? "",
@@ -160,6 +164,14 @@ function BookingsPage() {
                     </span>
                     {b.guideFirst && <span>with {b.guideFirst}</span>}
                   </div>
+                  {b.qrToken && (
+                    <div className="mt-4 flex flex-col items-center border-t border-border pt-4">
+                      <BookingQrImage value={b.qrToken} />
+                      <p className="mt-2 text-center text-xs font-medium text-muted-foreground">
+                        Show this at the desk
+                      </p>
+                    </div>
+                  )}
                   <button
                     onClick={() => toast("Booking cancelled", { description: "Credit refunded." })}
                     className="mt-3 inline-flex items-center gap-1 rounded-full border border-border px-3 py-1 text-xs font-medium text-muted-foreground"
@@ -187,6 +199,43 @@ function BookingsPage() {
         )}
       </main>
     </AppShell>
+  );
+}
+
+function BookingQrImage({ value }: { value: string }) {
+  const [dataUrl, setDataUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void QRCode.toDataURL(value, { width: 192, margin: 2 })
+      .then((url) => {
+        if (!cancelled) setDataUrl(url);
+      })
+      .catch(() => {
+        if (!cancelled) setDataUrl(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [value]);
+
+  if (!dataUrl) {
+    return (
+      <div
+        className="h-48 w-48 animate-pulse rounded-lg bg-muted"
+        aria-hidden
+      />
+    );
+  }
+
+  return (
+    <img
+      src={dataUrl}
+      alt=""
+      width={192}
+      height={192}
+      className="rounded-lg border border-border bg-white p-1"
+    />
   );
 }
 

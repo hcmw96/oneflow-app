@@ -271,7 +271,7 @@ function CheckInPage() {
 
     const { error: upError } = await supabase
       .from("bookings")
-      .update({ status: "attended" })
+      .update({ status: "attended", checked_in: true })
       .eq("id", booking.id);
 
     if (upError) {
