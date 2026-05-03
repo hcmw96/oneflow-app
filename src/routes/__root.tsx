@@ -1,5 +1,7 @@
-import { Outlet, Link, createRootRoute, HeadContent } from "@tanstack/react-router";
+import { useEffect } from "react";
+import { Outlet, Link, createRootRoute, HeadContent, useRouterState } from "@tanstack/react-router";
 import { Toaster } from "@/components/ui/sonner";
+import { supabase } from "@/lib/supabase";
 
 function NotFoundComponent() {
   return (
@@ -42,7 +44,20 @@ export const Route = createRootRoute({
   notFoundComponent: NotFoundComponent,
 });
 
+function isAuthPublicPath(pathname: string) {
+  return pathname === "/auth" || pathname === "/auth/callback";
+}
+
 function RootComponent() {
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+
+  useEffect(() => {
+    if (isAuthPublicPath(pathname)) return;
+    void supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session) window.location.assign("/auth");
+    });
+  }, [pathname]);
+
   return (
     <>
       <HeadContent />
