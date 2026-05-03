@@ -11,57 +11,134 @@ export const Route = createFileRoute("/payment/success")({
   component: PaymentSuccessPage,
 });
 
-type BalanceState =
+type ProductRow = {
+  id: string;
+  name: string;
+  category: string | null;
+  allowed_class_types: string[] | null;
+  credit_count: number | null;
+  validity_days: number | null;
+};
+
+type PageState =
   | { status: "loading" }
   | { status: "guest" }
-  | { status: "error" }
-  | { status: "ready"; hasUnlimited: boolean; totalCredits: number };
+  | { status: "error"; message: string }
+  | {
+      status: "success";
+      productName: string;
+      creditsAdded: number;
+      isUnlimited: boolean;
+    }
+  | { status: "success_generic" };
+
+const CREDIT_GRANT_KEY = "oneflow_credits_granted";
 
 function PaymentSuccessPage() {
-  const [balance, setBalance] = useState<BalanceState>({ status: "loading" });
+  const [state, setState] = useState<PageState>({ status: "loading" });
 
   useEffect(() => {
-    void (async () => {
+    let cancelled = false;
+
+    async function run() {
+      const params = new URLSearchParams(window.location.search);
+      const packId = params.get("pack_id");
+      const profileId = params.get("profile_id");
+      const checkoutId = params.get("checkoutId");
+
       const {
         data: { user },
       } = await supabase.auth.getUser();
       if (!user) {
-        setBalance({ status: "guest" });
+        if (!cancelled) setState({ status: "guest" });
         return;
       }
 
-      const { data, error } = await supabase
-        .from("user_credits")
-        .select("credits_remaining, is_unlimited")
-        .eq("profile_id", user.id);
-
-      if (error) {
-        console.error(error);
-        setBalance({ status: "error" });
+      if (!packId || !profileId) {
+        if (!cancelled) setState({ status: "success_generic" });
         return;
       }
 
-      let total = 0;
-      let hasUnlimited = false;
-      for (const row of data ?? []) {
-        if (row.is_unlimited === true) {
-          hasUnlimited = true;
-          continue;
+      if (user.id !== profileId) {
+        if (!cancelled) setState({ status: "error", message: "This purchase is linked to a different account." });
+        return;
+      }
+
+      const dedupeKey = `${CREDIT_GRANT_KEY}:${packId}:${profileId}`;
+      if (sessionStorage.getItem(dedupeKey)) {
+        const { data: product } = await supabase.from("products").select("name, credit_count").eq("id", packId).maybeSingle();
+        const creditCount = Number((product as ProductRow | null)?.credit_count ?? 0);
+        if (!cancelled) {
+          setState({
+            status: "success",
+            productName: (product as { name?: string } | null)?.name ?? "Your pack",
+            creditsAdded: creditCount >= 999 ? 0 : creditCount,
+            isUnlimited: creditCount >= 999,
+          });
         }
-        total += Number(row.credits_remaining ?? 0);
+        return;
       }
-      setBalance({ status: "ready", hasUnlimited, totalCredits: total });
-    })();
-  }, []);
 
-  const balanceLine =
-    balance.status === "ready"
-      ? balance.hasUnlimited
-        ? balance.totalCredits > 0
-          ? `∞ unlimited · ${balance.totalCredits} pack credits`
-          : "∞ unlimited"
-        : `${balance.totalCredits} credits`
-      : null;
+      const { data: product, error: productError } = await supabase
+        .from("products")
+        .select("id, name, category, allowed_class_types, credit_count, validity_days")
+        .eq("id", packId)
+        .maybeSingle();
+
+      if (productError || !product) {
+        console.error(productError);
+        if (!cancelled) setState({ status: "error", message: "Could not load this product." });
+        return;
+      }
+
+      const p = product as ProductRow;
+      const creditCountRaw = p.credit_count;
+      const creditCount =
+        typeof creditCountRaw === "number" ? creditCountRaw : Number(creditCountRaw ?? 0) || 0;
+      const isUnlimited = creditCount >= 999;
+
+      const insertRow = {
+        profile_id: profileId,
+        product_id: packId,
+        product_name: p.name,
+        category: p.category,
+        allowed_class_types: p.allowed_class_types,
+        credits_total: creditCount,
+        credits_remaining: creditCount,
+        is_unlimited: isUnlimited,
+        expires_at: p.validity_days ? new Date(Date.now() + p.validity_days * 86400000).toISOString() : null,
+        yoco_payment_id: checkoutId,
+      };
+
+      const { error: insertError } = await supabase.from("user_credits").insert(insertRow);
+
+      if (insertError) {
+        console.error(insertError);
+        if (!cancelled) {
+          setState({
+            status: "error",
+            message: insertError.message || "Could not add credits. They may already be on your account.",
+          });
+        }
+        return;
+      }
+
+      sessionStorage.setItem(dedupeKey, "1");
+      if (!cancelled) {
+        setState({
+          status: "success",
+          productName: p.name,
+          creditsAdded: isUnlimited ? 0 : creditCount,
+          isUnlimited,
+        });
+      }
+    }
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <AppShell>
@@ -73,26 +150,46 @@ function PaymentSuccessPage() {
           <Check className="h-14 w-14 stroke-[2.5] text-[#16a34a]" strokeLinecap="round" strokeLinejoin="round" />
         </div>
 
-        <h1 className="mt-8 font-display text-3xl font-bold tracking-tight text-[#3d4f36] dark:text-foreground">
-          Payment Successful!
-        </h1>
-
-        <div className="mt-10 w-full rounded-2xl border border-[#c5d4b8]/70 bg-[#f4f7f0]/80 p-6 dark:border-border dark:bg-card">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Current credit balance</p>
-          {balance.status === "loading" ? (
-            <div className="mt-4 flex justify-center">
-              <Loader2 className="h-8 w-8 animate-spin text-[#4a6b3c]" aria-label="Loading balance" />
-            </div>
-          ) : balance.status === "guest" ? (
-            <p className="mt-4 text-sm text-muted-foreground">Sign in to see your balance.</p>
-          ) : balance.status === "error" ? (
-            <p className="mt-4 text-sm text-muted-foreground">Could not load balance. It may still update shortly.</p>
-          ) : (
-            <p className="mt-3 font-display text-3xl font-bold tabular-nums text-[#2f3d2a] dark:text-foreground">
-              {balanceLine}
+        {state.status === "loading" ? (
+          <>
+            <Loader2 className="mt-8 h-10 w-10 animate-spin text-[#4a6b3c]" aria-label="Loading" />
+            <p className="mt-4 text-sm text-muted-foreground">Confirming your purchase…</p>
+          </>
+        ) : state.status === "guest" ? (
+          <>
+            <h1 className="mt-8 font-display text-2xl font-bold text-[#3d4f36] dark:text-foreground">Sign in</h1>
+            <p className="mt-2 text-sm text-muted-foreground">Sign in to see your updated credits.</p>
+          </>
+        ) : state.status === "error" ? (
+          <>
+            <h1 className="mt-8 font-display text-2xl font-bold text-[#3d4f36] dark:text-foreground">Something went wrong</h1>
+            <p className="mt-2 text-sm text-muted-foreground">{state.message}</p>
+          </>
+        ) : state.status === "success_generic" ? (
+          <>
+            <h1 className="mt-8 font-display text-3xl font-bold tracking-tight text-[#3d4f36] dark:text-foreground">
+              Payment successful!
+            </h1>
+            <p className="mt-4 text-sm text-muted-foreground">Your credits will appear shortly if payment completed.</p>
+          </>
+        ) : (
+          <>
+            <h1 className="mt-8 font-display text-2xl font-bold leading-snug tracking-tight text-[#3d4f36] dark:text-foreground">
+              Payment successful! Your credits have been added.
+            </h1>
+            <p className="mt-4 text-sm text-muted-foreground">
+              <span className="font-semibold text-foreground">{state.productName}</span>
+              {state.isUnlimited ? (
+                <> — unlimited access</>
+              ) : (
+                <>
+                  {" "}
+                  — <span className="font-semibold text-foreground">{state.creditsAdded}</span> credits added
+                </>
+              )}
             </p>
-          )}
-        </div>
+          </>
+        )}
 
         <Link
           to="/schedule"

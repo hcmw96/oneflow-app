@@ -17,11 +17,13 @@ import { Route as MeRouteImport } from './routes/me'
 import { Route as GoalsRouteImport } from './routes/goals'
 import { Route as ChallengeRouteImport } from './routes/challenge'
 import { Route as BookingsRouteImport } from './routes/bookings'
+import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as PaymentSuccessRouteImport } from './routes/payment.success'
 import { Route as ClassClassIdRouteImport } from './routes/class.$classId'
+import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
 import { Route as AdminWhatsappRouteImport } from './routes/admin.whatsapp'
 import { Route as AdminWaiversRouteImport } from './routes/admin.waivers'
 import { Route as AdminTransactionsRouteImport } from './routes/admin.transactions'
@@ -83,6 +85,11 @@ const BookingsRoute = BookingsRouteImport.update({
   path: '/bookings',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthRoute = AuthRouteImport.update({
+  id: '/auth',
+  path: '/auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminRoute = AdminRouteImport.update({
   id: '/admin',
   path: '/admin',
@@ -107,6 +114,11 @@ const ClassClassIdRoute = ClassClassIdRouteImport.update({
   id: '/class/$classId',
   path: '/class/$classId',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AuthCallbackRoute = AuthCallbackRouteImport.update({
+  id: '/callback',
+  path: '/callback',
+  getParentRoute: () => AuthRoute,
 } as any)
 const AdminWhatsappRoute = AdminWhatsappRouteImport.update({
   id: '/whatsapp',
@@ -212,6 +224,7 @@ const AdminBadgesRoute = AdminBadgesRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
+  '/auth': typeof AuthRouteWithChildren
   '/bookings': typeof BookingsRoute
   '/challenge': typeof ChallengeRoute
   '/goals': typeof GoalsRoute
@@ -240,12 +253,14 @@ export interface FileRoutesByFullPath {
   '/admin/transactions': typeof AdminTransactionsRoute
   '/admin/waivers': typeof AdminWaiversRoute
   '/admin/whatsapp': typeof AdminWhatsappRoute
+  '/auth/callback': typeof AuthCallbackRoute
   '/class/$classId': typeof ClassClassIdRoute
   '/payment/success': typeof PaymentSuccessRoute
   '/admin/': typeof AdminIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/auth': typeof AuthRouteWithChildren
   '/bookings': typeof BookingsRoute
   '/challenge': typeof ChallengeRoute
   '/goals': typeof GoalsRoute
@@ -274,6 +289,7 @@ export interface FileRoutesByTo {
   '/admin/transactions': typeof AdminTransactionsRoute
   '/admin/waivers': typeof AdminWaiversRoute
   '/admin/whatsapp': typeof AdminWhatsappRoute
+  '/auth/callback': typeof AuthCallbackRoute
   '/class/$classId': typeof ClassClassIdRoute
   '/payment/success': typeof PaymentSuccessRoute
   '/admin': typeof AdminIndexRoute
@@ -282,6 +298,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
+  '/auth': typeof AuthRouteWithChildren
   '/bookings': typeof BookingsRoute
   '/challenge': typeof ChallengeRoute
   '/goals': typeof GoalsRoute
@@ -310,6 +327,7 @@ export interface FileRoutesById {
   '/admin/transactions': typeof AdminTransactionsRoute
   '/admin/waivers': typeof AdminWaiversRoute
   '/admin/whatsapp': typeof AdminWhatsappRoute
+  '/auth/callback': typeof AuthCallbackRoute
   '/class/$classId': typeof ClassClassIdRoute
   '/payment/success': typeof PaymentSuccessRoute
   '/admin/': typeof AdminIndexRoute
@@ -319,6 +337,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/admin'
+    | '/auth'
     | '/bookings'
     | '/challenge'
     | '/goals'
@@ -347,12 +366,14 @@ export interface FileRouteTypes {
     | '/admin/transactions'
     | '/admin/waivers'
     | '/admin/whatsapp'
+    | '/auth/callback'
     | '/class/$classId'
     | '/payment/success'
     | '/admin/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/auth'
     | '/bookings'
     | '/challenge'
     | '/goals'
@@ -381,6 +402,7 @@ export interface FileRouteTypes {
     | '/admin/transactions'
     | '/admin/waivers'
     | '/admin/whatsapp'
+    | '/auth/callback'
     | '/class/$classId'
     | '/payment/success'
     | '/admin'
@@ -388,6 +410,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/admin'
+    | '/auth'
     | '/bookings'
     | '/challenge'
     | '/goals'
@@ -416,6 +439,7 @@ export interface FileRouteTypes {
     | '/admin/transactions'
     | '/admin/waivers'
     | '/admin/whatsapp'
+    | '/auth/callback'
     | '/class/$classId'
     | '/payment/success'
     | '/admin/'
@@ -424,6 +448,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRouteWithChildren
+  AuthRoute: typeof AuthRouteWithChildren
   BookingsRoute: typeof BookingsRoute
   ChallengeRoute: typeof ChallengeRoute
   GoalsRoute: typeof GoalsRoute
@@ -494,6 +519,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BookingsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/auth': {
+      id: '/auth'
+      path: '/auth'
+      fullPath: '/auth'
+      preLoaderRoute: typeof AuthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin': {
       id: '/admin'
       path: '/admin'
@@ -528,6 +560,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/class/$classId'
       preLoaderRoute: typeof ClassClassIdRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/auth/callback': {
+      id: '/auth/callback'
+      path: '/callback'
+      fullPath: '/auth/callback'
+      preLoaderRoute: typeof AuthCallbackRouteImport
+      parentRoute: typeof AuthRoute
     }
     '/admin/whatsapp': {
       id: '/admin/whatsapp'
@@ -722,9 +761,20 @@ const AdminRouteChildren: AdminRouteChildren = {
 
 const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 
+interface AuthRouteChildren {
+  AuthCallbackRoute: typeof AuthCallbackRoute
+}
+
+const AuthRouteChildren: AuthRouteChildren = {
+  AuthCallbackRoute: AuthCallbackRoute,
+}
+
+const AuthRouteWithChildren = AuthRoute._addFileChildren(AuthRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRouteWithChildren,
+  AuthRoute: AuthRouteWithChildren,
   BookingsRoute: BookingsRoute,
   ChallengeRoute: ChallengeRoute,
   GoalsRoute: GoalsRoute,
