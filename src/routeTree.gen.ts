@@ -13,6 +13,7 @@ import { Route as ScheduleRouteImport } from './routes/schedule'
 import { Route as RewardsRouteImport } from './routes/rewards'
 import { Route as PricingRouteImport } from './routes/pricing'
 import { Route as PackagesRouteImport } from './routes/packages'
+import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as MeRouteImport } from './routes/me'
 import { Route as GoalsRouteImport } from './routes/goals'
 import { Route as ChallengeRouteImport } from './routes/challenge'
@@ -63,6 +64,11 @@ const PricingRoute = PricingRouteImport.update({
 const PackagesRoute = PackagesRouteImport.update({
   id: '/packages',
   path: '/packages',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OnboardingRoute = OnboardingRouteImport.update({
+  id: '/onboarding',
+  path: '/onboarding',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MeRoute = MeRouteImport.update({
@@ -229,6 +235,7 @@ export interface FileRoutesByFullPath {
   '/challenge': typeof ChallengeRoute
   '/goals': typeof GoalsRoute
   '/me': typeof MeRoute
+  '/onboarding': typeof OnboardingRoute
   '/packages': typeof PackagesRoute
   '/pricing': typeof PricingRoute
   '/rewards': typeof RewardsRoute
@@ -265,6 +272,7 @@ export interface FileRoutesByTo {
   '/challenge': typeof ChallengeRoute
   '/goals': typeof GoalsRoute
   '/me': typeof MeRoute
+  '/onboarding': typeof OnboardingRoute
   '/packages': typeof PackagesRoute
   '/pricing': typeof PricingRoute
   '/rewards': typeof RewardsRoute
@@ -303,6 +311,7 @@ export interface FileRoutesById {
   '/challenge': typeof ChallengeRoute
   '/goals': typeof GoalsRoute
   '/me': typeof MeRoute
+  '/onboarding': typeof OnboardingRoute
   '/packages': typeof PackagesRoute
   '/pricing': typeof PricingRoute
   '/rewards': typeof RewardsRoute
@@ -342,6 +351,7 @@ export interface FileRouteTypes {
     | '/challenge'
     | '/goals'
     | '/me'
+    | '/onboarding'
     | '/packages'
     | '/pricing'
     | '/rewards'
@@ -378,6 +388,7 @@ export interface FileRouteTypes {
     | '/challenge'
     | '/goals'
     | '/me'
+    | '/onboarding'
     | '/packages'
     | '/pricing'
     | '/rewards'
@@ -415,6 +426,7 @@ export interface FileRouteTypes {
     | '/challenge'
     | '/goals'
     | '/me'
+    | '/onboarding'
     | '/packages'
     | '/pricing'
     | '/rewards'
@@ -453,6 +465,7 @@ export interface RootRouteChildren {
   ChallengeRoute: typeof ChallengeRoute
   GoalsRoute: typeof GoalsRoute
   MeRoute: typeof MeRoute
+  OnboardingRoute: typeof OnboardingRoute
   PackagesRoute: typeof PackagesRoute
   PricingRoute: typeof PricingRoute
   RewardsRoute: typeof RewardsRoute
@@ -489,6 +502,13 @@ declare module '@tanstack/react-router' {
       path: '/packages'
       fullPath: '/packages'
       preLoaderRoute: typeof PackagesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/onboarding': {
+      id: '/onboarding'
+      path: '/onboarding'
+      fullPath: '/onboarding'
+      preLoaderRoute: typeof OnboardingRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/me': {
@@ -779,6 +799,7 @@ const rootRouteChildren: RootRouteChildren = {
   ChallengeRoute: ChallengeRoute,
   GoalsRoute: GoalsRoute,
   MeRoute: MeRoute,
+  OnboardingRoute: OnboardingRoute,
   PackagesRoute: PackagesRoute,
   PricingRoute: PricingRoute,
   RewardsRoute: RewardsRoute,
