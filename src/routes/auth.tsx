@@ -1,296 +1,325 @@
-import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useEffect, useState } from 'react'
-import { supabase } from '@/lib/supabase'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { ArrowLeft, Mail } from 'lucide-react'
-import { toast } from 'sonner'
-import oneflowLogo from '@/assets/oneflow-logo.webp'
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { toast } from "sonner";
+import oneflowLogo from "@/assets/oneflow-logo.webp";
 
-export const Route = createFileRoute('/auth')({
+export const Route = createFileRoute("/auth")({
   head: () => ({
     meta: [
-      { title: 'Sign in — One Flow' },
-      { name: 'description', content: 'Sign in or create your One Flow account.' },
+      { title: "Sign in — One Flow" },
+      { name: "description", content: "Sign in or create your One Flow account." },
     ],
   }),
   component: AuthPage,
-})
+});
 
 async function resolveDestination(userId: string) {
   const { data: profile } = await supabase
-    .from('profiles')
-    .select('phone, date_of_birth, role')
-    .eq('id', userId)
-    .maybeSingle()
-  if (!profile?.phone || !profile?.date_of_birth) return '/onboarding'
-  if (profile.role && profile.role !== 'customer') return '/admin'
-  return '/'
+    .from("profiles")
+    .select("phone, date_of_birth, role")
+    .eq("id", userId)
+    .maybeSingle();
+  if (!profile?.phone || !profile?.date_of_birth) return "/onboarding";
+  if (profile.role && profile.role !== "customer") return "/admin";
+  return "/";
 }
 
 export default function AuthPage() {
-  const navigate = useNavigate()
+  const navigate = useNavigate();
 
   useEffect(() => {
     const init = async () => {
-      // Exchange PKCE code if present in URL
-      const params = new URLSearchParams(window.location.search)
-      const code = params.get('code')
+      const params = new URLSearchParams(window.location.search);
+      const code = params.get("code");
       if (code) {
-        window.history.replaceState({}, '', '/auth')
-        const { data, error } = await supabase.auth.exchangeCodeForSession(code)
+        window.history.replaceState({}, "", "/auth");
+        const { data, error } = await supabase.auth.exchangeCodeForSession(code);
         if (!error && data.session?.user) {
-          const dest = await resolveDestination(data.session.user.id)
-          navigate({ to: dest })
-          return
+          const dest = await resolveDestination(data.session.user.id);
+          navigate({ to: dest });
+          return;
         }
       }
 
-      // Check existing session
       const {
         data: { session },
-      } = await supabase.auth.getSession()
+      } = await supabase.auth.getSession();
       if (session?.user) {
-        const dest = await resolveDestination(session.user.id)
-        navigate({ to: dest })
+        const dest = await resolveDestination(session.user.id);
+        navigate({ to: dest });
       }
-    }
-    void init()
-  }, [navigate])
+    };
+    void init();
+  }, [navigate]);
 
-  const [tab, setTab] = useState<'signin' | 'signup'>('signin')
-  const [email, setEmail] = useState('')
-  const [firstName, setFirstName] = useState('')
-  const [lastName, setLastName] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [signupMagicSent, setSignupMagicSent] = useState(false)
-  const [signInLinkSent, setSignInLinkSent] = useState(false)
+  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const sendSignInLink = async () => {
-    if (!email.trim()) {
-      toast.error('Please enter your email')
-      return
+  const handleSignIn = async () => {
+    if (!email.trim() || !password) {
+      toast.error("Enter your email and password.");
+      return;
     }
-    setLoading(true)
-    const { error } = await supabase.auth.signInWithOtp({
+    setLoading(true);
+    const { error } = await supabase.auth.signInWithPassword({
       email: email.trim(),
-      options: {
-        shouldCreateUser: true,
-        emailRedirectTo: `${window.location.origin}/auth`,
-      },
-    })
-    setLoading(false)
+      password,
+    });
+    setLoading(false);
     if (error) {
-      toast.error(error.message)
-      return
+      toast.error(error.message);
+      return;
     }
-    setSignInLinkSent(true)
-    toast.success('Check your email.')
-  }
+    navigate({ to: "/auth/callback" });
+  };
 
-  const signUpWithEmail = async () => {
-    if (!firstName.trim() || !lastName.trim() || !email.trim()) {
-      toast.error('Please fill in all fields')
-      return
+  const handleSignUp = async () => {
+    if (!email.trim() || !password || !confirmPassword) {
+      toast.error("Fill in all fields.");
+      return;
     }
-    setLoading(true)
-    const { error } = await supabase.auth.signInWithOtp({
+    if (password !== confirmPassword) {
+      toast.error("Passwords do not match.");
+      return;
+    }
+    if (password.length < 6) {
+      toast.error("Password must be at least 6 characters.");
+      return;
+    }
+    setLoading(true);
+    const { data, error } = await supabase.auth.signUp({
       email: email.trim(),
-      options: {
-        emailRedirectTo: `${window.location.origin}/auth`,
-        data: {
-          first_name: firstName.trim(),
-          last_name: lastName.trim(),
-        },
-      },
-    })
-    setLoading(false)
+      password,
+    });
+    setLoading(false);
     if (error) {
-      toast.error(error.message)
-      return
+      toast.error(error.message);
+      return;
     }
-    setSignupMagicSent(true)
-  }
+    if (data.session?.user) {
+      navigate({ to: "/onboarding" });
+      return;
+    }
+    toast.success("Check your email to confirm your account, then sign in.");
+    setMode("signin");
+    setPassword("");
+    setConfirmPassword("");
+  };
 
   const signInWithGoogle = async () => {
-    setLoading(true)
+    setLoading(true);
     const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
+      provider: "google",
       options: {
         redirectTo: `${window.location.origin}/auth`,
       },
-    })
+    });
     if (error) {
-      toast.error(error.message)
-      setLoading(false)
+      toast.error(error.message);
+      setLoading(false);
     }
-  }
-
-  if (signInLinkSent) {
-    return (
-      <div className="flex min-h-[100dvh] flex-col items-center justify-center bg-background px-6 py-10">
-        <img src={oneflowLogo} alt="One Flow" className="mb-6 h-14 w-auto" />
-        <div className="w-full max-w-md space-y-6 text-center">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-primary/10">
-            <Mail className="h-7 w-7 text-primary" />
-          </div>
-          <p className="text-lg font-semibold leading-snug text-foreground">
-            Check your email — we sent a sign-in link to <strong className="break-all font-semibold">{email}</strong>.
-            Click it to continue.
-          </p>
-          <button
-            type="button"
-            onClick={() => setSignInLinkSent(false)}
-            className="inline-flex items-center gap-1 text-xs text-muted-foreground underline-offset-4 hover:underline"
-          >
-            <ArrowLeft className="h-3.5 w-3.5" />
-            Use a different email
-          </button>
-        </div>
-      </div>
-    )
-  }
-
-  if (signupMagicSent) {
-    return (
-      <div className="flex min-h-[100dvh] flex-col items-center justify-center bg-background px-6 text-center">
-        <img src={oneflowLogo} alt="One Flow" className="mb-6 h-14 w-auto" />
-        <div className="max-w-sm space-y-3">
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
-            <Mail className="h-8 w-8 text-primary" />
-          </div>
-          <h1 className="text-xl font-bold">Check your email</h1>
-          <p className="text-sm text-muted-foreground">
-            We sent a sign-in link to <strong>{email}</strong>. Tap it to continue.
-          </p>
-          <button
-            type="button"
-            onClick={() => setSignupMagicSent(false)}
-            className="text-xs text-muted-foreground underline underline-offset-4"
-          >
-            Use a different email
-          </button>
-        </div>
-      </div>
-    )
-  }
+  };
 
   return (
     <div className="flex min-h-[100dvh] flex-col items-center justify-center bg-background px-6 py-10">
       <img src={oneflowLogo} alt="One Flow" className="mb-6 h-14 w-auto" />
-      <div className="w-full max-w-md">
-        <Tabs value={tab} onValueChange={(v) => setTab(v as 'signin' | 'signup')}>
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="signin">Sign in</TabsTrigger>
-            <TabsTrigger value="signup">Create account</TabsTrigger>
-          </TabsList>
+      <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-sm">
+        <h1 className="font-display text-center text-xl font-semibold text-card-foreground">
+          {mode === "signin" ? "Sign in" : "Create account"}
+        </h1>
+        <p className="mt-1 text-center text-xs text-muted-foreground">
+          {mode === "signin" ? "Welcome back to One Flow." : "Join One Flow with email and password."}
+        </p>
 
-          <TabsContent value="signin" className="mt-6 space-y-4">
+        {mode === "signin" ? (
+          <div className="mt-6 space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="signin-email">Email</Label>
+              <Label htmlFor="auth-email">Email</Label>
               <Input
-                id="signin-email"
+                id="auth-email"
                 type="email"
+                autoComplete="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && void sendSignInLink()}
+                onKeyDown={(e) => e.key === "Enter" && void handleSignIn()}
                 placeholder="you@example.com"
-                className="h-11"
+                className="h-11 bg-background"
               />
             </div>
-            <Button onClick={() => void sendSignInLink()} disabled={loading} className="h-11 w-full text-base">
-              {loading ? 'Sending…' : 'Send sign-in link'}
-            </Button>
-            <Divider />
-            <Button
-              onClick={() => void signInWithGoogle()}
-              variant="outline"
-              className="h-11 w-full"
-              disabled={loading}
-            >
-              <GoogleIcon />
-              Continue with Google
-            </Button>
-          </TabsContent>
-
-          <TabsContent value="signup" className="mt-6 space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label htmlFor="first-name">First name</Label>
-                <Input
-                  id="first-name"
-                  value={firstName}
-                  onChange={(e) => setFirstName(e.target.value)}
-                  placeholder="Jane"
-                  className="h-11"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="last-name">Last name</Label>
-                <Input
-                  id="last-name"
-                  value={lastName}
-                  onChange={(e) => setLastName(e.target.value)}
-                  placeholder="Smith"
-                  className="h-11"
-                />
-              </div>
+            <div className="space-y-2">
+              <Label htmlFor="auth-password">Password</Label>
+              <Input
+                id="auth-password"
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && void handleSignIn()}
+                placeholder="••••••••"
+                className="h-11 bg-background"
+              />
             </div>
+            <button
+              type="button"
+              onClick={() =>
+                toast.info("Contact support", {
+                  description: "Password reset is not available in the app yet. Please reach out to the studio.",
+                })
+              }
+              className="text-xs font-medium text-primary underline-offset-4 hover:underline"
+            >
+              Forgot password?
+            </button>
+            <Button
+              type="button"
+              onClick={() => void handleSignIn()}
+              disabled={loading}
+              className="h-11 w-full bg-primary text-base text-primary-foreground hover:bg-primary/90"
+            >
+              {loading ? "Signing in…" : "Sign In"}
+            </Button>
+          </div>
+        ) : (
+          <div className="mt-6 space-y-4">
             <div className="space-y-2">
               <Label htmlFor="signup-email">Email</Label>
               <Input
                 id="signup-email"
                 type="email"
+                autoComplete="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && void signUpWithEmail()}
                 placeholder="you@example.com"
-                className="h-11"
+                className="h-11 bg-background"
               />
             </div>
-            <Button onClick={() => void signUpWithEmail()} disabled={loading} className="h-11 w-full text-base">
-              {loading ? 'Sending…' : 'Continue'}
+            <div className="space-y-2">
+              <Label htmlFor="signup-password">Password</Label>
+              <Input
+                id="signup-password"
+                type="password"
+                autoComplete="new-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="At least 6 characters"
+                className="h-11 bg-background"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="signup-confirm">Confirm password</Label>
+              <Input
+                id="signup-confirm"
+                type="password"
+                autoComplete="new-password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && void handleSignUp()}
+                placeholder="Repeat password"
+                className="h-11 bg-background"
+              />
+            </div>
+            <Button
+              type="button"
+              onClick={() => void handleSignUp()}
+              disabled={loading}
+              className="h-11 w-full bg-primary text-base text-primary-foreground hover:bg-primary/90"
+            >
+              {loading ? "Creating…" : "Create Account"}
             </Button>
             <p className="text-center text-xs text-muted-foreground">
-              By signing up you agree to our <button type="button" className="underline underline-offset-4">Terms</button> and{' '}
-              <button type="button" className="underline underline-offset-4">Privacy Policy</button>.
+              By creating an account you agree to our{" "}
+              <button type="button" className="underline underline-offset-4">
+                Terms
+              </button>{" "}
+              and{" "}
+              <button type="button" className="underline underline-offset-4">
+                Privacy Policy
+              </button>
+              .
             </p>
-            <Divider />
-            <Button
-              onClick={() => void signInWithGoogle()}
-              variant="outline"
-              className="h-11 w-full"
-              disabled={loading}
-            >
-              <GoogleIcon />
-              Continue with Google
-            </Button>
-          </TabsContent>
-        </Tabs>
-        <p className="mt-8 text-center text-xs text-muted-foreground">
-          Need help?{' '}
-          <a href="https://wa.me/27825533032" className="text-foreground underline-offset-4 hover:underline">
-            Contact the studio
-          </a>
+          </div>
+        )}
+
+        <Divider />
+        <Button
+          type="button"
+          onClick={() => void signInWithGoogle()}
+          variant="outline"
+          className="h-11 w-full border-border bg-background"
+          disabled={loading}
+        >
+          <GoogleIcon />
+          Continue with Google
+        </Button>
+
+        <p className="mt-6 text-center text-sm text-muted-foreground">
+          {mode === "signin" ? (
+            <>
+              Don&apos;t have an account?{" "}
+              <button
+                type="button"
+                className="font-semibold text-primary underline-offset-4 hover:underline"
+                onClick={() => {
+                  setMode("signup");
+                  setPassword("");
+                  setConfirmPassword("");
+                }}
+              >
+                Sign up
+              </button>
+            </>
+          ) : (
+            <>
+              Already have an account?{" "}
+              <button
+                type="button"
+                className="font-semibold text-primary underline-offset-4 hover:underline"
+                onClick={() => {
+                  setMode("signin");
+                  setPassword("");
+                  setConfirmPassword("");
+                }}
+              >
+                Sign in
+              </button>
+            </>
+          )}
         </p>
       </div>
+
+      <p className="mt-8 text-center text-xs text-muted-foreground">
+        Need help?{" "}
+        <a
+          href="https://wa.me/27825533033"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-foreground underline-offset-4 hover:underline"
+        >
+          Contact the studio
+        </a>
+      </p>
     </div>
-  )
+  );
 }
 
 function Divider() {
   return (
-    <div className="relative py-2">
+    <div className="relative py-4">
       <div className="absolute inset-0 flex items-center">
         <div className="w-full border-t border-border" />
       </div>
       <div className="relative flex justify-center text-xs uppercase">
-        <span className="bg-background px-2 text-muted-foreground">or</span>
+        <span className="bg-card px-2 text-muted-foreground">or</span>
       </div>
     </div>
-  )
+  );
 }
 
 function GoogleIcon() {
@@ -313,5 +342,5 @@ function GoogleIcon() {
         d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
       />
     </svg>
-  )
+  );
 }
