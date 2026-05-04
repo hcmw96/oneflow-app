@@ -4,6 +4,8 @@ import { CalendarDays, Check, Loader2 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { supabase } from "@/lib/supabase";
 
+/** May challenge stamps are written on studio check-in (see upsertMayChallengeCheckIn), not here. */
+
 export const Route = createFileRoute("/payment/success")({
   head: () => ({
     meta: [{ title: "Payment successful — One Flow" }],
@@ -60,13 +62,18 @@ function PaymentSuccessPage() {
       }
 
       if (user.id !== profileId) {
-        if (!cancelled) setState({ status: "error", message: "This purchase is linked to a different account." });
+        if (!cancelled)
+          setState({ status: "error", message: "This purchase is linked to a different account." });
         return;
       }
 
       const dedupeKey = `${CREDIT_GRANT_KEY}:${packId}:${profileId}`;
       if (sessionStorage.getItem(dedupeKey)) {
-        const { data: product } = await supabase.from("products").select("name, credit_count").eq("id", packId).maybeSingle();
+        const { data: product } = await supabase
+          .from("products")
+          .select("name, credit_count")
+          .eq("id", packId)
+          .maybeSingle();
         const creditCount = Number((product as ProductRow | null)?.credit_count ?? 0);
         if (!cancelled) {
           setState({
@@ -106,7 +113,9 @@ function PaymentSuccessPage() {
         credits_total: creditCount,
         credits_remaining: creditCount,
         is_unlimited: isUnlimited,
-        expires_at: p.validity_days ? new Date(Date.now() + p.validity_days * 86400000).toISOString() : null,
+        expires_at: p.validity_days
+          ? new Date(Date.now() + p.validity_days * 86400000).toISOString()
+          : null,
         yoco_payment_id: checkoutId,
       };
 
@@ -117,7 +126,8 @@ function PaymentSuccessPage() {
         if (!cancelled) {
           setState({
             status: "error",
-            message: insertError.message || "Could not add credits. They may already be on your account.",
+            message:
+              insertError.message || "Could not add credits. They may already be on your account.",
           });
         }
         return;
@@ -147,7 +157,11 @@ function PaymentSuccessPage() {
           className="flex h-24 w-24 items-center justify-center rounded-full bg-[#22c55e]/15 ring-4 ring-[#22c55e]/25"
           aria-hidden
         >
-          <Check className="h-14 w-14 stroke-[2.5] text-[#16a34a]" strokeLinecap="round" strokeLinejoin="round" />
+          <Check
+            className="h-14 w-14 stroke-[2.5] text-[#16a34a]"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
         </div>
 
         {state.status === "loading" ? (
@@ -157,12 +171,18 @@ function PaymentSuccessPage() {
           </>
         ) : state.status === "guest" ? (
           <>
-            <h1 className="mt-8 font-display text-2xl font-bold text-[#3d4f36] dark:text-foreground">Sign in</h1>
-            <p className="mt-2 text-sm text-muted-foreground">Sign in to see your updated credits.</p>
+            <h1 className="mt-8 font-display text-2xl font-bold text-[#3d4f36] dark:text-foreground">
+              Sign in
+            </h1>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Sign in to see your updated credits.
+            </p>
           </>
         ) : state.status === "error" ? (
           <>
-            <h1 className="mt-8 font-display text-2xl font-bold text-[#3d4f36] dark:text-foreground">Something went wrong</h1>
+            <h1 className="mt-8 font-display text-2xl font-bold text-[#3d4f36] dark:text-foreground">
+              Something went wrong
+            </h1>
             <p className="mt-2 text-sm text-muted-foreground">{state.message}</p>
           </>
         ) : state.status === "success_generic" ? (
@@ -170,7 +190,9 @@ function PaymentSuccessPage() {
             <h1 className="mt-8 font-display text-3xl font-bold tracking-tight text-[#3d4f36] dark:text-foreground">
               Payment successful!
             </h1>
-            <p className="mt-4 text-sm text-muted-foreground">Your credits will appear shortly if payment completed.</p>
+            <p className="mt-4 text-sm text-muted-foreground">
+              Your credits will appear shortly if payment completed.
+            </p>
           </>
         ) : (
           <>
@@ -184,7 +206,8 @@ function PaymentSuccessPage() {
               ) : (
                 <>
                   {" "}
-                  — <span className="font-semibold text-foreground">{state.creditsAdded}</span> credits added
+                  — <span className="font-semibold text-foreground">{state.creditsAdded}</span>{" "}
+                  credits added
                 </>
               )}
             </p>

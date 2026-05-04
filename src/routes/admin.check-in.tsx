@@ -21,6 +21,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import {
+  deleteMayChallengeCheckInForBooking,
+  upsertMayChallengeCheckIn,
+} from "@/lib/mayChallengeCheckIn";
 
 export const Route = createFileRoute("/admin/check-in")({
   component: CheckInPage,
@@ -57,8 +61,10 @@ type RosterRow = {
   id: string;
   status: BookingStatus;
   member: string;
+  profileId: string;
   class_id: string;
   className: string;
+  classStartsAt: string;
   startsAtLabel: string;
   creditLabel: string;
 };
@@ -103,8 +109,10 @@ function normalizeBooking(raw: BookingRow): RosterRow | null {
     id: raw.id,
     status,
     member,
+    profileId: raw.profile_id,
     class_id: raw.class_id,
     className: cls.name,
+    classStartsAt: cls.starts_at,
     startsAtLabel: `Today · ${formatClassTime(cls.starts_at)}`,
     creditLabel: raw.payment_method?.replace(/_/g, " ") ?? "—",
   };
@@ -233,6 +241,18 @@ function CheckInPage() {
       toast.error(error.message);
       return;
     }
+    if (status === "attended") {
+      const row = roster.find((r) => r.id === id);
+      if (row?.profileId && row.classStartsAt) {
+        await upsertMayChallengeCheckIn({
+          profileId: row.profileId,
+          bookingId: id,
+          classStartsAtIso: row.classStartsAt,
+        });
+      }
+    } else {
+      await deleteMayChallengeCheckInForBooking(id);
+    }
     toast.success(status === "attended" ? "Checked in" : "Reverted to confirmed");
     await loadData();
   };
@@ -252,8 +272,10 @@ function CheckInPage() {
       .select(
         `
         id,
+        profile_id,
         status,
         checked_in,
+        classes ( starts_at ),
         profiles ( first_name, last_name )
       `,
       )
@@ -310,6 +332,16 @@ function CheckInPage() {
     if (upError) {
       toast.error(upError.message);
       return;
+    }
+
+    const cls = oneClass(booking.classes as BookingRow["classes"]);
+    const startsAt = cls?.starts_at;
+    if (booking.profile_id && startsAt) {
+      await upsertMayChallengeCheckIn({
+        profileId: booking.profile_id as string,
+        bookingId: booking.id as string,
+        classStartsAtIso: startsAt,
+      });
     }
 
     toast.success(`Welcome ${firstName}!`, {
@@ -598,19 +630,31 @@ function WalkInSheet({
       profileId = created.id as string;
     }
 
+    const session = todayClasses.find((c) => c.id === classId);
     const checkedAt = new Date().toISOString();
-    const { error: bookErr } = await supabase.from("bookings").insert({
-      profile_id: profileId,
-      class_id: classId,
-      status: "attended",
-      payment_method: "drop_in",
-      checked_in: true,
-      checked_in_at: checkedAt,
-    });
+    const { data: newBooking, error: bookErr } = await supabase
+      .from("bookings")
+      .insert({
+        profile_id: profileId,
+        class_id: classId,
+        status: "attended",
+        payment_method: "drop_in",
+        checked_in: true,
+        checked_in_at: checkedAt,
+      })
+      .select("id")
+      .maybeSingle();
     setSaving(false);
     if (bookErr) {
       toast.error(bookErr.message);
       return;
+    }
+    if (newBooking?.id && profileId && session?.starts_at) {
+      await upsertMayChallengeCheckIn({
+        profileId,
+        bookingId: newBooking.id as string,
+        classStartsAtIso: session.starts_at,
+      });
     }
     toast.success(`${displayName} checked in`);
     onOpenChange(false);
