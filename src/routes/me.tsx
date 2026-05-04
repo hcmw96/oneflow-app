@@ -21,6 +21,11 @@ import { formatRand } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabase";
 
+async function signOut() {
+  await supabase.auth.signOut();
+  window.location.assign("/auth");
+}
+
 export const Route = createFileRoute("/me")({
   component: MePage,
 });
@@ -140,7 +145,12 @@ function MePage() {
             <p className="truncate text-sm text-muted-foreground">{email || profile?.email || "—"}</p>
             <p className="truncate text-sm text-muted-foreground">{profile?.phone || "—"}</p>
           </div>
-          <button aria-label="Sign out" className="text-foreground/70">
+          <button
+            type="button"
+            aria-label="Sign out"
+            onClick={() => void signOut()}
+            className="text-foreground/70"
+          >
             <LogOut className="h-5 w-5" />
           </button>
         </section>
@@ -328,7 +338,7 @@ function SettingsPanel() {
         <span className="flex-1 text-sm font-semibold">Admin Dashboard</span>
         <ChevronRight className="h-4 w-4 text-muted-foreground" />
       </Link>
-      <Row icon={<LogOut className="h-4 w-4" />} label="Sign out" danger />
+      <Row icon={<LogOut className="h-4 w-4" />} label="Sign out" danger onClick={() => void signOut()} />
     </Panel>
   );
 }
@@ -337,14 +347,17 @@ function Row({
   icon,
   label,
   danger,
+  onClick,
 }: {
   icon: React.ReactNode;
   label: string;
   danger?: boolean;
+  onClick?: () => void;
 }) {
   return (
     <button
       type="button"
+      onClick={onClick}
       className="flex w-full items-center gap-3 rounded-xl border border-border bg-card px-4 py-3 text-left"
     >
       <span
