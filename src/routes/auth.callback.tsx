@@ -6,13 +6,34 @@ export const Route = createFileRoute("/auth/callback")({
   component: AuthCallback,
 });
 
-async function resolveDestination(userId: string): Promise<"/onboarding" | "/admin" | "/"> {
-  const { data: profile } = await supabase
+type ProfileGate = {
+  phone: string | null;
+  date_of_birth: string | null;
+  role: string | null;
+  onboarding_complete?: boolean | null;
+};
+
+async function loadProfileGate(userId: string) {
+  const { data } = await supabase
     .from("profiles")
-    .select("phone, date_of_birth, role")
+    .select("phone, date_of_birth, role, onboarding_complete")
     .eq("id", userId)
     .maybeSingle();
+  return data as ProfileGate | null;
+}
+
+async function resolveDestination(userId: string): Promise<"/onboarding" | "/admin" | "/"> {
+  let profile = await loadProfileGate(userId);
+
   if (!profile || !profile.phone || !profile.date_of_birth) return "/onboarding";
+
+  if (profile.role == null || profile.role === "customer") {
+    await new Promise((r) => setTimeout(r, 500));
+    const retry = await loadProfileGate(userId);
+    if (retry) profile = retry;
+  }
+
+  if (!profile.phone || !profile.date_of_birth) return "/onboarding";
   if (profile.role && profile.role !== "customer") return "/admin";
   return "/";
 }
