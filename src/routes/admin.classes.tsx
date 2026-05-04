@@ -82,7 +82,7 @@ function ClassesPage() {
         }
       />
 
-      <div className="overflow-hidden rounded-2xl border border-border bg-card">
+      <div className="min-w-0 overflow-x-auto rounded-2xl border border-border bg-card">
         {loading ? (
           <div className="p-10 text-center text-sm text-muted-foreground">Loading…</div>
         ) : (

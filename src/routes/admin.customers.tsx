@@ -101,7 +101,7 @@ function CustomersPage() {
             type="button"
             className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground"
           >
-            <Plus className="h-4 w-4" /> Add member
+            <Plus className="h-4 w-4 shrink-0" aria-hidden /> Add member
           </button>
         }
       />
@@ -118,7 +118,7 @@ function CustomersPage() {
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-border bg-card">
+      <div className="min-w-0 overflow-x-auto rounded-2xl border border-border bg-card">
         {loading ? (
           <div className="p-10 text-center text-sm text-muted-foreground">Loading…</div>
         ) : (
@@ -137,8 +137,12 @@ function CustomersPage() {
             <tbody>
               {filtered.map((m) => (
                 <tr key={m.id} className="cursor-pointer border-t border-border hover:bg-muted/30">
-                  <td className="px-5 py-3 font-semibold">{m.name}</td>
-                  <td className="px-5 py-3 text-muted-foreground">{m.email}</td>
+                  <td className="max-w-[160px] truncate px-5 py-3 font-semibold sm:max-w-xs md:max-w-md">
+                    {m.name}
+                  </td>
+                  <td className="max-w-[200px] truncate px-5 py-3 text-muted-foreground sm:max-w-xs md:max-w-md">
+                    {m.email}
+                  </td>
                   <td className="px-5 py-3 text-muted-foreground">{m.phone}</td>
                   <td className="px-5 py-3">{m.plan}</td>
                   <td className="px-5 py-3 tabular-nums">{m.credits >= 999 ? "∞" : m.credits}</td>

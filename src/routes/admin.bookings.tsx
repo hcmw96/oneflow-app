@@ -226,7 +226,7 @@ function BookingsPage() {
             onClick={exportCsv}
             className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-semibold"
           >
-            <Download className="h-4 w-4" /> Export CSV
+            <Download className="h-4 w-4 shrink-0" aria-hidden /> Export CSV
           </button>
         }
       />
@@ -309,12 +309,12 @@ function BookingsPage() {
             onClick={clearFilters}
             className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-primary hover:underline"
           >
-            <X className="h-3.5 w-3.5" /> Clear filters
+            <X className="h-3.5 w-3.5 shrink-0" aria-hidden /> Clear filters
           </button>
         </div>
       ) : (
         <>
-          <div className="hidden overflow-hidden rounded-2xl border border-border bg-card md:block">
+          <div className="hidden min-w-0 overflow-x-auto rounded-2xl border border-border bg-card md:block">
             <table className="w-full text-sm">
               <thead className="bg-muted/40">
                 <tr className="text-left text-xs uppercase tracking-wider text-muted-foreground">
@@ -333,13 +333,13 @@ function BookingsPage() {
                     onClick={() => setDetailId(b.id)}
                     className="cursor-pointer border-t border-border hover:bg-muted/30"
                   >
-                    <td className="px-5 py-3 font-medium">{b.member}</td>
-                    <td className="px-5 py-3">{b.className}</td>
-                    <td className="px-5 py-3 text-muted-foreground">{b.startsAt}</td>
+                    <td className="max-w-[200px] truncate px-5 py-3 font-medium">{b.member}</td>
+                    <td className="max-w-[220px] truncate px-5 py-3">{b.className}</td>
+                    <td className="max-w-[180px] truncate px-5 py-3 text-muted-foreground">{b.startsAt}</td>
                     <td className="px-5 py-3">
                       <span className={statusClass(b.status)}>{statusLabel(b.status)}</span>
                     </td>
-                    <td className="px-5 py-3 text-muted-foreground">{b.credit}</td>
+                    <td className="max-w-[160px] truncate px-5 py-3 text-muted-foreground">{b.credit}</td>
                     <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
                       <RowMenu
                         onCancel={() => void setBookingStatus(b.id, "cancelled")}
@@ -362,15 +362,15 @@ function BookingsPage() {
                 className="block w-full rounded-2xl border border-border bg-card p-4 text-left"
               >
                 <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-semibold">{b.member}</p>
                     <p className="truncate text-xs text-muted-foreground">{b.className}</p>
                   </div>
-                  <span className={statusClass(b.status)}>{statusLabel(b.status)}</span>
+                  <span className={cn("shrink-0", statusClass(b.status))}>{statusLabel(b.status)}</span>
                 </div>
-                <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
-                  <span>{b.startsAt}</span>
-                  <span>{b.credit}</span>
+                <div className="mt-2 flex min-w-0 flex-col gap-0.5 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:gap-x-2">
+                  <span className="min-w-0 truncate">{b.startsAt}</span>
+                  <span className="min-w-0 truncate sm:text-right">{b.credit}</span>
                 </div>
               </button>
             ))}
@@ -418,10 +418,10 @@ function BookingsPage() {
                     .map((r) => (
                       <li
                         key={r.id}
-                        className="flex items-center justify-between rounded-lg border border-border px-3 py-2"
+                        className="flex items-center justify-between gap-2 rounded-lg border border-border px-3 py-2"
                       >
-                        <span>{r.className}</span>
-                        <span className="text-xs text-muted-foreground">{r.startsAt}</span>
+                        <span className="min-w-0 flex-1 truncate text-sm">{r.className}</span>
+                        <span className="shrink-0 text-xs text-muted-foreground">{r.startsAt}</span>
                       </li>
                     ))}
                   {rows.filter((r) => r.member === detail.member).length <= 1 && (

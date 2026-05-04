@@ -127,7 +127,7 @@ function MePage() {
 
       <main className="flex-1 space-y-4 px-5 pt-3">
         <section className="flex items-center gap-4 rounded-2xl border border-border bg-card p-5">
-          <div className="relative">
+          <div className="relative shrink-0">
             <div className="flex h-20 w-20 items-center justify-center rounded-full bg-muted text-xl font-bold text-foreground">
               {loading ? "…" : initials.slice(0, 2)}
             </div>
@@ -149,7 +149,7 @@ function MePage() {
             type="button"
             aria-label="Sign out"
             onClick={() => void signOut()}
-            className="text-foreground/70"
+            className="shrink-0 text-foreground/70"
           >
             <LogOut className="h-5 w-5" />
           </button>
@@ -237,12 +237,12 @@ function BillingPanel() {
       </p>
       <ul className="divide-y divide-border">
         {invoices.map((inv) => (
-          <li key={inv.id} className="flex items-center justify-between py-3 first:pt-0">
-            <div className="min-w-0">
+          <li key={inv.id} className="flex items-center justify-between gap-2 py-3 first:pt-0">
+            <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-semibold">{inv.name}</p>
               <p className="text-xs text-muted-foreground">{inv.date}</p>
             </div>
-            <span className="text-sm font-semibold tabular-nums">
+            <span className="shrink-0 text-sm font-semibold tabular-nums">
               {inv.amount > 0 ? formatRand(inv.amount) : "—"}
             </span>
           </li>
@@ -260,14 +260,14 @@ function HistoryPanel({ rows }: { rows: { id: string; label: string; date: Date 
       ) : (
         <ul className="divide-y divide-border">
           {rows.map((p) => (
-            <li key={p.id} className="flex items-center justify-between py-3 first:pt-0">
-              <div className="min-w-0">
+            <li key={p.id} className="flex items-center justify-between gap-2 py-3 first:pt-0">
+              <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold">{p.label}</p>
                 <p className="text-xs text-muted-foreground">
                   {p.date.toLocaleDateString("en-ZA", { weekday: "short", day: "numeric", month: "short" })}
                 </p>
               </div>
-              <span className="rounded-full bg-primary-soft px-2.5 py-0.5 text-[11px] font-semibold text-foreground">
+              <span className="shrink-0 rounded-full bg-primary-soft px-2.5 py-0.5 text-[11px] font-semibold text-foreground">
                 Attended
               </span>
             </li>
@@ -299,11 +299,11 @@ function FriendsPanel() {
       <ul className="divide-y divide-border">
         {filtered.map((f) => (
           <li key={f.id} className="flex items-center gap-3 py-3 first:pt-0">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary-soft text-sm font-semibold">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary-soft text-sm font-semibold">
               {f.initials}
             </div>
-            <p className="flex-1 text-sm font-semibold">{f.name}</p>
-            <button type="button" className="text-muted-foreground">
+            <p className="min-w-0 flex-1 truncate text-sm font-semibold">{f.name}</p>
+            <button type="button" className="shrink-0 text-muted-foreground">
               <ChevronRight className="h-4 w-4" />
             </button>
           </li>
@@ -316,7 +316,7 @@ function FriendsPanel() {
         type="button"
         className="flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-card py-3 text-sm font-semibold"
       >
-        <UserPlus className="h-4 w-4" /> Invite a friend
+        <UserPlus className="h-4 w-4 shrink-0" aria-hidden /> Invite a friend
       </button>
     </Panel>
   );

@@ -33,31 +33,33 @@ export function ClassCard({ session }: { session: ClassCardSession }) {
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <div className="mb-1 flex items-center gap-2">
+          <div className="mb-1 flex min-w-0 items-center gap-2">
             <TypeBadge type={session.type} />
             {almostFull && (
-              <span className="inline-flex rounded-full bg-warning px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-warning-foreground">
+              <span className="inline-flex shrink-0 rounded-full bg-warning px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-warning-foreground">
                 Almost Full
               </span>
             )}
             {full && (
-              <span className="inline-flex rounded-full bg-destructive/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-destructive">
+              <span className="inline-flex shrink-0 rounded-full bg-destructive/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-destructive">
                 Waitlist
               </span>
             )}
           </div>
           <h3 className="truncate font-display text-lg font-semibold leading-tight">{session.name}</h3>
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
-            <span className="inline-flex items-center gap-1">
-              <Clock className="h-3 w-3" /> {formatTime(session.startsAt)} · {session.durationMin}m
+            <span className="inline-flex min-w-0 max-w-full items-center gap-1">
+              <Clock className="h-3 w-3 shrink-0" aria-hidden /> {formatTime(session.startsAt)} ·{" "}
+              {session.durationMin}m
             </span>
-            <span className="inline-flex items-center gap-1">
-              <MapPin className="h-3 w-3" /> {session.location}
+            <span className="inline-flex min-w-0 max-w-full items-center gap-1">
+              <MapPin className="h-3 w-3 shrink-0" aria-hidden />
+              <span className="min-w-0 break-words">{session.location}</span>
             </span>
           </div>
         </div>
         {guide && (
-          <div className="flex flex-col items-center text-center">
+          <div className="flex shrink-0 flex-col items-center text-center">
             <div
               className="flex h-11 w-11 items-center justify-center rounded-full text-xs font-semibold text-foreground"
               style={{ backgroundColor: guide.color }}
@@ -80,8 +82,8 @@ export function ClassCard({ session }: { session: ClassCardSession }) {
             style={{ width: `${Math.min(100, fillRatio * 100)}%` }}
           />
         </div>
-        <span className="inline-flex items-center gap-1 text-[11px] tabular-nums text-muted-foreground">
-          <Users className="h-3 w-3" /> {session.booked}/{session.capacity}
+        <span className="inline-flex shrink-0 items-center gap-1 text-[11px] tabular-nums text-muted-foreground">
+          <Users className="h-3 w-3 shrink-0" aria-hidden /> {session.booked}/{session.capacity}
         </span>
       </div>
     </Link>

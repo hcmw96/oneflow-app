@@ -213,7 +213,7 @@ function PricingPage() {
                       onClick={() => toggleSection(category)}
                       className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left transition-colors hover:bg-[#e8efe3]/60 dark:hover:bg-muted/40"
                     >
-                      <span className="font-display text-[11px] font-bold uppercase leading-snug tracking-[0.12em] text-[#a3b693] dark:text-foreground sm:text-xs">
+                      <span className="min-w-0 flex-1 truncate font-display text-[11px] font-bold uppercase leading-snug tracking-[0.12em] text-[#a3b693] dark:text-foreground sm:text-xs">
                         {title}
                       </span>
                       <ChevronDown
@@ -246,7 +246,7 @@ function PricingPage() {
                                   )}
                                 >
                                   <div className="flex items-start justify-between gap-3">
-                                    <h3 className="min-w-0 flex-1 font-display text-base font-semibold leading-snug text-[#a3b693] dark:text-foreground">
+                                    <h3 className="min-w-0 flex-1 truncate font-display text-base font-semibold leading-snug text-[#a3b693] dark:text-foreground">
                                       {p.name}
                                     </h3>
                                     <p className="shrink-0 font-display text-base font-bold tabular-nums text-[#a3b693] dark:text-foreground">

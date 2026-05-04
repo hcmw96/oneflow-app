@@ -153,14 +153,15 @@ function BookingsPage() {
                   <div className="mb-1 flex items-center gap-2">
                     <TypeBadge type={b.classType} />
                   </div>
-                  <h3 className="font-display text-lg font-semibold">{b.className}</h3>
+                  <h3 className="truncate font-display text-lg font-semibold">{b.className}</h3>
                   <div className="mt-1 text-xs text-muted-foreground">{formatDayLabel(b.startsAt)}</div>
                   <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                    <span className="inline-flex items-center gap-1">
-                      <Clock className="h-3 w-3" /> {formatTime(b.startsAt)}
+                    <span className="inline-flex min-w-0 max-w-full items-center gap-1">
+                      <Clock className="h-3 w-3 shrink-0" aria-hidden /> {formatTime(b.startsAt)}
                     </span>
-                    <span className="inline-flex items-center gap-1">
-                      <MapPin className="h-3 w-3" /> {b.location}
+                    <span className="inline-flex min-w-0 max-w-full items-center gap-1">
+                      <MapPin className="h-3 w-3 shrink-0" aria-hidden />{" "}
+                      <span className="min-w-0 break-words">{b.location}</span>
                     </span>
                     {b.guideFirst && <span>with {b.guideFirst}</span>}
                   </div>
@@ -176,7 +177,7 @@ function BookingsPage() {
                     onClick={() => toast("Booking cancelled", { description: "Credit refunded." })}
                     className="mt-3 inline-flex items-center gap-1 rounded-full border border-border px-3 py-1 text-xs font-medium text-muted-foreground"
                   >
-                    <X className="h-3 w-3" /> Cancel booking
+                    <X className="h-3 w-3 shrink-0" aria-hidden /> Cancel booking
                   </button>
                 </article>
               ))}
@@ -191,7 +192,7 @@ function BookingsPage() {
                     <TypeBadge type={b.classType} />
                     <span className="text-[10px] uppercase tracking-wide text-success">Attended</span>
                   </div>
-                  <h3 className="font-display text-lg font-semibold">{b.className}</h3>
+                  <h3 className="truncate font-display text-lg font-semibold">{b.className}</h3>
                   <div className="mt-1 text-xs text-muted-foreground">{formatDayLabel(b.startsAt)}</div>
                 </article>
               ))}

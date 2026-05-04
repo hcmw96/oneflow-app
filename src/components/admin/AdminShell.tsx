@@ -140,9 +140,9 @@ export function AdminShell({ children }: { children: ReactNode }) {
               <button
                 type="button"
                 aria-label="Open menu"
-                className="rounded-md p-1.5 text-muted-foreground hover:bg-muted md:hidden"
+                className="shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-muted md:hidden"
               >
-                <Menu className="h-5 w-5" />
+                <Menu className="h-5 w-5 shrink-0" />
               </button>
             </SheetTrigger>
             <SheetContent side="left" className="w-64 bg-sidebar p-0">
@@ -191,12 +191,12 @@ export function AdminShell({ children }: { children: ReactNode }) {
             type="button"
             aria-label="Toggle sidebar"
             onClick={() => setCollapsed((c) => !c)}
-            className="hidden rounded-md p-1.5 text-muted-foreground hover:bg-muted md:inline-flex"
+            className="hidden shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-muted md:inline-flex"
           >
-            {collapsed ? <PanelLeft className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+            {collapsed ? <PanelLeft className="h-4 w-4 shrink-0" /> : <PanelLeftClose className="h-4 w-4 shrink-0" />}
           </button>
 
-          <h1 className="truncate font-display text-base font-semibold">{currentLabel}</h1>
+          <h1 className="min-w-0 flex-1 truncate font-display text-base font-semibold">{currentLabel}</h1>
         </header>
         <main className="flex-1 overflow-y-auto px-4 py-5 md:px-6 md:py-8">{children}</main>
       </div>
