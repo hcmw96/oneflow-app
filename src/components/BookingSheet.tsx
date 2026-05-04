@@ -122,6 +122,7 @@ export function BookingSheet({ session, open, onOpenChange }: Props) {
         flow_points_used: usePoints ? Math.min(flowPoints, 100) : 0,
         mat_addon: matAddon,
         towel_addon: towelAddon,
+        qr_token: globalThis.crypto.randomUUID(),
       })
       .select()
       .single();

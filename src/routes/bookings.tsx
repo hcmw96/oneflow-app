@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
-import QRCode from "qrcode";
+import { QRCodeSVG } from "qrcode.react";
 import { Clock, MapPin, X } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
@@ -89,20 +89,22 @@ function BookingsPage() {
       return;
     }
 
-    const mapped: BookingListRow[] = (data as unknown as RawBooking[] | null)?.map((raw) => {
-      const cls = one(raw.classes);
-      return {
-        id: raw.id,
-        status: raw.status,
-        qrToken: raw.qr_token ?? null,
-        className: cls?.name ?? "Class",
-        classType: displayClassType(cls?.class_type),
-        location: cls?.location ?? "",
-        startsAt: new Date(cls?.starts_at ?? Date.now()),
-        guideFirst: guideFirstFromClass(cls),
-      };
-    }) ?? [];
+    const mapped: BookingListRow[] =
+      (data as unknown as RawBooking[] | null)?.map((raw) => {
+        const cls = one(raw.classes);
+        return {
+          id: raw.id,
+          status: raw.status,
+          qrToken: raw.qr_token ?? null,
+          className: cls?.name ?? "Class",
+          classType: displayClassType(cls?.class_type),
+          location: cls?.location ?? "",
+          startsAt: new Date(cls?.starts_at ?? Date.now()),
+          guideFirst: guideFirstFromClass(cls),
+        };
+      }) ?? [];
 
+    mapped.sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
     setRows(mapped);
     setLoading(false);
   }, []);
@@ -111,7 +113,9 @@ function BookingsPage() {
     void load();
   }, [load]);
 
-  const upcoming = rows.filter((r) => r.status === "confirmed");
+  const upcoming = rows.filter(
+    (r) => r.status === "confirmed" && r.startsAt.getTime() >= Date.now(),
+  );
   const past = rows.filter((r) => r.status === "attended");
 
   return (
@@ -154,7 +158,9 @@ function BookingsPage() {
                     <TypeBadge type={b.classType} />
                   </div>
                   <h3 className="truncate font-display text-lg font-semibold">{b.className}</h3>
-                  <div className="mt-1 text-xs text-muted-foreground">{formatDayLabel(b.startsAt)}</div>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    {formatDayLabel(b.startsAt)}
+                  </div>
                   <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
                     <span className="inline-flex min-w-0 max-w-full items-center gap-1">
                       <Clock className="h-3 w-3 shrink-0" aria-hidden /> {formatTime(b.startsAt)}
@@ -167,9 +173,18 @@ function BookingsPage() {
                   </div>
                   {b.qrToken && (
                     <div className="mt-4 flex flex-col items-center border-t border-border pt-4">
-                      <BookingQrImage value={b.qrToken} />
-                      <p className="mt-2 text-center text-xs font-medium text-muted-foreground">
-                        Show this at the desk
+                      <div className="flex min-h-[200px] min-w-[200px] items-center justify-center rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5">
+                        <QRCodeSVG
+                          value={b.qrToken}
+                          size={200}
+                          level="M"
+                          includeMargin
+                          title="Class check-in code"
+                          className="h-[200px] w-[200px] max-w-full"
+                        />
+                      </div>
+                      <p className="mt-3 max-w-[260px] text-center text-sm font-medium text-muted-foreground">
+                        Show this at the desk to check in
                       </p>
                     </div>
                   )}
@@ -187,56 +202,26 @@ function BookingsPage() {
             )}
             {tab === "past" &&
               past.map((b) => (
-                <article key={b.id} className="rounded-2xl border border-border bg-card p-4 opacity-90">
+                <article
+                  key={b.id}
+                  className="rounded-2xl border border-border bg-card p-4 opacity-90"
+                >
                   <div className="mb-1 flex items-center gap-2">
                     <TypeBadge type={b.classType} />
-                    <span className="text-[10px] uppercase tracking-wide text-success">Attended</span>
+                    <span className="text-[10px] uppercase tracking-wide text-success">
+                      Attended
+                    </span>
                   </div>
                   <h3 className="truncate font-display text-lg font-semibold">{b.className}</h3>
-                  <div className="mt-1 text-xs text-muted-foreground">{formatDayLabel(b.startsAt)}</div>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    {formatDayLabel(b.startsAt)}
+                  </div>
                 </article>
               ))}
           </>
         )}
       </main>
     </AppShell>
-  );
-}
-
-function BookingQrImage({ value }: { value: string }) {
-  const [dataUrl, setDataUrl] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    void QRCode.toDataURL(value, { width: 192, margin: 2 })
-      .then((url) => {
-        if (!cancelled) setDataUrl(url);
-      })
-      .catch(() => {
-        if (!cancelled) setDataUrl(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [value]);
-
-  if (!dataUrl) {
-    return (
-      <div
-        className="h-48 w-48 animate-pulse rounded-lg bg-muted"
-        aria-hidden
-      />
-    );
-  }
-
-  return (
-    <img
-      src={dataUrl}
-      alt=""
-      width={192}
-      height={192}
-      className="rounded-lg border border-border bg-white p-1"
-    />
   );
 }
 

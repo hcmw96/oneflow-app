@@ -21,7 +21,7 @@ export function QRScanner({ onScan, onError }: QRScannerProps) {
 
     scanner
       .start(
-        { facingMode: "user" },
+        { facingMode: "environment" },
         {
           fps: 10,
           qrbox: { width: 220, height: 220 },

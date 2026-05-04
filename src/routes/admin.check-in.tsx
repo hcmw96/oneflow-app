@@ -65,12 +65,12 @@ type RosterRow = {
 
 function oneProfile(p: BookingRow["profiles"]): ProfileJoin {
   if (!p) return null;
-  return Array.isArray(p) ? p[0] ?? null : p;
+  return Array.isArray(p) ? (p[0] ?? null) : p;
 }
 
 function oneClass(c: BookingRow["classes"]) {
   if (!c) return null;
-  return Array.isArray(c) ? c[0] ?? null : c;
+  return Array.isArray(c) ? (c[0] ?? null) : c;
 }
 
 function initials(name: string) {
@@ -180,9 +180,7 @@ function CheckInPage() {
     }
 
     const rows = (bookingsData ?? []) as unknown as BookingRow[];
-    const normalized = rows
-      .map(normalizeBooking)
-      .filter((r): r is RosterRow => r !== null);
+    const normalized = rows.map(normalizeBooking).filter((r): r is RosterRow => r !== null);
     setRoster(normalized);
     setLoading(false);
   }, []);
@@ -218,7 +216,19 @@ function CheckInPage() {
   const utilisation = totalCapacity ? Math.round((checkedInCount / totalCapacity) * 100) : 0;
 
   const updateBookingStatus = async (id: string, status: "attended" | "confirmed") => {
-    const { error } = await supabase.from("bookings").update({ status }).eq("id", id);
+    const patch =
+      status === "attended"
+        ? {
+            status,
+            checked_in: true,
+            checked_in_at: new Date().toISOString(),
+          }
+        : {
+            status,
+            checked_in: false,
+            checked_in_at: null as string | null,
+          };
+    const { error } = await supabase.from("bookings").update(patch).eq("id", id);
     if (error) {
       toast.error(error.message);
       return;
@@ -235,7 +245,7 @@ function CheckInPage() {
     if (qrDedupeTimerRef.current) clearTimeout(qrDedupeTimerRef.current);
     qrDedupeTimerRef.current = setTimeout(() => {
       qrDedupeRef.current = null;
-    }, 2500);
+    }, 3200);
 
     const { data: booking, error: findError } = await supabase
       .from("bookings")
@@ -243,6 +253,7 @@ function CheckInPage() {
         `
         id,
         status,
+        checked_in,
         profiles ( first_name, last_name )
       `,
       )
@@ -256,14 +267,15 @@ function CheckInPage() {
     }
 
     if (!booking?.id) {
-      toast.error("No booking matches this code");
+      toast.error("QR code not recognised", {
+        className: "border-destructive/30 bg-destructive/10 text-destructive",
+      });
       return;
     }
 
-    const prof = oneProfile(
-      booking.profiles as BookingRow["profiles"],
-    );
-    const name =
+    const prof = oneProfile(booking.profiles as BookingRow["profiles"]);
+    const firstName = prof?.first_name?.trim() || "Member";
+    const displayName =
       prof && `${prof.first_name} ${prof.last_name}`.trim()
         ? `${prof.first_name} ${prof.last_name}`.trim()
         : "Member";
@@ -273,9 +285,26 @@ function CheckInPage() {
       return;
     }
 
+    const alreadyCheckedIn =
+      booking.status === "attended" || !!(booking as { checked_in?: boolean | null }).checked_in;
+
+    if (alreadyCheckedIn) {
+      toast.warning(`${displayName} is already checked in`, {
+        duration: 4000,
+        className:
+          "border-amber-500/40 bg-amber-50 text-amber-950 dark:bg-amber-950/30 dark:text-amber-50",
+      });
+      return;
+    }
+
+    const checkedAt = new Date().toISOString();
     const { error: upError } = await supabase
       .from("bookings")
-      .update({ status: "attended", checked_in: true })
+      .update({
+        status: "attended",
+        checked_in: true,
+        checked_in_at: checkedAt,
+      })
       .eq("id", booking.id);
 
     if (upError) {
@@ -283,7 +312,11 @@ function CheckInPage() {
       return;
     }
 
-    toast.success(`${name} checked in`);
+    toast.success(`Welcome ${firstName}!`, {
+      duration: 3000,
+      className:
+        "!border-emerald-600/30 !bg-emerald-600 !px-6 !py-5 !text-lg !font-semibold !text-white !shadow-md",
+    });
     await loadData();
   };
 
@@ -401,7 +434,8 @@ function CheckInPage() {
                 <QRScanner onScan={(text: string) => void handleQrScan(text)} />
               </div>
               <p className="mt-3 text-xs text-muted-foreground">
-                Members scan their booking QR to check in. Camera uses the front-facing lens.
+                Members show their booking QR at the desk. The scanner uses the rear camera
+                (tablet).
               </p>
             </div>
 
@@ -564,11 +598,14 @@ function WalkInSheet({
       profileId = created.id as string;
     }
 
+    const checkedAt = new Date().toISOString();
     const { error: bookErr } = await supabase.from("bookings").insert({
       profile_id: profileId,
       class_id: classId,
       status: "attended",
       payment_method: "drop_in",
+      checked_in: true,
+      checked_in_at: checkedAt,
     });
     setSaving(false);
     if (bookErr) {
