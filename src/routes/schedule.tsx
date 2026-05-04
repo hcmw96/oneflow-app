@@ -21,11 +21,7 @@ type ClassRow = {
   capacity: number;
   booked_count: number;
   is_cancelled: boolean;
-  guides?: {
-    id: string;
-    photo_url: string | null;
-    profiles: { first_name: string; last_name: string };
-  } | null;
+  guide_name: string | null;
 };
 
 export default function SchedulePage() {
@@ -55,15 +51,13 @@ export default function SchedulePage() {
 
     const { data, error } = await supabase
       .from("classes")
-      .select("id, name, class_type, location, starts_at, ends_at, capacity, booked_count, is_cancelled")
+      .select(
+        "id, name, class_type, location, starts_at, ends_at, capacity, booked_count, is_cancelled, guide_name",
+      )
       .gte("starts_at", start.toISOString())
       .lte("starts_at", end.toISOString())
       .eq("is_cancelled", false)
       .order("starts_at");
-
-    console.log("raw data length:", data?.length, "first row:", data?.[0], "error:", error);
-
-    console.log("row count:", data?.length, error);
 
     const now = new Date();
     const isToday = isSameDay(day, now);
@@ -74,7 +68,6 @@ export default function SchedulePage() {
     });
 
     setClasses(visible as unknown as ClassRow[]);
-    console.log("classes loaded:", visible);
     setLoading(false);
   }, []);
 
@@ -224,10 +217,8 @@ function ScheduleRow({
   alreadyBooked: boolean;
   onReserve: () => void;
 }) {
-  const guide = session.guides;
-  const guideName = guide
-    ? `${guide.profiles.first_name} ${guide.profiles.last_name}`
-    : null;
+  const guideName = session.guide_name?.trim() || null;
+  const avatarLetter = (guideName?.charAt(0) || session.name.charAt(0) || "?").toUpperCase();
   const time = new Date(session.starts_at)
     .toLocaleTimeString("en-ZA", { hour: "numeric", minute: "2-digit", hour12: true })
     .toUpperCase();
@@ -242,31 +233,29 @@ function ScheduleRow({
       <div className="flex items-start gap-3">
         <div className="w-14 shrink-0 pt-1 text-xs font-semibold tabular-nums">{time}</div>
         <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted text-sm font-bold">
-          {guide?.photo_url ? (
-            <img
-              src={guide.photo_url}
-              alt={guideName ?? ""}
-              className="h-full w-full object-cover"
-            />
-          ) : (
-            <span>{session.name.charAt(0).toUpperCase()}</span>
-          )}
+          <span aria-hidden>{avatarLetter}</span>
         </div>
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <h3 className="font-display text-[15px] font-bold leading-tight">{session.name}</h3>
+          <div className="flex min-w-0 items-center gap-2">
+            <h3 className="min-w-0 flex-1 truncate font-display text-[15px] font-bold leading-tight">
+              {session.name}
+            </h3>
             {almostFull && !full && (
-              <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-semibold text-orange-700">
+              <span className="shrink-0 rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-semibold text-orange-700">
                 Almost Full
               </span>
             )}
           </div>
-          {guideName && <p className="mt-0.5 text-xs text-muted-foreground">{guideName}</p>}
-          <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
-            <MapPin className="h-3 w-3" /> {session.location}
+          {guideName && (
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">{guideName}</p>
+          )}
+          <p className="mt-1 flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
+            <MapPin className="h-3 w-3 shrink-0" aria-hidden />
+            <span className="min-w-0 truncate">{session.location}</span>
           </p>
-          <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
-            <Clock className="h-3 w-3" /> {durationMin} mins
+          <p className="mt-0.5 flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
+            <Clock className="h-3 w-3 shrink-0" aria-hidden />
+            <span className="min-w-0">{durationMin} mins</span>
           </p>
         </div>
         <button
@@ -274,7 +263,7 @@ function ScheduleRow({
           onClick={onReserve}
           disabled={alreadyBooked}
           className={cn(
-            "self-center rounded-lg px-4 py-2 text-sm font-semibold transition-opacity",
+            "shrink-0 self-center rounded-lg px-4 py-2 text-sm font-semibold transition-opacity",
             alreadyBooked
               ? "bg-muted text-muted-foreground"
               : full

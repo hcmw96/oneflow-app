@@ -34,6 +34,7 @@ type TodayClass = {
   starts_at: string;
   capacity: number;
   booked_count: number;
+  guide_name: string | null;
 };
 
 type ProfileJoin = { first_name: string; last_name: string } | null;
@@ -46,7 +47,10 @@ type BookingRow = {
   qr_token: string | null;
   payment_method: string | null;
   profiles: ProfileJoin | ProfileJoin[] | null;
-  classes: { id: string; name: string; starts_at: string } | { id: string; name: string; starts_at: string }[] | null;
+  classes:
+    | { id: string; name: string; starts_at: string; guide_name: string | null }
+    | { id: string; name: string; starts_at: string; guide_name: string | null }[]
+    | null;
 };
 
 type RosterRow = {
@@ -126,7 +130,7 @@ function CheckInPage() {
 
     const { data: classesData, error: classesError } = await supabase
       .from("classes")
-      .select("id, name, starts_at, capacity, booked_count")
+      .select("id, name, starts_at, capacity, booked_count, guide_name")
       .gte("starts_at", start.toISOString())
       .lte("starts_at", end.toISOString())
       .eq("is_cancelled", false)
@@ -162,7 +166,7 @@ function CheckInPage() {
         qr_token,
         payment_method,
         profiles ( first_name, last_name ),
-        classes ( id, name, starts_at )
+        classes ( id, name, starts_at, guide_name )
       `,
       )
       .in("class_id", classIds);
@@ -294,7 +298,7 @@ function CheckInPage() {
             onClick={() => setWalkInOpen(true)}
             className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground"
           >
-            <UserPlus className="h-4 w-4" />
+            <UserPlus className="h-4 w-4 shrink-0" aria-hidden />
             Walk-in
           </button>
         }
@@ -362,7 +366,7 @@ function CheckInPage() {
                           onClick={() => void updateBookingStatus(b.id, "confirmed")}
                           className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-full border border-border bg-background px-3 py-1.5 text-xs font-semibold hover:bg-muted sm:flex-none"
                         >
-                          <Undo2 className="h-3.5 w-3.5" /> Undo
+                          <Undo2 className="h-3.5 w-3.5 shrink-0" aria-hidden /> Undo
                         </button>
                       ) : isCancelled ? (
                         <span className="text-xs text-muted-foreground">—</span>
@@ -377,7 +381,7 @@ function CheckInPage() {
                               : "bg-primary text-primary-foreground hover:opacity-90",
                           )}
                         >
-                          <Check className="h-3.5 w-3.5" />
+                          <Check className="h-3.5 w-3.5 shrink-0" aria-hidden />
                           {isNoShow ? "Mark attended" : "Check in"}
                         </button>
                       )}
@@ -390,8 +394,8 @@ function CheckInPage() {
 
           <div className="space-y-4">
             <div className="rounded-2xl border border-border bg-card p-4 sm:p-5">
-              <div className="flex items-center gap-2 text-sm font-semibold">
-                <QrCode className="h-4 w-4 text-primary" /> Self check-in QR
+              <div className="flex min-w-0 items-center gap-2 text-sm font-semibold">
+                <QrCode className="h-4 w-4 shrink-0 text-primary" aria-hidden /> Self check-in QR
               </div>
               <div className="mt-4">
                 <QRScanner onScan={(text: string) => void handleQrScan(text)} />
@@ -455,7 +459,7 @@ function StatusPill({ status }: { status: BookingStatus }) {
   return (
     <span
       className={cn(
-        "rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+        "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
         map[status],
       )}
     >
@@ -646,7 +650,7 @@ function WalkInSheet({
               type="button"
               className="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm"
             >
-              <X className="h-4 w-4" /> Cancel
+              <X className="h-4 w-4 shrink-0" aria-hidden /> Cancel
             </button>
           </SheetClose>
           <button
@@ -655,7 +659,7 @@ function WalkInSheet({
             onClick={() => void submit()}
             className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50"
           >
-            <Check className="h-4 w-4" /> Check in
+            <Check className="h-4 w-4 shrink-0" aria-hidden /> Check in
           </button>
         </SheetFooter>
       </SheetContent>

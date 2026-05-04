@@ -26,9 +26,7 @@ function ClassesPage() {
     setLoading(true);
     const { data, error } = await supabase
       .from("classes")
-      .select(
-        "id, name, class_type, capacity, starts_at, ends_at, guides ( profiles ( first_name, last_name ) )",
-      )
+      .select("id, name, class_type, capacity, starts_at, ends_at, guide_name")
       .eq("is_cancelled", false)
       .order("starts_at", { ascending: false })
       .limit(80);
@@ -48,19 +46,9 @@ function ClassesPage() {
           1,
           Math.round((end.getTime() - start.getTime()) / 60000),
         );
-        const guides = raw.guides as
-          | {
-              profiles:
-                | { first_name: string; last_name: string }
-                | { first_name: string; last_name: string }[]
-                | null;
-            }
-          | null
-          | undefined;
-        const prof = guides?.profiles;
-        const p = Array.isArray(prof) ? prof[0] : prof;
+        const gn = raw.guide_name;
         const defaultGuide =
-          p && `${p.first_name} ${p.last_name}`.trim() ? `${p.first_name} ${p.last_name}`.trim() : "—";
+          typeof gn === "string" && gn.trim() ? gn.trim() : "—";
         return {
           id: String(raw.id),
           name: String(raw.name ?? ""),
@@ -89,7 +77,7 @@ function ClassesPage() {
             type="button"
             className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground"
           >
-            <Plus className="h-4 w-4" /> New class
+            <Plus className="h-4 w-4 shrink-0" aria-hidden /> New class
           </button>
         }
       />
@@ -112,7 +100,9 @@ function ClassesPage() {
             <tbody>
               {rows.map((c) => (
                 <tr key={c.id} className="border-t border-border">
-                  <td className="px-5 py-3 font-semibold">{c.name}</td>
+                  <td className="max-w-[200px] truncate px-5 py-3 font-semibold sm:max-w-xs md:max-w-md">
+                    {c.name}
+                  </td>
                   <td className="px-5 py-3">
                     <span className="inline-flex rounded-full bg-primary-soft px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
                       {displayClassType(c.class_type)}
@@ -120,7 +110,9 @@ function ClassesPage() {
                   </td>
                   <td className="px-5 py-3 text-muted-foreground">{c.durationMin} min</td>
                   <td className="px-5 py-3 text-muted-foreground">{c.capacity}</td>
-                  <td className="px-5 py-3 text-muted-foreground">{c.defaultGuide}</td>
+                  <td className="max-w-[180px] truncate px-5 py-3 text-muted-foreground sm:max-w-xs md:max-w-md">
+                    {c.defaultGuide}
+                  </td>
                   <td className="px-5 py-3 text-right">
                     <button
                       type="button"
