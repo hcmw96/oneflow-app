@@ -30,6 +30,32 @@ export interface AdminNavItem {
   icon: LucideIcon;
 }
 
+/** Routes guides may open (nav + deep-link guard in `admin.tsx`). */
+export const GUIDE_ALLOWED_ADMIN_ROUTES = [
+  "/admin/check-in",
+  "/admin/classes",
+  "/admin/scheduling",
+  "/admin/timesheets",
+] as const;
+
+export function isGuideRole(role: string | null | undefined) {
+  return (role ?? "").toLowerCase() === "guide";
+}
+
+export function isPathAllowedForGuide(pathname: string) {
+  return GUIDE_ALLOWED_ADMIN_ROUTES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+}
+
+export function navItemsForRole(role: string | null | undefined): AdminNavItem[] {
+  const r = (role ?? "").toLowerCase();
+  if (r === "director" || r === "management") return adminNavItems;
+  if (isGuideRole(role)) {
+    const allow = new Set(GUIDE_ALLOWED_ADMIN_ROUTES);
+    return adminNavItems.filter((i) => allow.has(i.to));
+  }
+  return adminNavItems;
+}
+
 export const adminNavItems: AdminNavItem[] = [
   { to: "/admin", label: "Dashboard", icon: LayoutGrid },
   { to: "/admin/check-in", label: "Check-In", icon: QrCode },
@@ -56,16 +82,19 @@ export const adminNavItems: AdminNavItem[] = [
 export function AdminNav({
   collapsed,
   onNavigate,
+  role,
 }: {
   collapsed: boolean;
   onNavigate?: () => void;
+  role?: string | null;
 }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const items = navItemsForRole(role);
 
   return (
     <nav className="flex-1 overflow-y-auto px-2 py-3">
       <ul className="space-y-0.5">
-        {adminNavItems.map((item) => {
+        {items.map((item) => {
           const active =
             item.to === "/admin"
               ? pathname === "/admin"

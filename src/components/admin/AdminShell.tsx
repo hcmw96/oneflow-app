@@ -1,16 +1,10 @@
 import { type ReactNode, useEffect, useState } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import { Home, LogOut, PanelLeftClose, PanelLeft, Menu } from "lucide-react";
-import { AdminNav, adminNavItems } from "./AdminNav";
+import { AdminNav, adminNavItems, navItemsForRole } from "./AdminNav";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import logo from "@/assets/oneflow-logo.webp";
 
 type AdminProfile = {
@@ -47,12 +41,19 @@ export function AdminShell({ children }: { children: ReactNode }) {
   }, []);
 
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const visibleNav = navItemsForRole(profile?.role);
   const currentLabel =
+    visibleNav.find(
+      (i) =>
+        (i.to === "/admin" && pathname === "/admin") ||
+        (i.to !== "/admin" && (pathname === i.to || pathname.startsWith(i.to + "/"))),
+    )?.label ??
     adminNavItems.find(
       (i) =>
         (i.to === "/admin" && pathname === "/admin") ||
         (i.to !== "/admin" && (pathname === i.to || pathname.startsWith(i.to + "/"))),
-    )?.label ?? "Admin";
+    )?.label ??
+    "Admin";
 
   const emailLine = profile?.email ?? "…";
   const roleLine = (profile?.role ?? "—").toString();
@@ -81,7 +82,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
           </Link>
         </div>
 
-        <AdminNav collapsed={collapsed} />
+        <AdminNav collapsed={collapsed} role={profile?.role} />
 
         <div className="mt-auto flex flex-col border-t border-sidebar-border">
           <button
@@ -153,7 +154,11 @@ export function AdminShell({ children }: { children: ReactNode }) {
                 </SheetTitle>
               </SheetHeader>
               <div className="flex h-[calc(100vh-65px)] flex-col">
-                <AdminNav collapsed={false} onNavigate={() => setMobileOpen(false)} />
+                <AdminNav
+                  collapsed={false}
+                  role={profile?.role}
+                  onNavigate={() => setMobileOpen(false)}
+                />
                 <div className="mt-auto flex flex-col border-t border-sidebar-border">
                   <button
                     type="button"
@@ -193,10 +198,16 @@ export function AdminShell({ children }: { children: ReactNode }) {
             onClick={() => setCollapsed((c) => !c)}
             className="hidden shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-muted md:inline-flex"
           >
-            {collapsed ? <PanelLeft className="h-4 w-4 shrink-0" /> : <PanelLeftClose className="h-4 w-4 shrink-0" />}
+            {collapsed ? (
+              <PanelLeft className="h-4 w-4 shrink-0" />
+            ) : (
+              <PanelLeftClose className="h-4 w-4 shrink-0" />
+            )}
           </button>
 
-          <h1 className="min-w-0 flex-1 truncate font-display text-base font-semibold">{currentLabel}</h1>
+          <h1 className="min-w-0 flex-1 truncate font-display text-base font-semibold">
+            {currentLabel}
+          </h1>
         </header>
         <main className="flex-1 overflow-y-auto px-4 py-5 md:px-6 md:py-8">{children}</main>
       </div>

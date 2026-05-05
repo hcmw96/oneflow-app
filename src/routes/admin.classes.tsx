@@ -15,7 +15,8 @@ type ClassTemplateRow = {
   class_type: string;
   durationMin: number;
   capacity: number;
-  defaultGuide: string;
+  /** From `classes.guide_name` */
+  guideName: string;
 };
 
 function ClassesPage() {
@@ -42,20 +43,16 @@ function ClassesPage() {
       (data as Record<string, unknown>[] | null)?.map((raw) => {
         const start = new Date(String(raw.starts_at));
         const end = new Date(String(raw.ends_at));
-        const durationMin = Math.max(
-          1,
-          Math.round((end.getTime() - start.getTime()) / 60000),
-        );
+        const durationMin = Math.max(1, Math.round((end.getTime() - start.getTime()) / 60000));
         const gn = raw.guide_name;
-        const defaultGuide =
-          typeof gn === "string" && gn.trim() ? gn.trim() : "—";
+        const guideName = typeof gn === "string" && gn.trim() ? gn.trim() : "—";
         return {
           id: String(raw.id),
           name: String(raw.name ?? ""),
           class_type: String(raw.class_type ?? ""),
           durationMin,
           capacity: Number(raw.capacity ?? 0),
-          defaultGuide,
+          guideName,
         };
       }) ?? [];
 
@@ -111,7 +108,7 @@ function ClassesPage() {
                   <td className="px-5 py-3 text-muted-foreground">{c.durationMin} min</td>
                   <td className="px-5 py-3 text-muted-foreground">{c.capacity}</td>
                   <td className="max-w-[180px] truncate px-5 py-3 text-muted-foreground sm:max-w-xs md:max-w-md">
-                    {c.defaultGuide}
+                    {c.guideName}
                   </td>
                   <td className="px-5 py-3 text-right">
                     <button

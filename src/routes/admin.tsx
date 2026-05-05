@@ -1,6 +1,7 @@
-import { createFileRoute, Outlet, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { AdminShell } from "@/components/admin/AdminShell";
+import { isGuideRole, isPathAllowedForGuide } from "@/components/admin/AdminNav";
 import { supabase } from "@/lib/supabase";
 
 export const Route = createFileRoute("/admin")({
@@ -15,12 +16,14 @@ export const Route = createFileRoute("/admin")({
 
 function isAdminRole(role: string | null | undefined) {
   const r = (role ?? "").toLowerCase();
-  return r === "director" || r === "management";
+  return r === "director" || r === "management" || r === "guide";
 }
 
 function AdminLayout() {
   const navigate = useNavigate();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
   const [gate, setGate] = useState<"loading" | "ok" | "denied">("loading");
+  const [profileRole, setProfileRole] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -39,7 +42,9 @@ function AdminLayout() {
         .eq("id", user.id)
         .maybeSingle();
       if (cancelled) return;
-      if (!isAdminRole(profile?.role)) {
+      const role = profile?.role ?? null;
+      setProfileRole(role);
+      if (!isAdminRole(role)) {
         setGate("denied");
         navigate({ to: "/" });
         return;
@@ -50,6 +55,13 @@ function AdminLayout() {
       cancelled = true;
     };
   }, [navigate]);
+
+  useEffect(() => {
+    if (gate !== "ok") return;
+    if (isGuideRole(profileRole) && !isPathAllowedForGuide(pathname)) {
+      navigate({ to: "/admin/check-in", replace: true });
+    }
+  }, [gate, profileRole, pathname, navigate]);
 
   if (gate === "loading") {
     return (

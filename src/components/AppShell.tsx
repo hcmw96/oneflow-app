@@ -14,10 +14,15 @@ export function AppShell({ children }: { children: ReactNode }) {
         data: { user },
       } = await supabase.auth.getUser();
       if (!user || cancelled) return;
-      const { data } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
+      const { data } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .maybeSingle();
       if (cancelled) return;
       const r = (data?.role as string | undefined) ?? null;
-      setShowAdminCta(r === "director" || r === "management");
+      const rl = (r ?? "").toLowerCase();
+      setShowAdminCta(rl === "director" || rl === "management" || rl === "guide");
     })();
     return () => {
       cancelled = true;
