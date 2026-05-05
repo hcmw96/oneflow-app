@@ -74,10 +74,22 @@ export default function AuthPage() {
     });
     setLoading(false);
     if (error) {
-      toast.error(error.message);
+      if (error.message === "Invalid login credentials") {
+        toast.error(
+          "Incorrect email or password. If you signed up with Google, use the Google button below.",
+        );
+      } else {
+        toast.error(error.message);
+      }
       return;
     }
-    navigate({ to: "/auth/callback" });
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (user) {
+      const dest = await resolveDestination(user.id);
+      navigate({ to: dest });
+    }
   };
 
   const handleSignUp = async () => {
@@ -297,7 +309,7 @@ export default function AuthPage() {
       <p className="mt-8 text-center text-xs text-muted-foreground">
         Need help?{" "}
         <a
-          href="https://wa.me/27825533033"
+          href="https://wa.me/27825533032"
           target="_blank"
           rel="noopener noreferrer"
           className="text-foreground underline-offset-4 hover:underline"
