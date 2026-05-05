@@ -29,7 +29,7 @@ function CustomersPage() {
     const { data: profiles, error: pErr } = await supabase
       .from("profiles")
       .select("id, first_name, last_name, email, phone, role")
-      .eq("role", "member");
+      .eq("role", "customer");
 
     if (pErr) {
       console.error(pErr);
