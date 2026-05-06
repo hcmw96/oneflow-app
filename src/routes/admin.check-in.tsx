@@ -21,10 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import {
-  deleteMayChallengeCheckInForBooking,
-  upsertMayChallengeCheckIn,
-} from "@/lib/mayChallengeCheckIn";
+import { deleteMayChallengeCheckInForBooking } from "@/lib/mayChallengeCheckIn";
 
 export const Route = createFileRoute("/admin/check-in")({
   component: CheckInPage,
@@ -244,10 +241,10 @@ function CheckInPage() {
     if (status === "attended") {
       const row = roster.find((r) => r.id === id);
       if (row?.profileId && row.classStartsAt) {
-        await upsertMayChallengeCheckIn({
-          profileId: row.profileId,
-          bookingId: id,
-          classStartsAtIso: row.classStartsAt,
+        await supabase.from("challenge_checkins").insert({
+          profile_id: row.profileId,
+          class_date: new Date(row.classStartsAt).toISOString().split("T")[0],
+          booking_id: id,
         });
       }
     } else {

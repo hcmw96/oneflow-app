@@ -1,7 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { type ComponentType, useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Check, Coffee, Sparkles, Sunrise, Waves, Lock, Loader2 } from "lucide-react";
-import { toast } from "sonner";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ArrowLeft, Check, Loader2 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import {
   Sheet,
@@ -24,13 +23,12 @@ export const Route = createFileRoute("/challenge")({
       {
         name: "description",
         content:
-          "Track your May challenge: earn a stamp for every day you check in to class during May 2026 and unlock a Completion Reward.",
+          "Track your May challenge: earn up to 2 stamps per day when you check in during May 2026.",
       },
       { property: "og:title", content: "31 Days of Movement — One Flow" },
       {
         property: "og:description",
-        content:
-          "Earn a stamp for each day you check in across May 2026. Complete all 31 days to unlock your reward.",
+        content: "Earn up to 2 stamps per day when you check in across May 2026.",
       },
     ],
   }),
@@ -142,8 +140,6 @@ function ChallengePage() {
   }, [checkins]);
 
   const stampedCount = stampedDays.size;
-  const complete = stampedCount >= TOTAL_DAYS;
-  const remaining = TOTAL_DAYS - stampedCount;
   const pct = Math.min(100, (stampedCount / TOTAL_DAYS) * 100);
 
   const today = new Date();
@@ -286,54 +282,8 @@ function ChallengePage() {
 
               <p className="mt-5 text-[11px] leading-relaxed text-muted-foreground">
                 Stamps appear when you&apos;re checked in at the desk during May 2026. One stamp per
-                calendar day.
+                calendar day (up to 2 per day).
               </p>
-            </section>
-
-            <section
-              className={cn(
-                "overflow-hidden rounded-3xl border p-5",
-                complete ? "border-primary bg-primary/10" : "border-border bg-card",
-              )}
-            >
-              <div className="flex items-center gap-2">
-                {complete ? (
-                  <Sparkles className="h-5 w-5 text-primary" />
-                ) : (
-                  <Lock className="h-5 w-5 text-muted-foreground" />
-                )}
-                <h2 className="font-display text-lg font-bold">Completion Reward</h2>
-              </div>
-
-              <p className="mt-1 text-sm text-muted-foreground">
-                {complete
-                  ? "You completed all 31 days — show this to the studio team to claim:"
-                  : `${remaining} ${remaining === 1 ? "day" : "days"} to go. Finish all 31 to unlock:`}
-              </p>
-
-              <ul className="mt-4 space-y-3">
-                <RewardRow icon={Sunrise} label="Specialized morning class" />
-                <RewardRow icon={Coffee} label="Complimentary protein shake or coffee" />
-                <RewardRow icon={Waves} label="Complimentary unguided Wellzone session" />
-              </ul>
-
-              <button
-                type="button"
-                disabled={!complete}
-                onClick={() =>
-                  toast.success("Reward unlocked", {
-                    description: "Show this screen to the studio team to claim your perks.",
-                  })
-                }
-                className={cn(
-                  "mt-5 w-full rounded-xl py-3 text-sm font-semibold transition-opacity",
-                  complete
-                    ? "bg-primary text-primary-foreground active:opacity-90"
-                    : "cursor-not-allowed bg-muted text-muted-foreground",
-                )}
-              >
-                {complete ? "Claim reward" : "Locked"}
-              </button>
             </section>
           </>
         )}
@@ -374,19 +324,4 @@ function ChallengePage() {
   );
 }
 
-function RewardRow({
-  icon: Icon,
-  label,
-}: {
-  icon: ComponentType<{ className?: string }>;
-  label: string;
-}) {
-  return (
-    <li className="flex items-center gap-3">
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary">
-        <Icon className="h-4 w-4" />
-      </div>
-      <span className="text-sm">{label}</span>
-    </li>
-  );
-}
+// Reward UI removed (May challenge no longer shows completion reward card).
