@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
+import { ensureProfileNamesFromOAuth } from "@/lib/oauthProfileNames";
 
 export const Route = createFileRoute("/auth/callback")({
   component: AuthCallback,
@@ -40,11 +41,29 @@ export default function AuthCallback() {
     const run = async () => {
       if (done.current) return;
 
+      const params = new URLSearchParams(window.location.search);
+      const code = params.get("code");
+      if (code) {
+        const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+        if (error || !data.session?.user) {
+          done.current = true;
+          navigate({ to: "/auth" });
+          return;
+        }
+        window.history.replaceState({}, "", "/auth/callback");
+        await ensureProfileNamesFromOAuth(data.session.user);
+        done.current = true;
+        const dest = await resolveDestination(data.session.user.id);
+        navigate({ to: dest });
+        return;
+      }
+
       const {
         data: { session },
       } = await supabase.auth.getSession();
 
       if (session?.user) {
+        await ensureProfileNamesFromOAuth(session.user);
         done.current = true;
         const dest = await resolveDestination(session.user.id);
         navigate({ to: dest });
