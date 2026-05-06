@@ -19,7 +19,7 @@ import {
 import { AppShell } from "@/components/AppShell";
 import { formatRand } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { supabase } from "@/lib/supabase";
+import { getUser, supabase } from "@/lib/supabase";
 
 async function signOut() {
   await supabase.auth.signOut();
@@ -62,9 +62,7 @@ function MePage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const user = await getUser();
     if (!user) {
       setProfile(null);
       setEmail("");

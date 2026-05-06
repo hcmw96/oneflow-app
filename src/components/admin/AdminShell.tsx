@@ -2,7 +2,7 @@ import { type ReactNode, useEffect, useState } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import { Home, LogOut, PanelLeftClose, PanelLeft, Menu } from "lucide-react";
 import { AdminNav, adminNavItems, navItemsForRole } from "./AdminNav";
-import { supabase } from "@/lib/supabase";
+import { getUser, supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import logo from "@/assets/oneflow-logo.webp";
@@ -20,9 +20,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      const user = await getUser();
       if (!user || cancelled) return;
       const { data } = await supabase
         .from("profiles")

@@ -1,8 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, MapPin, Clock } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { BookingSheet } from "@/components/BookingSheet";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useAuth } from "@/contexts/auth";
 import { supabase } from "@/lib/supabase";
 import { addDays, isSameDay, startOfDay } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -24,81 +26,96 @@ type ClassRow = {
   guide_name: string | null;
 };
 
+function scheduleDayKey(day: Date): string {
+  const x = new Date(day);
+  x.setHours(0, 0, 0, 0);
+  return x.toISOString();
+}
+
+function ScheduleRowsSkeleton() {
+  return (
+    <>
+      {Array.from({ length: 5 }).map((_, i) => (
+        <Skeleton key={i} className="h-28 w-full rounded-2xl" />
+      ))}
+    </>
+  );
+}
+
 export default function SchedulePage() {
+  const { user, authReady } = useAuth();
   const [selectedDay, setSelectedDay] = useState(() => startOfDay(new Date()));
   const [classes, setClasses] = useState<ClassRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [revalidating, setRevalidating] = useState(false);
   const [bookingFor, setBookingFor] = useState<ClassRow | null>(null);
-  const [userId, setUserId] = useState<string | null>(null);
   const [userBookings, setUserBookings] = useState<string[]>([]);
+  const classesCacheRef = useRef(new Map<string, ClassRow[]>());
 
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (!user) {
-        window.location.assign("/auth");
-        return;
-      }
-      setUserId(user.id);
-    });
-  }, []);
+  /**
+   * Stale-while-revalidate: show cached classes immediately for the day, refresh in background.
+   */
+  const loadDayData = useCallback(async (day: Date, uid: string) => {
+    const key = scheduleDayKey(day);
+    const cached = classesCacheRef.current.get(key);
+    if (cached !== undefined) {
+      setClasses(cached);
+      setLoading(false);
+      setRevalidating(true);
+    } else {
+      setLoading(true);
+    }
 
-  const loadClasses = useCallback(async (day: Date) => {
-    setLoading(true);
     const start = new Date(day);
     start.setHours(0, 0, 0, 0);
     const end = new Date(day);
     end.setHours(23, 59, 59, 999);
+    const isoStart = start.toISOString();
+    const isoEnd = end.toISOString();
 
-    const { data, error } = await supabase
-      .from("classes")
-      .select(
-        "id, name, class_type, location, starts_at, ends_at, capacity, booked_count, is_cancelled, guide_name",
-      )
-      .gte("starts_at", start.toISOString())
-      .lte("starts_at", end.toISOString())
-      .eq("is_cancelled", false)
-      .order("starts_at");
+    const [{ data, error }, bookingsRes] = await Promise.all([
+      supabase
+        .from("classes")
+        .select(
+          "id, name, class_type, location, starts_at, ends_at, capacity, booked_count, is_cancelled, guide_name",
+        )
+        .gte("starts_at", isoStart)
+        .lte("starts_at", isoEnd)
+        .eq("is_cancelled", false)
+        .order("starts_at"),
+      supabase
+        .from("bookings")
+        .select("class_id")
+        .eq("profile_id", uid)
+        .eq("status", "confirmed")
+        .gte("created_at", isoStart)
+        .lte("created_at", isoEnd),
+    ]);
+
+    if (error) {
+      console.error(error);
+    }
 
     const now = new Date();
     const isToday = isSameDay(day, now);
-    const visible = (data ?? []).filter((c) => {
+    const rows = data ?? [];
+    const visible = rows.filter((c) => {
       if (!isToday) return true;
       const classStart = new Date(c.starts_at);
       return classStart.getTime() > now.getTime() - 15 * 60 * 1000;
-    });
+    }) as unknown as ClassRow[];
 
-    setClasses(visible as unknown as ClassRow[]);
+    classesCacheRef.current.set(key, visible);
+    setClasses(visible);
+    setUserBookings((bookingsRes.data ?? []).map((b) => (b as { class_id: string }).class_id));
     setLoading(false);
+    setRevalidating(false);
   }, []);
 
-  const loadUserBookings = useCallback(
-    async (day: Date) => {
-      if (!userId) return;
-      const start = new Date(day);
-      start.setHours(0, 0, 0, 0);
-      const end = new Date(day);
-      end.setHours(23, 59, 59, 999);
-      const { data } = await supabase
-        .from("bookings")
-        .select("class_id")
-        .eq("profile_id", userId)
-        .eq("status", "confirmed")
-        .gte("created_at", start.toISOString())
-        .lte("created_at", end.toISOString());
-      setUserBookings((data ?? []).map((b) => b.class_id));
-    },
-    [userId],
-  );
-
   useEffect(() => {
-    if (!userId) return;
-    void loadClasses(selectedDay);
-  }, [userId, selectedDay, loadClasses]);
-
-  useEffect(() => {
-    if (!userId) return;
-    void loadUserBookings(selectedDay);
-  }, [userId, selectedDay, loadUserBookings]);
+    if (!authReady || !user?.id) return;
+    void loadDayData(selectedDay, user.id);
+  }, [authReady, user?.id, selectedDay, loadDayData]);
 
   const windowStart = useMemo(() => addDays(selectedDay, -2), [selectedDay]);
   const days = Array.from({ length: 7 }, (_, i) => addDays(windowStart, i));
@@ -111,6 +128,29 @@ export default function SchedulePage() {
     month: "long",
     day: "numeric",
   });
+
+  const uid = user?.id;
+
+  if (!authReady || !uid) {
+    return (
+      <AppShell>
+        <header className="safe-top px-5 pt-4 pb-2 text-center">
+          <h1 className="font-display text-[28px] font-extrabold leading-tight tracking-tight">
+            Explore the schedule
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">and book classes!</p>
+        </header>
+        <div className="px-5 pt-4">
+          <Skeleton className="mx-auto mb-2 h-4 w-32" />
+          <Skeleton className="h-14 w-full rounded-2xl" />
+        </div>
+        <main className="flex-1 space-y-3 px-5 pt-5">
+          <Skeleton className="h-7 w-52" />
+          <ScheduleRowsSkeleton />
+        </main>
+      </AppShell>
+    );
+  }
 
   return (
     <AppShell>
@@ -171,12 +211,15 @@ export default function SchedulePage() {
         </div>
       </div>
 
-      <main className="flex-1 space-y-3 px-5 pt-5">
+      <main
+        className={cn(
+          "flex-1 space-y-3 px-5 pt-5 transition-opacity",
+          revalidating && "opacity-80",
+        )}
+      >
         <h2 className="font-display text-lg font-bold">{longDayLabel}</h2>
         {loading ? (
-          <div className="flex justify-center py-10">
-            <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-          </div>
+          <ScheduleRowsSkeleton />
         ) : classes.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-border bg-card/50 p-8 text-center text-sm text-muted-foreground">
             No classes scheduled for this day.
@@ -199,8 +242,7 @@ export default function SchedulePage() {
         onOpenChange={(o) => {
           if (!o) {
             setBookingFor(null);
-            void loadClasses(selectedDay);
-            void loadUserBookings(selectedDay);
+            void loadDayData(selectedDay, uid);
           }
         }}
       />

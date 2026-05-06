@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { Outlet, Link, createRootRoute, HeadContent, useRouterState } from "@tanstack/react-router";
 import { Toaster } from "@/components/ui/sonner";
-import { supabase } from "@/lib/supabase";
+import { AuthProvider, useAuth } from "@/contexts/auth";
 
 function NotFoundComponent() {
   return (
@@ -31,11 +31,17 @@ export const Route = createRootRoute({
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "One Flow" },
-      { name: "description", content: "Book classes, track Flow Points, and manage your One Flow journey." },
+      {
+        name: "description",
+        content: "Book classes, track Flow Points, and manage your One Flow journey.",
+      },
       { name: "author", content: "One Flow" },
       { name: "theme-color", content: "#a3b693" },
       { property: "og:title", content: "One Flow" },
-      { property: "og:description", content: "Book classes, track Flow Points, and manage your One Flow journey." },
+      {
+        property: "og:description",
+        content: "Book classes, track Flow Points, and manage your One Flow journey.",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
     ],
@@ -48,20 +54,26 @@ function isAuthPublicPath(pathname: string) {
   return pathname === "/auth" || pathname === "/auth/callback";
 }
 
-function RootComponent() {
+function ProtectedOutlet() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const { user, authReady } = useAuth();
 
   useEffect(() => {
+    if (!authReady) return;
     if (isAuthPublicPath(pathname)) return;
-    void supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!session) window.location.assign("/auth");
-    });
-  }, [pathname]);
+    if (!user) window.location.assign("/auth");
+  }, [authReady, user, pathname]);
 
+  return <Outlet />;
+}
+
+function RootComponent() {
   return (
     <>
       <HeadContent />
-      <Outlet />
+      <AuthProvider>
+        <ProtectedOutlet />
+      </AuthProvider>
       <Toaster position="top-center" />
     </>
   );

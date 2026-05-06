@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { CalendarDays, Check, Loader2 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
-import { supabase } from "@/lib/supabase";
+import { getUser, supabase } from "@/lib/supabase";
 
 /** May challenge stamps are written on studio check-in (see upsertMayChallengeCheckIn), not here. */
 
@@ -48,9 +48,7 @@ function PaymentSuccessPage() {
       const profileId = params.get("profile_id");
       const checkoutId = params.get("checkoutId");
 
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      const user = await getUser();
       if (!user) {
         if (!cancelled) setState({ status: "guest" });
         return;
@@ -86,11 +84,16 @@ function PaymentSuccessPage() {
         return;
       }
 
-      const { data: product, error: productError } = await supabase
-        .from("products")
-        .select("id, name, category, allowed_class_types, credit_count, validity_days")
-        .eq("id", packId)
-        .maybeSingle();
+      const [{ data: product, error: productError }, { data: existingProfile }] = await Promise.all(
+        [
+          supabase
+            .from("products")
+            .select("id, name, category, allowed_class_types, credit_count, validity_days")
+            .eq("id", packId)
+            .maybeSingle(),
+          supabase.from("profiles").select("id").eq("id", profileId).maybeSingle(),
+        ],
+      );
 
       if (productError || !product) {
         console.error(productError);
@@ -105,16 +108,7 @@ function PaymentSuccessPage() {
       const isUnlimited = creditCount >= 999;
 
       // Ensure profile exists before inserting credits
-      const { data: existingProfile } = await supabase
-        .from("profiles")
-        .select("id")
-        .eq("id", profileId)
-        .maybeSingle();
-
       if (!existingProfile) {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
         await supabase.from("profiles").insert({
           id: profileId,
           email: user?.email ?? "",

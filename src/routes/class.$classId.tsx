@@ -6,7 +6,7 @@ import { AppShell } from "@/components/AppShell";
 import { TypeBadge } from "@/components/TypeBadge";
 import { formatTime, formatRand } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { supabase } from "@/lib/supabase";
+import { getUser, supabase } from "@/lib/supabase";
 import { displayClassType } from "@/types/studio";
 
 export const Route = createFileRoute("/class/$classId")({
@@ -53,25 +53,26 @@ function ClassDetailPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from("classes")
-      .select(
-        "id, name, class_type, location, starts_at, ends_at, capacity, booked_count, guides ( profiles ( first_name, last_name ) )",
-      )
-      .eq("id", classId)
-      .maybeSingle();
+    const [{ data, error }, user] = await Promise.all([
+      supabase
+        .from("classes")
+        .select(
+          "id, name, class_type, location, starts_at, ends_at, capacity, booked_count, guides ( profiles ( first_name, last_name ) )",
+        )
+        .eq("id", classId)
+        .maybeSingle(),
+      getUser(),
+    ]);
 
     if (error || !data) {
       setSession(null);
+      setPointsBalance(0);
       setLoading(false);
       return;
     }
 
     setSession(data as unknown as ClassDetail);
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
     if (user) {
       const { data: bal } = await supabase
         .from("flow_points_balance")

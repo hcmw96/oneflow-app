@@ -7,7 +7,7 @@ import { AppShell } from "@/components/AppShell";
 import { TypeBadge } from "@/components/TypeBadge";
 import { formatTime, formatDayLabel } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { supabase } from "@/lib/supabase";
+import { getUser, supabase } from "@/lib/supabase";
 import { displayClassType, type ClassType } from "@/types/studio";
 
 export const Route = createFileRoute("/bookings")({
@@ -62,9 +62,7 @@ function BookingsPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const user = await getUser();
     if (!user) {
       setRows([]);
       setLoading(false);

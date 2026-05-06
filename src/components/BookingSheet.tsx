@@ -8,7 +8,7 @@ import {
   SheetTitle,
   SheetDescription,
 } from "@/components/ui/sheet";
-import { supabase } from "@/lib/supabase";
+import { getUser, supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 
 interface ClassRow {
@@ -50,9 +50,7 @@ export function BookingSheet({ session, open, onOpenChange }: Props) {
   useEffect(() => {
     if (!open || !session) return;
     const load = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      const user = await getUser();
       if (!user) return;
       setUserId(user.id);
 

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Sparkles, Gift, Award, Zap } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { formatDayLabel } from "@/lib/format";
-import { supabase } from "@/lib/supabase";
+import { getUser, supabase } from "@/lib/supabase";
 
 export const Route = createFileRoute("/rewards")({
   component: RewardsPage,
@@ -27,9 +27,7 @@ function RewardsPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const user = await getUser();
     if (!user) {
       setBalance(0);
       setActivity([]);

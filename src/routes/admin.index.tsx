@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { CalendarDays, Percent, UserCheck, Users } from "lucide-react";
 import { PageHeader } from "@/components/admin/PageHeader";
 import { StatCard } from "@/components/admin/StatCard";
+import { Skeleton } from "@/components/ui/skeleton";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 
@@ -36,6 +37,28 @@ function guideLabel(guides: TodayClassRow["guides"]): string {
   return name || "—";
 }
 
+function AdminDashboardSkeleton() {
+  return (
+    <>
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={i} className="h-28 rounded-2xl" />
+        ))}
+      </div>
+      <div className="mt-8 overflow-hidden rounded-2xl border border-border bg-card">
+        <div className="border-b border-border px-5 py-4">
+          <Skeleton className="h-6 w-40" />
+        </div>
+        <div className="space-y-3 p-5">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-10 w-full" />
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
+
 function AdminDashboard() {
   const [classes, setClasses] = useState<TodayClassRow[]>([]);
   const [memberCount, setMemberCount] = useState<number | null>(null);
@@ -49,18 +72,19 @@ function AdminDashboard() {
     const end = new Date(day);
     end.setHours(23, 59, 59, 999);
 
-    const [{ data: classData, error: classError }, { count, error: countError }] = await Promise.all([
-      supabase
-        .from("classes")
-        .select(
-          "id, name, starts_at, booked_count, capacity, guides ( id, profiles ( first_name, last_name ) )",
-        )
-        .gte("starts_at", start.toISOString())
-        .lte("starts_at", end.toISOString())
-        .eq("is_cancelled", false)
-        .order("starts_at"),
-      supabase.from("profiles").select("id", { count: "exact", head: true }).eq("role", "member"),
-    ]);
+    const [{ data: classData, error: classError }, { count, error: countError }] =
+      await Promise.all([
+        supabase
+          .from("classes")
+          .select(
+            "id, name, starts_at, booked_count, capacity, guides ( id, profiles ( first_name, last_name ) )",
+          )
+          .gte("starts_at", start.toISOString())
+          .lte("starts_at", end.toISOString())
+          .eq("is_cancelled", false)
+          .order("starts_at"),
+        supabase.from("profiles").select("id", { count: "exact", head: true }).eq("role", "member"),
+      ]);
 
     if (classError) console.error("admin dashboard classes", classError);
     if (countError) console.error("admin dashboard member count", countError);
@@ -94,7 +118,7 @@ function AdminDashboard() {
       <PageHeader title="Dashboard" description={todayLabel} />
 
       {loading ? (
-        <div className="py-12 text-center text-sm text-muted-foreground">Loading dashboard…</div>
+        <AdminDashboardSkeleton />
       ) : (
         <>
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -145,7 +169,9 @@ function AdminDashboard() {
                   ) : (
                     classes.map((c) => {
                       const pct =
-                        c.capacity > 0 ? Math.min(100, Math.round((c.booked_count / c.capacity) * 100)) : 0;
+                        c.capacity > 0
+                          ? Math.min(100, Math.round((c.booked_count / c.capacity) * 100))
+                          : 0;
                       const time = new Date(c.starts_at)
                         .toLocaleTimeString("en-ZA", {
                           hour: "numeric",
@@ -155,9 +181,13 @@ function AdminDashboard() {
                         .toUpperCase();
                       return (
                         <tr key={c.id} className="border-t border-border">
-                          <td className="whitespace-nowrap px-5 py-3 font-medium tabular-nums">{time}</td>
+                          <td className="whitespace-nowrap px-5 py-3 font-medium tabular-nums">
+                            {time}
+                          </td>
                           <td className="px-5 py-3 font-medium">{c.name}</td>
-                          <td className="px-5 py-3 text-muted-foreground">{guideLabel(c.guides)}</td>
+                          <td className="px-5 py-3 text-muted-foreground">
+                            {guideLabel(c.guides)}
+                          </td>
                           <td className="whitespace-nowrap px-5 py-3 tabular-nums text-muted-foreground">
                             {c.booked_count} / {c.capacity}
                           </td>

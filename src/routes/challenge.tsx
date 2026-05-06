@@ -14,7 +14,7 @@ import type { ChallengeCheckIn, ChallengeType } from "@/types/studio";
 import { displayClassType } from "@/types/studio";
 import { cn } from "@/lib/utils";
 import challengeBg from "@/assets/challenge-bg.jpg";
-import { supabase } from "@/lib/supabase";
+import { getUser, supabase } from "@/lib/supabase";
 import { startOfDay } from "@/lib/format";
 
 export const Route = createFileRoute("/challenge")({
@@ -90,9 +90,7 @@ function ChallengePage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const user = await getUser();
     if (!user) {
       setSignedIn(false);
       setCheckins([]);

@@ -2,14 +2,33 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Sparkles } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
+import { Skeleton } from "@/components/ui/skeleton";
 import challengeBg from "@/assets/challenge-bg.jpg";
+import { useAuth } from "@/contexts/auth";
 import { supabase } from "@/lib/supabase";
 
 export const Route = createFileRoute("/")({
   component: HomePage,
 });
 
+function HomeSkeleton() {
+  return (
+    <main className="flex-1 space-y-5 px-5 pt-6">
+      <Skeleton className="mx-auto h-[52px] w-64 max-w-full" />
+      <Skeleton className="h-14 w-full rounded-xl" />
+      <Skeleton className="h-28 w-full rounded-2xl" />
+      <div className="grid grid-cols-2 gap-3">
+        <Skeleton className="h-44 rounded-2xl" />
+        <Skeleton className="h-44 rounded-2xl" />
+      </div>
+      <Skeleton className="h-24 w-full rounded-2xl" />
+      <Skeleton className="h-52 w-full rounded-2xl" />
+    </main>
+  );
+}
+
 function HomePage() {
+  const { user, authReady } = useAuth();
   const [loading, setLoading] = useState(true);
   const [firstName, setFirstName] = useState<string | null>(null);
   const [credits, setCredits] = useState(0);
@@ -23,6 +42,8 @@ function HomePage() {
   const remaining = Math.max(0, weeklyGoal - weeklyDone);
 
   useEffect(() => {
+    if (!authReady) return;
+
     let cancelled = false;
 
     async function load() {
@@ -32,9 +53,6 @@ function HomePage() {
       setPoints(0);
       setFirstName(null);
 
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
       if (!user || cancelled) {
         if (!cancelled) setLoading(false);
         return;
@@ -49,7 +67,10 @@ function HomePage() {
         { data: pointsRow },
       ] = await Promise.all([
         supabase.from("profiles").select("first_name").eq("id", uid).maybeSingle(),
-        supabase.from("user_credits").select("credits_remaining, is_unlimited").eq("profile_id", uid),
+        supabase
+          .from("user_credits")
+          .select("credits_remaining, is_unlimited")
+          .eq("profile_id", uid),
         supabase
           .from("bookings")
           .select("id", { count: "exact", head: true })
@@ -79,9 +100,17 @@ function HomePage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [authReady, user]);
 
-  const welcomeTitle = loading ? "Welcome!" : firstName ? `Welcome ${firstName}!` : "Welcome!";
+  if (!authReady || loading) {
+    return (
+      <AppShell>
+        <HomeSkeleton />
+      </AppShell>
+    );
+  }
+
+  const welcomeTitle = firstName ? `Welcome ${firstName}!` : "Welcome!";
 
   return (
     <AppShell>
@@ -97,15 +126,8 @@ function HomePage() {
           Book a Class
         </Link>
 
-        <Link
-          to="/challenge"
-          className="relative block overflow-hidden rounded-2xl"
-        >
-          <img
-            src={challengeBg}
-            alt=""
-            className="absolute inset-0 h-full w-full object-cover"
-          />
+        <Link to="/challenge" className="relative block overflow-hidden rounded-2xl">
+          <img src={challengeBg} alt="" className="absolute inset-0 h-full w-full object-cover" />
           <div className="absolute inset-0 bg-gradient-to-r from-black/80 via-black/55 to-black/25" />
           <div className="relative p-5">
             <span className="inline-block rounded-full bg-primary px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-primary-foreground">
@@ -128,7 +150,10 @@ function HomePage() {
                 Completed
               </p>
             </div>
-            <Link to="/goals" className="mt-4 text-xs text-muted-foreground underline-offset-2 hover:underline">
+            <Link
+              to="/goals"
+              className="mt-4 text-xs text-muted-foreground underline-offset-2 hover:underline"
+            >
               View Goals
             </Link>
           </div>
@@ -140,7 +165,9 @@ function HomePage() {
               <span className="text-sm font-semibold">Flow Points</span>
             </div>
             <p className="relative mt-3 font-display text-4xl font-bold leading-none">{points}</p>
-            <p className="relative mt-2 text-xs text-muted-foreground">Earn more by attending classes</p>
+            <p className="relative mt-2 text-xs text-muted-foreground">
+              Earn more by attending classes
+            </p>
             <Link
               to="/rewards"
               className="relative mt-4 block rounded-full border border-border bg-background px-4 py-2 text-center text-xs font-medium"

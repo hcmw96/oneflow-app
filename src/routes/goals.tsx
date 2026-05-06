@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { AppShell } from "@/components/AppShell";
-import { supabase } from "@/lib/supabase";
+import { getUser, supabase } from "@/lib/supabase";
 import { startOfWeek, addDays } from "@/lib/format";
 
 export const Route = createFileRoute("/goals")({
@@ -15,9 +15,7 @@ function GoalsPage() {
   const [streakWeeks, setStreakWeeks] = useState(0);
 
   const load = useCallback(async () => {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const user = await getUser();
     if (!user) {
       setThisWeekCount(0);
       setStreakWeeks(0);

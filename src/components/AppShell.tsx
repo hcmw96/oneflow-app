@@ -1,7 +1,7 @@
 import { type ReactNode, useEffect, useState } from "react";
 import { BottomNav } from "./BottomNav";
 import { WhatsAppFab } from "./WhatsAppFab";
-import { supabase } from "@/lib/supabase";
+import { getUser, supabase } from "@/lib/supabase";
 import logo from "@/assets/oneflow-logo.webp";
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -10,9 +10,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      const user = await getUser();
       if (!user || cancelled) return;
       const { data } = await supabase
         .from("profiles")
