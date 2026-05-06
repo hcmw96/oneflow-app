@@ -24,7 +24,8 @@ async function resolveDestination(userId: string) {
     .eq("id", userId)
     .maybeSingle();
   if (!profile?.phone || !profile?.date_of_birth) return "/onboarding";
-  if (profile.role && profile.role !== "customer") return "/admin";
+  const role = (profile.role ?? "").toLowerCase();
+  if (role === "director" || role === "management" || role === "guide") return "/admin";
   return "/";
 }
 

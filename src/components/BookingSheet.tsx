@@ -20,6 +20,7 @@ interface ClassRow {
   ends_at: string;
   capacity: number;
   booked_count: number;
+  guide_name?: string | null;
 }
 
 interface Credit {
@@ -46,6 +47,7 @@ export function BookingSheet({ session, open, onOpenChange }: Props) {
   const [towelAddon, setTowelAddon] = useState(false);
   const [loading, setLoading] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open || !session) return;
@@ -53,6 +55,7 @@ export function BookingSheet({ session, open, onOpenChange }: Props) {
       const user = await getUser();
       if (!user) return;
       setUserId(user.id);
+      setUserEmail(user.email ?? null);
 
       const [{ data: creditsData }, { data: pointsData }] = await Promise.all([
         supabase
@@ -143,6 +146,28 @@ export function BookingSheet({ session, open, onOpenChange }: Props) {
         profile_id: userId,
         booking_id: booking.id,
         challenge_month: "2026-05-01",
+      });
+    }
+
+    if (userEmail) {
+      await supabase.functions.invoke("send-email", {
+        body: {
+          to: userEmail,
+          template:
+            session.class_type === "sauna_journey"
+              ? "booking_confirmation_sauna"
+              : "booking_confirmation_class",
+          data: {
+            class_name: session.name,
+            starts_at: session.starts_at,
+            date: dateLine,
+            time: timeLine,
+            guide_name: session.guide_name ?? "Guide",
+            location: session.location,
+            mat_addon: matAddon,
+            towel_addon: towelAddon,
+          },
+        },
       });
     }
 

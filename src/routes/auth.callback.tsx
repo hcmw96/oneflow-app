@@ -23,18 +23,12 @@ async function loadProfileGate(userId: string) {
 }
 
 async function resolveDestination(userId: string): Promise<"/onboarding" | "/admin" | "/"> {
-  let profile = await loadProfileGate(userId);
+  const profile = await loadProfileGate(userId);
 
   if (!profile || !profile.phone || !profile.date_of_birth) return "/onboarding";
 
-  if (profile.role == null || profile.role === "customer") {
-    await new Promise((r) => setTimeout(r, 500));
-    const retry = await loadProfileGate(userId);
-    if (retry) profile = retry;
-  }
-
-  if (!profile.phone || !profile.date_of_birth) return "/onboarding";
-  if (profile.role && profile.role !== "customer") return "/admin";
+  const role = (profile.role ?? "").toLowerCase();
+  if (role === "director" || role === "management" || role === "guide") return "/admin";
   return "/";
 }
 

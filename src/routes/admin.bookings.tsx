@@ -9,10 +9,11 @@ import {
   Search,
   Undo2,
   UserPlus,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/admin/PageHeader";
-import { supabase } from "@/lib/supabase";
+import { getUser, supabase } from "@/lib/supabase";
 import { addDays, isSameDay, startOfDay } from "@/lib/format";
 import {
   Sheet,
@@ -30,10 +31,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import {
-  deleteMayChallengeCheckInForBooking,
-  upsertMayChallengeCheckIn,
-} from "@/lib/mayChallengeCheckIn";
+import { cancelBookingWithPolicy } from "@/lib/bookingCancellation";
+import { deleteMayChallengeCheckInForBooking } from "@/lib/mayChallengeCheckIn";
 
 export const Route = createFileRoute("/admin/bookings")({
   component: BookingsPage,
@@ -60,6 +59,8 @@ type BookingRowRaw = {
   profile_id: string | null;
   class_id: string;
   payment_method: string | null;
+  mat_addon: boolean | null;
+  towel_addon: boolean | null;
   profiles:
     | { first_name: string; last_name: string }
     | { first_name: string; last_name: string }[]
@@ -79,6 +80,8 @@ type AdminBookingRow = {
   status: BookingStatus;
   classStartsAtIso: string;
   creditLabel: string;
+  matAddon: boolean;
+  towelAddon: boolean;
 };
 
 function startOfCalendarWeekSunday(d: Date) {
@@ -126,6 +129,8 @@ function normalizeBooking(raw: BookingRowRaw): AdminBookingRow | null {
     status,
     classStartsAtIso: cls.starts_at,
     creditLabel: raw.payment_method?.replace(/_/g, " ") ?? "—",
+    matAddon: Boolean(raw.mat_addon),
+    towelAddon: Boolean(raw.towel_addon),
   };
 }
 
@@ -194,6 +199,7 @@ function stripLetter(dow: number) {
 }
 
 function BookingsPage() {
+  const [role, setRole] = useState<string | null>(null);
   const [viewWeekStart, setViewWeekStart] = useState(() => startOfCalendarWeekSunday(new Date()));
   const [selectedDay, setSelectedDay] = useState(() => startOfDay(new Date()));
   const [weekClasses, setWeekClasses] = useState<WeekClassRow[]>([]);
@@ -202,11 +208,28 @@ function BookingsPage() {
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [walkInOpen, setWalkInOpen] = useState(false);
+  const [removeTarget, setRemoveTarget] = useState<AdminBookingRow | null>(null);
+  const [waiveLateFee, setWaiveLateFee] = useState(false);
+  const [removing, setRemoving] = useState(false);
 
   const stripDays = useMemo(
     () => Array.from({ length: 7 }, (_, i) => addDays(viewWeekStart, i)),
     [viewWeekStart],
   );
+  const isGuide = (role ?? "").toLowerCase() === "guide";
+
+  useEffect(() => {
+    void (async () => {
+      const user = await getUser();
+      if (!user) return;
+      const { data } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .maybeSingle();
+      setRole((data?.role as string | null) ?? null);
+    })();
+  }, []);
 
   const loadWeek = useCallback(async () => {
     setLoading(true);
@@ -251,6 +274,8 @@ function BookingsPage() {
         profile_id,
         class_id,
         payment_method,
+        mat_addon,
+        towel_addon,
         profiles ( first_name, last_name ),
         classes ( id, name, starts_at, ends_at )
       `,
@@ -360,10 +385,10 @@ function BookingsPage() {
     if (status === "attended") {
       const row = bookings.find((r) => r.id === id);
       if (row?.profile_id && row.classStartsAtIso) {
-        await upsertMayChallengeCheckIn({
-          profileId: row.profile_id,
-          bookingId: id,
-          classStartsAtIso: row.classStartsAtIso,
+        await supabase.from("challenge_checkins").insert({
+          profile_id: row.profile_id,
+          class_date: new Date(row.classStartsAtIso).toISOString().split("T")[0],
+          booking_id: id,
         });
       }
     } else {
@@ -371,6 +396,30 @@ function BookingsPage() {
     }
     toast.success(status === "attended" ? "Checked in" : "Undone");
     await loadWeek();
+  };
+
+  const confirmRemoveBooking = async () => {
+    if (!removeTarget) return;
+    setRemoving(true);
+    try {
+      const res = await cancelBookingWithPolicy({
+        bookingId: removeTarget.id,
+        cancellationReason: "admin_cancelled",
+        waiveLateFee,
+      });
+      toast.success(
+        res.lateCancel && !res.waived
+          ? "Booking removed. Late cancellation fee pending."
+          : "Booking removed and credit returned.",
+      );
+      setRemoveTarget(null);
+      setWaiveLateFee(false);
+      await loadWeek();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not remove booking");
+    } finally {
+      setRemoving(false);
+    }
   };
 
   const isExpanded = (id: string) => expanded[id] !== false;
@@ -561,6 +610,20 @@ function BookingsPage() {
                                 <p className="truncate font-medium text-foreground">
                                   {b.memberShort}
                                 </p>
+                                {(b.matAddon || b.towelAddon) && (
+                                  <div className="mt-1 flex flex-wrap gap-1">
+                                    {b.matAddon && (
+                                      <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-semibold text-primary">
+                                        Mat
+                                      </span>
+                                    )}
+                                    {b.towelAddon && (
+                                      <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-semibold text-primary">
+                                        Towel
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
                               </div>
                               <span className={rosterStatusClass(b.status)}>
                                 {rosterStatusLabel(b.status)}
@@ -577,18 +640,32 @@ function BookingsPage() {
                                 ) : isCancelled ? (
                                   <span className="text-xs text-muted-foreground">—</span>
                                 ) : (
-                                  <button
-                                    type="button"
-                                    onClick={() => void updateBookingStatus(b.id, "attended")}
-                                    className={cn(
-                                      "inline-flex flex-1 items-center justify-center gap-1.5 rounded-full px-3 py-2 text-xs font-semibold text-white transition hover:opacity-90 sm:flex-none sm:py-1.5",
-                                      isNoShow && "opacity-90",
-                                    )}
-                                    style={{ backgroundColor: SAGE }}
-                                  >
-                                    <Check className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                                    Check in
-                                  </button>
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setRemoveTarget(b);
+                                        setWaiveLateFee(false);
+                                      }}
+                                      hidden={isGuide}
+                                      className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-full border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs font-semibold text-destructive transition hover:bg-destructive/20 sm:flex-none sm:py-1.5"
+                                    >
+                                      <X className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                                      Remove
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => void updateBookingStatus(b.id, "attended")}
+                                      className={cn(
+                                        "inline-flex flex-1 items-center justify-center gap-1.5 rounded-full px-3 py-2 text-xs font-semibold text-white transition hover:opacity-90 sm:flex-none sm:py-1.5",
+                                        isNoShow && "opacity-90",
+                                      )}
+                                      style={{ backgroundColor: SAGE }}
+                                    >
+                                      <Check className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                                      Check in
+                                    </button>
+                                  </>
                                 )}
                               </div>
                             </li>
@@ -610,6 +687,53 @@ function BookingsPage() {
         dayClasses={walkInSessions}
         onDone={() => void loadWeek()}
       />
+      <Sheet
+        open={removeTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setRemoveTarget(null);
+            setWaiveLateFee(false);
+          }
+        }}
+      >
+        <SheetContent side="right" className="w-full max-w-md">
+          <SheetHeader>
+            <SheetTitle>Remove booking</SheetTitle>
+          </SheetHeader>
+          <div className="mt-5 space-y-4">
+            <p className="text-sm text-muted-foreground">
+              This applies the booking cancellation policy and refunds credits. For late
+              cancellations (within 2 hours), fee pending is set unless waived.
+            </p>
+            <label className="flex items-center gap-2 rounded-lg border border-border px-3 py-2">
+              <input
+                type="checkbox"
+                checked={waiveLateFee}
+                onChange={(e) => setWaiveLateFee(e.target.checked)}
+              />
+              <span className="text-sm font-medium">Waive fee</span>
+            </label>
+          </div>
+          <SheetFooter className="mt-8">
+            <SheetClose asChild>
+              <button
+                type="button"
+                className="rounded-md border border-border px-4 py-2 text-sm font-medium"
+              >
+                Cancel
+              </button>
+            </SheetClose>
+            <button
+              type="button"
+              onClick={() => void confirmRemoveBooking()}
+              disabled={removing}
+              className="rounded-md bg-destructive px-4 py-2 text-sm font-semibold text-destructive-foreground disabled:opacity-60"
+            >
+              {removing ? "Removing..." : "Remove booking"}
+            </button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
@@ -721,10 +845,10 @@ function WalkInSheet({
       return;
     }
     if (newBooking?.id && profileId && session?.starts_at) {
-      await upsertMayChallengeCheckIn({
-        profileId,
-        bookingId: newBooking.id as string,
-        classStartsAtIso: session.starts_at,
+      await supabase.from("challenge_checkins").insert({
+        profile_id: profileId,
+        class_date: new Date(session.starts_at).toISOString().split("T")[0],
+        booking_id: newBooking.id as string,
       });
     }
     toast.success(`${displayName} checked in`);

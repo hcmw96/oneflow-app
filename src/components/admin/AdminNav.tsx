@@ -33,9 +33,9 @@ export interface AdminNavItem {
 /** Routes guides may open (nav + deep-link guard in `admin.tsx`). */
 export const GUIDE_ALLOWED_ADMIN_ROUTES = [
   "/admin/check-in",
+  "/admin/bookings",
   "/admin/classes",
   "/admin/scheduling",
-  "/admin/timesheets",
 ] as const;
 
 export function isGuideRole(role: string | null | undefined) {
@@ -51,7 +51,9 @@ export function navItemsForRole(role: string | null | undefined): AdminNavItem[]
   if (r === "director" || r === "management") return adminNavItems;
   if (isGuideRole(role)) {
     const allow = new Set(GUIDE_ALLOWED_ADMIN_ROUTES);
-    return adminNavItems.filter((i) => allow.has(i.to));
+    return adminNavItems
+      .filter((i) => allow.has(i.to))
+      .map((i) => (i.to === "/admin/scheduling" ? { ...i, label: "Schedule" } : i));
   }
   return adminNavItems;
 }

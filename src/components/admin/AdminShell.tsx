@@ -86,14 +86,14 @@ export function AdminShell({ children }: { children: ReactNode }) {
           <button
             type="button"
             onClick={() => window.location.assign("/")}
-            title={collapsed ? "View as Member" : undefined}
+            title={collapsed ? "My Customer View" : undefined}
             className={cn(
               "flex w-full items-center gap-2 text-xs font-semibold text-sidebar-foreground transition-colors hover:bg-sidebar-accent/50",
               collapsed ? "justify-center px-0 py-3" : "px-3 py-2.5 text-left",
             )}
           >
             <Home className="h-4 w-4 shrink-0" />
-            {!collapsed && <span>View as Member</span>}
+            {!collapsed && <span>My Customer View</span>}
           </button>
           <div
             className={cn(
@@ -167,7 +167,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
                     className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-semibold text-sidebar-foreground transition-colors hover:bg-sidebar-accent/50"
                   >
                     <Home className="h-4 w-4 shrink-0" />
-                    <span>View as Member</span>
+                    <span>My Customer View</span>
                   </button>
                   <div className="flex items-center gap-2 border-t border-sidebar-border px-3 py-3 text-xs">
                     <div className="min-w-0 flex-1">

@@ -46,6 +46,8 @@ type BookingRow = {
   profile_id: string;
   class_id: string;
   qr_token: string | null;
+  qr_used?: boolean | null;
+  checked_in?: boolean | null;
   payment_method: string | null;
   profiles: ProfileJoin | ProfileJoin[] | null;
   classes:
@@ -194,6 +196,19 @@ function CheckInPage() {
     void loadData();
   }, [loadData]);
 
+  useEffect(() => {
+    const channel = supabase
+      .channel("admin-checkin-bookings-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "bookings" }, () => {
+        void loadData();
+      })
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [loadData]);
+
   const sessions = useMemo(() => {
     return todayClasses.map((c) => {
       const forClass = roster.filter((b) => b.class_id === c.id);
@@ -232,6 +247,7 @@ function CheckInPage() {
             status,
             checked_in: false,
             checked_in_at: null as string | null,
+            qr_used: false,
           };
     const { error } = await supabase.from("bookings").update(patch).eq("id", id);
     if (error) {
@@ -272,11 +288,13 @@ function CheckInPage() {
         profile_id,
         status,
         checked_in,
+        qr_used,
         classes ( starts_at ),
         profiles ( first_name, last_name )
       `,
       )
       .eq("qr_token", token)
+      .eq("status", "confirmed")
       .maybeSingle();
 
     if (findError) {
@@ -286,7 +304,28 @@ function CheckInPage() {
     }
 
     if (!booking?.id) {
-      toast.error("QR code not recognised", {
+      const { data: existingBooking } = await supabase
+        .from("bookings")
+        .select("id, status, checked_in, qr_used")
+        .eq("qr_token", token)
+        .maybeSingle();
+
+      const alreadyUsed =
+        !!existingBooking &&
+        (existingBooking.qr_used === true ||
+          existingBooking.checked_in === true ||
+          existingBooking.status === "attended");
+
+      if (alreadyUsed) {
+        toast.warning("Already checked in", {
+          duration: 3500,
+          className:
+            "border-amber-500/40 bg-amber-50 text-amber-950 dark:bg-amber-950/30 dark:text-amber-50",
+        });
+        return;
+      }
+
+      toast.error("Invalid QR code", {
         className: "border-destructive/30 bg-destructive/10 text-destructive",
       });
       return;
@@ -294,28 +333,6 @@ function CheckInPage() {
 
     const prof = oneProfile(booking.profiles as BookingRow["profiles"]);
     const firstName = prof?.first_name?.trim() || "Member";
-    const displayName =
-      prof && `${prof.first_name} ${prof.last_name}`.trim()
-        ? `${prof.first_name} ${prof.last_name}`.trim()
-        : "Member";
-
-    if (booking.status === "cancelled") {
-      toast.error("This booking is cancelled");
-      return;
-    }
-
-    const alreadyCheckedIn =
-      booking.status === "attended" || !!(booking as { checked_in?: boolean | null }).checked_in;
-
-    if (alreadyCheckedIn) {
-      toast.warning(`${displayName} is already checked in`, {
-        duration: 4000,
-        className:
-          "border-amber-500/40 bg-amber-50 text-amber-950 dark:bg-amber-950/30 dark:text-amber-50",
-      });
-      return;
-    }
-
     const checkedAt = new Date().toISOString();
     const { error: upError } = await supabase
       .from("bookings")
@@ -323,6 +340,7 @@ function CheckInPage() {
         status: "attended",
         checked_in: true,
         checked_in_at: checkedAt,
+        qr_used: true,
       })
       .eq("id", booking.id);
 
@@ -334,10 +352,10 @@ function CheckInPage() {
     const cls = oneClass(booking.classes as BookingRow["classes"]);
     const startsAt = cls?.starts_at;
     if (booking.profile_id && startsAt) {
-      await upsertMayChallengeCheckIn({
-        profileId: booking.profile_id as string,
-        bookingId: booking.id as string,
-        classStartsAtIso: startsAt,
+      await supabase.from("challenge_checkins").insert({
+        profile_id: booking.profile_id as string,
+        class_date: new Date(startsAt).toISOString().split("T")[0],
+        booking_id: booking.id as string,
       });
     }
 
@@ -647,10 +665,10 @@ function WalkInSheet({
       return;
     }
     if (newBooking?.id && profileId && session?.starts_at) {
-      await upsertMayChallengeCheckIn({
-        profileId,
-        bookingId: newBooking.id as string,
-        classStartsAtIso: session.starts_at,
+      await supabase.from("challenge_checkins").insert({
+        profile_id: profileId,
+        class_date: new Date(session.starts_at).toISOString().split("T")[0],
+        booking_id: newBooking.id as string,
       });
     }
     toast.success(`${displayName} checked in`);

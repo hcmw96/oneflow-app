@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Html5Qrcode } from "html5-qrcode";
+import { RefreshCw } from "lucide-react";
 
 interface QRScannerProps {
   onScan: (decodedText: string) => void;
@@ -13,15 +14,17 @@ export function QRScanner({ onScan, onError }: QRScannerProps) {
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
   const [permissionDenied, setPermissionDenied] = useState(false);
+  const [cameraFacing, setCameraFacing] = useState<"environment" | "user">("environment");
   const containerId = "qr-scanner-container";
 
   useEffect(() => {
+    setPermissionDenied(false);
     const scanner = new Html5Qrcode(containerId);
     scannerRef.current = scanner;
 
     scanner
       .start(
-        { facingMode: "environment" },
+        { facingMode: cameraFacing },
         {
           fps: 10,
           qrbox: { width: 220, height: 220 },
@@ -49,7 +52,7 @@ export function QRScanner({ onScan, onError }: QRScannerProps) {
       }
       scannerRef.current = null;
     };
-  }, []);
+  }, [cameraFacing]);
 
   if (permissionDenied) {
     return (
@@ -70,6 +73,14 @@ export function QRScanner({ onScan, onError }: QRScannerProps) {
           <span className="absolute bottom-0 right-0 h-8 w-8 rounded-br border-b-4 border-r-4 border-primary" />
         </div>
       </div>
+      <button
+        type="button"
+        onClick={() => setCameraFacing((prev) => (prev === "environment" ? "user" : "environment"))}
+        className="absolute bottom-3 right-3 inline-flex items-center gap-1 rounded-full bg-black/70 px-3 py-1.5 text-xs font-semibold text-white"
+      >
+        <RefreshCw className="h-3.5 w-3.5" />
+        {cameraFacing === "environment" ? "Use front" : "Use back"}
+      </button>
     </div>
   );
 }

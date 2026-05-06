@@ -3,19 +3,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { CalendarPlus, ChevronLeft, ChevronRight, Loader2, MapPin, Users } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/admin/PageHeader";
-import { supabase } from "@/lib/supabase";
+import { getUser, supabase } from "@/lib/supabase";
 import { addDays, formatDayLabel, formatTime, startOfDay, startOfWeek } from "@/lib/format";
 import { displayClassType } from "@/types/studio";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import {
-  Sheet,
-  SheetContent,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import {
   Select,
   SelectContent,
@@ -123,6 +117,7 @@ function weekLabel(weekStart: Date) {
 }
 
 function SchedulingPage() {
+  const [role, setRole] = useState<string | null>(null);
   const [weekAnchor, setWeekAnchor] = useState(() => startOfWeek(new Date()));
   const [rows, setRows] = useState<ClassRow[]>([]);
   const [guideOptions, setGuideOptions] = useState<string[]>([]);
@@ -144,6 +139,21 @@ function SchedulingPage() {
 
   const weekStart = useMemo(() => startOfWeek(weekAnchor), [weekAnchor]);
   const weekEnd = useMemo(() => endOfWeekInclusive(weekStart), [weekStart]);
+  const isGuide = (role ?? "").toLowerCase() === "guide";
+  const canManage = !isGuide;
+
+  useEffect(() => {
+    void (async () => {
+      const user = await getUser();
+      if (!user) return;
+      const { data } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .maybeSingle();
+      setRole((data?.role as string | null) ?? null);
+    })();
+  }, []);
 
   const loadGuideOptions = useCallback(async () => {
     const { data, error } = await supabase.from("classes").select("guide_name").limit(500);
@@ -201,6 +211,7 @@ function SchedulingPage() {
   }, [rows, weekStart]);
 
   const openAdd = () => {
+    if (!canManage) return;
     setEditingId(null);
     setName("");
     setClassType("yoga");
@@ -255,6 +266,10 @@ function SchedulingPage() {
   };
 
   const saveClass = async () => {
+    if (!canManage) {
+      toast.error("Management only");
+      return;
+    }
     if (!validateForm()) return;
     setSaving(true);
     const start = combineDateTimeLocal(dateStr, startTime);
@@ -315,8 +330,15 @@ function SchedulingPage() {
   };
 
   const confirmCancel = async () => {
+    if (!canManage) {
+      toast.error("Management only");
+      return;
+    }
     if (!cancelTarget) return;
-    const { error } = await supabase.from("classes").update({ is_cancelled: true }).eq("id", cancelTarget.id);
+    const { error } = await supabase
+      .from("classes")
+      .update({ is_cancelled: true })
+      .eq("id", cancelTarget.id);
     if (error) {
       toast.error(error.message);
       return;
@@ -330,16 +352,25 @@ function SchedulingPage() {
     <div className="min-w-0">
       <PageHeader
         title="Scheduling"
-        description="Add, edit, or cancel classes for the week."
+        description={
+          canManage
+            ? "Add, edit, or cancel classes for the week."
+            : "View-only schedule. Management only."
+        }
         actions={
-          <Button
-            type="button"
-            onClick={openAdd}
-            className={cn("shrink-0 gap-2 bg-[#a3b693] text-white hover:bg-[#8fa67d]", SAGE_BORDER)}
-          >
-            <CalendarPlus className="h-4 w-4 shrink-0" aria-hidden />
-            Add class
-          </Button>
+          canManage ? (
+            <Button
+              type="button"
+              onClick={openAdd}
+              className={cn(
+                "shrink-0 gap-2 bg-[#a3b693] text-white hover:bg-[#8fa67d]",
+                SAGE_BORDER,
+              )}
+            >
+              <CalendarPlus className="h-4 w-4 shrink-0" aria-hidden />
+              Add class
+            </Button>
+          ) : null
         }
       />
 
@@ -403,7 +434,7 @@ function SchedulingPage() {
                         <li key={c.id}>
                           <button
                             type="button"
-                            onClick={() => openEdit(c)}
+                            onClick={() => canManage && openEdit(c)}
                             disabled={c.is_cancelled}
                             className={cn(
                               "w-full rounded-xl border bg-card p-3 text-left text-sm shadow-sm transition-colors",
@@ -442,20 +473,21 @@ function SchedulingPage() {
                                   </span>
                                 </p>
                               </div>
-                              {!c.is_cancelled && (
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  size="sm"
-                                  className="shrink-0 border-destructive/40 text-destructive hover:bg-destructive/10"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setCancelTarget(c);
-                                  }}
-                                >
-                                  Cancel
-                                </Button>
-                              )}
+                              {!c.is_cancelled &&
+                                (canManage ? (
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="shrink-0 border-destructive/40 text-destructive hover:bg-destructive/10"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setCancelTarget(c);
+                                    }}
+                                  >
+                                    Cancel
+                                  </Button>
+                                ) : null)}
                             </div>
                           </button>
                         </li>
@@ -470,7 +502,10 @@ function SchedulingPage() {
       )}
 
       <Sheet open={sheetOpen} onOpenChange={(o) => !o && closeSheet()}>
-        <SheetContent side="bottom" className="max-h-[92dvh] overflow-y-auto rounded-t-3xl border-t border-[#c5d4b8]/80">
+        <SheetContent
+          side="bottom"
+          className="max-h-[92dvh] overflow-y-auto rounded-t-3xl border-t border-[#c5d4b8]/80"
+        >
           <SheetHeader>
             <SheetTitle className="font-display text-xl">
               {editingId ? "Edit class" : "Add class"}
@@ -478,6 +513,11 @@ function SchedulingPage() {
           </SheetHeader>
 
           <div className="mt-4 space-y-4 px-1 pb-6">
+            {!canManage && (
+              <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                Management only
+              </div>
+            )}
             <div>
               <Label htmlFor="sched-name">Class name</Label>
               <input
@@ -486,6 +526,7 @@ function SchedulingPage() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Type or pick a preset"
+                disabled={!canManage}
                 className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-[#a3b693]"
               />
               <datalist id="class-name-presets">
@@ -497,7 +538,7 @@ function SchedulingPage() {
 
             <div>
               <Label>Class type</Label>
-              <Select value={classType} onValueChange={setClassType}>
+              <Select value={classType} onValueChange={setClassType} disabled={!canManage}>
                 <SelectTrigger className="mt-1.5">
                   <SelectValue />
                 </SelectTrigger>
@@ -513,7 +554,7 @@ function SchedulingPage() {
 
             <div>
               <Label>Location</Label>
-              <Select value={location} onValueChange={setLocation}>
+              <Select value={location} onValueChange={setLocation} disabled={!canManage}>
                 <SelectTrigger className="mt-1.5">
                   <SelectValue />
                 </SelectTrigger>
@@ -535,6 +576,7 @@ function SchedulingPage() {
                 value={guideName}
                 onChange={(e) => setGuideName(e.target.value)}
                 placeholder="Guide on duty"
+                disabled={!canManage}
                 className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-[#a3b693]"
               />
               <datalist id="guide-name-options">
@@ -552,6 +594,7 @@ function SchedulingPage() {
                   type="date"
                   value={dateStr}
                   onChange={(e) => setDateStr(e.target.value)}
+                  disabled={!canManage}
                   className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-[#a3b693]"
                 />
               </div>
@@ -562,6 +605,7 @@ function SchedulingPage() {
                   type="time"
                   value={startTime}
                   onChange={(e) => setStartTime(e.target.value)}
+                  disabled={!canManage}
                   className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-[#a3b693]"
                 />
               </div>
@@ -572,6 +616,7 @@ function SchedulingPage() {
                   type="time"
                   value={endTime}
                   onChange={(e) => setEndTime(e.target.value)}
+                  disabled={!canManage}
                   className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-[#a3b693]"
                 />
               </div>
@@ -585,6 +630,7 @@ function SchedulingPage() {
                 min={1}
                 value={capacity}
                 onChange={(e) => setCapacity(e.target.value)}
+                disabled={!canManage}
                 className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-[#a3b693]"
               />
             </div>
@@ -594,7 +640,7 @@ function SchedulingPage() {
               <Select
                 value={recurring}
                 onValueChange={(v) => setRecurring(v as RecurringOption)}
-                disabled={!!editingId}
+                disabled={!!editingId || !canManage}
               >
                 <SelectTrigger className="mt-1.5">
                   <SelectValue />
@@ -605,7 +651,9 @@ function SchedulingPage() {
                 </SelectContent>
               </Select>
               {editingId && (
-                <p className="mt-1 text-xs text-muted-foreground">Recurring applies only when creating new classes.</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Recurring applies only when creating new classes.
+                </p>
               )}
             </div>
           </div>
@@ -616,11 +664,17 @@ function SchedulingPage() {
             </Button>
             <Button
               type="button"
-              disabled={saving}
+              disabled={saving || !canManage}
               onClick={() => void saveClass()}
               className="bg-[#a3b693] text-white hover:bg-[#8fa67d]"
             >
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : editingId ? "Save changes" : "Create"}
+              {saving ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : editingId ? (
+                "Save changes"
+              ) : (
+                "Create"
+              )}
             </Button>
           </SheetFooter>
         </SheetContent>

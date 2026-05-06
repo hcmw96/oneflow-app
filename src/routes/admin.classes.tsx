@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { Plus, MoreHorizontal } from "lucide-react";
 import { PageHeader } from "@/components/admin/PageHeader";
-import { supabase } from "@/lib/supabase";
+import { getUser, supabase } from "@/lib/supabase";
 import { displayClassType } from "@/types/studio";
 
 export const Route = createFileRoute("/admin/classes")({
@@ -20,8 +20,23 @@ type ClassTemplateRow = {
 };
 
 function ClassesPage() {
+  const [role, setRole] = useState<string | null>(null);
   const [rows, setRows] = useState<ClassTemplateRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const isGuide = (role ?? "").toLowerCase() === "guide";
+
+  useEffect(() => {
+    void (async () => {
+      const user = await getUser();
+      if (!user) return;
+      const { data } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .maybeSingle();
+      setRole((data?.role as string | null) ?? null);
+    })();
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -68,14 +83,18 @@ function ClassesPage() {
     <div>
       <PageHeader
         title="Classes"
-        description="Upcoming scheduled classes"
+        description={
+          isGuide ? "Upcoming scheduled classes (view only)" : "Upcoming scheduled classes"
+        }
         actions={
-          <button
-            type="button"
-            className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground"
-          >
-            <Plus className="h-4 w-4 shrink-0" aria-hidden /> New class
-          </button>
+          !isGuide ? (
+            <button
+              type="button"
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground"
+            >
+              <Plus className="h-4 w-4 shrink-0" aria-hidden /> New class
+            </button>
+          ) : null
         }
       />
 
@@ -91,7 +110,7 @@ function ClassesPage() {
                 <th className="px-5 py-3 font-medium">Duration</th>
                 <th className="px-5 py-3 font-medium">Capacity</th>
                 <th className="px-5 py-3 font-medium">Guide</th>
-                <th className="px-5 py-3" />
+                {!isGuide && <th className="px-5 py-3" />}
               </tr>
             </thead>
             <tbody>
@@ -110,14 +129,16 @@ function ClassesPage() {
                   <td className="max-w-[180px] truncate px-5 py-3 text-muted-foreground sm:max-w-xs md:max-w-md">
                     {c.guideName}
                   </td>
-                  <td className="px-5 py-3 text-right">
-                    <button
-                      type="button"
-                      className="rounded-md p-1.5 text-muted-foreground hover:bg-muted"
-                    >
-                      <MoreHorizontal className="h-4 w-4" />
-                    </button>
-                  </td>
+                  {!isGuide && (
+                    <td className="px-5 py-3 text-right">
+                      <button
+                        type="button"
+                        className="rounded-md p-1.5 text-muted-foreground hover:bg-muted"
+                      >
+                        <MoreHorizontal className="h-4 w-4" />
+                      </button>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>

@@ -1,0 +1,222 @@
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+
+type TemplateName =
+  | "booking_confirmation_class"
+  | "booking_confirmation_sauna"
+  | "booking_cancellation"
+  | "late_cancellation";
+
+type RequestPayload = {
+  to: string;
+  template: TemplateName;
+  data?: Record<string, unknown>;
+};
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
+const LOGO_URL =
+  "https://ubseyvrnravzwiqfxacz.supabase.co/storage/v1/object/public/assets/oneflow-logo.png";
+
+function esc(value: unknown): string {
+  const s = String(value ?? "");
+  return s
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function detailRow(label: string, value: unknown): string {
+  return `<p style="font-size:14px;color:#555;padding:4px 0;margin:0;"><span style="font-weight:600;color:#2d2d2d;">${esc(label)}:</span> ${esc(value)}</p>`;
+}
+
+function addonPill(text: string): string {
+  return `<span style="display:inline-block;background:#a3b693;color:#fff;border-radius:20px;padding:4px 12px;font-size:12px;margin:4px 4px 0 0;">${esc(text)}</span>`;
+}
+
+function formatDateTime(value: unknown): { date: string; time: string } {
+  const raw = String(value ?? "");
+  const dt = raw ? new Date(raw) : new Date();
+  return {
+    date: dt.toLocaleDateString("en-ZA", { weekday: "short", day: "numeric", month: "long" }),
+    time: dt
+      .toLocaleTimeString("en-ZA", { hour: "numeric", minute: "2-digit", hour12: true })
+      .toUpperCase(),
+  };
+}
+
+function buildTemplate(template: TemplateName, data: Record<string, unknown> = {}) {
+  const className = String(data.class_name ?? "Class");
+  const guideName = String(data.guide_name ?? "Guide");
+  const location = String(data.location ?? "One Flow Studio");
+  const dt = formatDateTime(data.starts_at ?? data.date_time);
+  const date = String(data.date ?? dt.date);
+  const time = String(data.time ?? dt.time);
+  const matAddon = Boolean(data.mat_addon);
+  const towelAddon = Boolean(data.towel_addon);
+
+  if (template === "booking_confirmation_sauna") {
+    const addons = [towelAddon ? addonPill("🟢 Towel rental booked") : ""].join("");
+    return {
+      subject: "Booking Confirmed — Sauna Journey",
+      content: `
+        <h2 style="font-size:22px;font-weight:600;color:#a3b693;margin:0 0 16px;">Booking Confirmed</h2>
+        <p style="font-size:15px;line-height:1.6;color:#444;margin:0 0 12px;">Your Sauna Journey on ${esc(date)} at ${esc(time)} is confirmed.</p>
+        <div style="background:#f5f5f0;border-radius:8px;padding:16px 20px;margin:16px 0;">
+          ${detailRow("Date", date)}
+          ${detailRow("Time", time)}
+        </div>
+        <p style="font-size:15px;line-height:1.6;color:#444;margin:0 0 12px;">What to bring: shower towel only. No workout clothes needed.</p>
+        ${addons ? `<div style="margin:8px 0 0;">${addons}</div>` : ""}
+        <p style="font-size:14px;color:#888;margin:24px 0 0;">See you soon — One Flow Team</p>
+      `,
+    };
+  }
+
+  if (template === "booking_cancellation") {
+    return {
+      subject: `Booking Cancelled — ${className}`,
+      content: `
+        <h2 style="font-size:22px;font-weight:600;color:#a3b693;margin:0 0 16px;">Booking Cancelled</h2>
+        <p style="font-size:15px;line-height:1.6;color:#444;margin:0 0 12px;">Your booking for ${esc(className)} on ${esc(date)} at ${esc(time)} has been cancelled. Your credit has been returned to your account.</p>
+        <p style="font-size:14px;color:#888;margin:24px 0 0;">One Flow Team</p>
+      `,
+    };
+  }
+
+  if (template === "late_cancellation") {
+    return {
+      subject: `Late Cancellation — ${className}`,
+      content: `
+        <h2 style="font-size:22px;font-weight:600;color:#a3b693;margin:0 0 16px;">Late Cancellation</h2>
+        <p style="font-size:15px;line-height:1.6;color:#444;margin:0 0 12px;">Your booking for ${esc(className)} on ${esc(date)} at ${esc(time)} has been cancelled. Your credit has been returned, however a R100 late cancellation fee will be charged on your next transaction.</p>
+        <div style="background:#fff8f0;border-left:3px solid #e8923a;padding:12px 16px;border-radius:0 8px 8px 0;font-size:14px;color:#c17a30;margin:16px 0;">Late cancellation fee pending: R100</div>
+        <p style="font-size:14px;color:#888;margin:24px 0 0;">One Flow Team</p>
+      `,
+    };
+  }
+
+  const addons = [
+    matAddon ? addonPill("🟢 Mat rental booked") : "",
+    towelAddon ? addonPill("🟢 Towel rental booked") : "",
+  ].join("");
+  return {
+    subject: `Booking Confirmed — ${className}`,
+    content: `
+      <h2 style="font-size:22px;font-weight:600;color:#a3b693;margin:0 0 16px;">Booking Confirmed</h2>
+      <p style="font-size:15px;line-height:1.6;color:#444;margin:0 0 12px;">Your booking for ${esc(className)} on ${esc(date)} at ${esc(time)} with ${esc(guideName)} is confirmed.</p>
+      <div style="background:#f5f5f0;border-radius:8px;padding:16px 20px;margin:16px 0;">
+        ${detailRow("Class", className)}
+        ${detailRow("Date", date)}
+        ${detailRow("Time", time)}
+        ${detailRow("Guide", guideName)}
+        ${detailRow("Location", location)}
+      </div>
+      <p style="font-size:15px;line-height:1.6;color:#444;margin:0 0 12px;">What to bring: yoga mat (if not renting), water bottle, comfortable clothing.</p>
+      ${addons ? `<div style="margin:8px 0 0;">${addons}</div>` : ""}
+      <p style="font-size:14px;color:#888;margin:24px 0 0;">See you on the mat — One Flow Team</p>
+    `,
+  };
+}
+
+function wrapHtml(content: string): string {
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin:0;padding:0;background-color:#f5f5f0;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f5f5f0;padding:40px 20px;">
+    <tr>
+      <td align="center">
+        <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background-color:#ffffff;border-radius:12px;overflow:hidden;">
+          <tr>
+            <td style="background-color:#a3b693;padding:32px;text-align:center;">
+              <img src="${LOGO_URL}" alt="One Flow" width="140" style="display:block;margin:0 auto;" />
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:40px 40px 32px;color:#2d2d2d;">
+              ${content}
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:24px 40px;background-color:#f5f5f0;text-align:center;border-top:1px solid #e8e8e4;">
+              <p style="margin:0 0 8px;font-size:13px;color:#888;">One Flow Wellness Studio · Cape Town</p>
+              <p style="margin:0;font-size:12px;color:#aaa;">
+                <a href="https://oneflow.co.za" style="color:#a3b693;text-decoration:none;">oneflow.co.za</a>
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+}
+
+serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+
+  try {
+    const apiKey = Deno.env.get("RESEND_API_KEY");
+    if (!apiKey) {
+      return new Response(JSON.stringify({ error: "Missing RESEND_API_KEY" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const body = (await req.json()) as RequestPayload;
+    if (!body?.to || !body?.template) {
+      return new Response(JSON.stringify({ error: "Missing to or template" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const { subject, content } = buildTemplate(body.template, body.data ?? {});
+    const html = wrapHtml(content);
+
+    const resendRes = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: "One Flow <noreply@oneflow.co.za>",
+        to: [body.to],
+        subject,
+        html,
+      }),
+    });
+
+    const resendJson = await resendRes.json();
+    if (!resendRes.ok) {
+      return new Response(JSON.stringify({ error: resendJson }), {
+        status: resendRes.status,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    return new Response(JSON.stringify({ success: true, id: resendJson?.id ?? null }), {
+      status: 200,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return new Response(
+      JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    );
+  }
+});

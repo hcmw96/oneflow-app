@@ -5,6 +5,7 @@ import { Clock, MapPin, X } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 import { TypeBadge } from "@/components/TypeBadge";
+import { cancelBookingWithPolicy } from "@/lib/bookingCancellation";
 import { formatTime, formatDayLabel } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { getUser, supabase } from "@/lib/supabase";
@@ -116,6 +117,30 @@ function BookingsPage() {
   );
   const past = rows.filter((r) => r.status === "attended");
 
+  const cancelBooking = async (bookingId: string) => {
+    const confirmText = `Please read carefully:
+- Cancellations more than 2 hours before class: your credit will be returned.
+- Late cancellations (within 2 hours): your credit will be returned, but a R100 fee applies on your next transaction.
+Are you sure you want to cancel?`;
+
+    if (!window.confirm(confirmText)) return;
+
+    try {
+      const result = await cancelBookingWithPolicy({
+        bookingId,
+        cancellationReason: "customer_cancelled",
+      });
+      toast.success(
+        result.lateCancel
+          ? "Booking cancelled. Late cancellation fee will apply on next transaction."
+          : "Booking cancelled. Credit returned.",
+      );
+      await load();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not cancel booking");
+    }
+  };
+
   return (
     <AppShell>
       <header className="safe-top px-5 pt-3 pb-3">
@@ -187,7 +212,7 @@ function BookingsPage() {
                     </div>
                   )}
                   <button
-                    onClick={() => toast("Booking cancelled", { description: "Credit refunded." })}
+                    onClick={() => void cancelBooking(b.id)}
                     className="mt-3 inline-flex items-center gap-1 rounded-full border border-border px-3 py-1 text-xs font-medium text-muted-foreground"
                   >
                     <X className="h-3 w-3 shrink-0" aria-hidden /> Cancel booking

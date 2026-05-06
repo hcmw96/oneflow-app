@@ -26,8 +26,12 @@ serve(async (req) => {
     credits_remaining: credits,
     credit_type: pack.credit_type,
     purchased_at: new Date().toISOString(),
-    expires_at: pack.validity_days ? new Date(Date.now() + pack.validity_days * 86400000).toISOString() : null,
+    expires_at: pack.validity_days
+      ? new Date(Date.now() + pack.validity_days * 86400000).toISOString()
+      : null,
   });
+
+  await supabase.from("profiles").update({ late_cancel_fee_pending: false }).eq("id", profile_id);
 
   return new Response("ok", { status: 200 });
 });

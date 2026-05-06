@@ -17,15 +17,33 @@ serve(async (req) => {
   console.log("pack_id:", pack_id, "profile_id:", profile_id);
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
-  const { data: pack, error: packError } = await supabase.from("products").select("*").eq("id", pack_id).single();
+  const { data: pack, error: packError } = await supabase
+    .from("products")
+    .select("*")
+    .eq("id", pack_id)
+    .single();
   console.log("pack result:", JSON.stringify(pack), "error:", JSON.stringify(packError));
 
   if (!pack) {
-    return new Response(JSON.stringify({ error: "Pack not found" }), { status: 404, headers: corsHeaders });
+    return new Response(JSON.stringify({ error: "Pack not found" }), {
+      status: 404,
+      headers: corsHeaders,
+    });
   }
 
   const priceZar = Number((pack as { price_zar?: number }).price_zar);
-  const amountCents = Number.isFinite(priceZar) ? Math.round(priceZar * 100) : NaN;
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("late_cancel_fee_pending")
+    .eq("id", profile_id)
+    .maybeSingle();
+  const hasLateCancelFee = Boolean(
+    (profile as { late_cancel_fee_pending?: boolean } | null)?.late_cancel_fee_pending,
+  );
+  const baseAmountCents = Number.isFinite(priceZar) ? Math.round(priceZar * 100) : NaN;
+  const amountCents = Number.isFinite(baseAmountCents)
+    ? baseAmountCents + (hasLateCancelFee ? 10000 : 0)
+    : NaN;
   if (!Number.isFinite(amountCents) || amountCents <= 0) {
     return new Response(JSON.stringify({ error: "Invalid price_zar on product" }), {
       status: 400,
@@ -42,15 +60,25 @@ serve(async (req) => {
     body: JSON.stringify({
       amount: amountCents,
       currency: "ZAR",
+      description: hasLateCancelFee
+        ? `${(pack as { name?: string }).name ?? "One Flow purchase"} + R100 late cancellation fee`
+        : `${(pack as { name?: string }).name ?? "One Flow purchase"}`,
       successUrl: success_url,
       cancelUrl: cancel_url,
       failureUrl: cancel_url,
-      metadata: { pack_id, profile_id },
+      metadata: {
+        pack_id,
+        profile_id,
+        late_cancel_fee_applied: hasLateCancelFee,
+        description: hasLateCancelFee ? "+ R100 late cancellation fee" : "",
+      },
     }),
   });
 
   const checkout = await yocoRes.json();
   console.log("yoco status:", yocoRes.status);
   console.log("yoco body:", JSON.stringify(checkout));
-  return new Response(JSON.stringify(checkout), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+  return new Response(JSON.stringify(checkout), {
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
 });
