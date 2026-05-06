@@ -65,6 +65,7 @@ function PricingPage() {
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [buyingId, setBuyingId] = useState<string | null>(null);
+  const [checkoutSlow, setCheckoutSlow] = useState(false);
   const [openSections, setOpenSections] = useState<Record<ProductCategory, boolean>>({
     yoga: true,
     wellzone: false,
@@ -83,7 +84,8 @@ function PricingPage() {
     }
 
     const bySortOrder = (a: ProductRow, b: ProductRow) =>
-      Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0) || Number(a.price_zar) - Number(b.price_zar);
+      Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0) ||
+      Number(a.price_zar) - Number(b.price_zar);
 
     yoga.sort(bySortOrder);
     wellzone.sort(bySortOrder);
@@ -126,11 +128,22 @@ function PricingPage() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!buyingId) {
+      setCheckoutSlow(false);
+      return;
+    }
+    setCheckoutSlow(false);
+    const t = window.setTimeout(() => setCheckoutSlow(true), 5000);
+    return () => window.clearTimeout(t);
+  }, [buyingId]);
+
   const toggleSection = (category: ProductCategory) => {
     setOpenSections((prev) => ({ ...prev, [category]: !prev[category] }));
   };
 
   const buyNow = async (packId: string) => {
+    if (buyingId) return;
     const user = await getUser();
     if (!user) {
       toast.error("Please sign in to purchase");
@@ -139,6 +152,7 @@ function PricingPage() {
     }
 
     setBuyingId(packId);
+    setCheckoutSlow(false);
     const origin = window.location.origin;
     const { data, error } = await supabase.functions.invoke("yoco-checkout", {
       body: {
@@ -152,6 +166,8 @@ function PricingPage() {
 
     if (error) {
       toast.error(error.message ?? "Checkout failed");
+      setBuyingId(null);
+      setCheckoutSlow(false);
       return;
     }
 
@@ -160,6 +176,8 @@ function PricingPage() {
       (data as { redirect_url?: string })?.redirect_url;
     if (!redirect || typeof redirect !== "string") {
       toast.error("No payment link returned");
+      setBuyingId(null);
+      setCheckoutSlow(false);
       return;
     }
     window.location.href = redirect;
@@ -179,17 +197,22 @@ function PricingPage() {
           </button>
         </header>
 
-        <main className="relative flex-1 space-y-4 px-5 pb-28 pt-0" aria-busy={!!buyingId}>
+        <main className="relative flex-1 space-y-4 px-5 pb-6 pt-0" aria-busy={!!buyingId}>
           <h1 className="font-display text-2xl font-bold tracking-tight text-[#a3b693] dark:text-foreground">
             Buy A Pass
           </h1>
 
           {loading ? (
             <div className="flex justify-center py-16">
-              <Loader2 className="h-8 w-8 animate-spin text-[#a3b693]" aria-label="Loading products" />
+              <Loader2
+                className="h-8 w-8 animate-spin text-[#a3b693]"
+                aria-label="Loading products"
+              />
             </div>
           ) : products.length === 0 ? (
-            <p className="py-12 text-center text-sm text-muted-foreground">No packs available yet.</p>
+            <p className="py-12 text-center text-sm text-muted-foreground">
+              No packs available yet.
+            </p>
           ) : (
             <div className="space-y-3">
               {ACCORDION_SECTIONS.map(({ category, title }) => {
@@ -230,7 +253,9 @@ function PricingPage() {
                         className="border-t border-[#c5d4b8]/50 bg-[#fafbf8]/80 px-3 py-4 dark:border-border dark:bg-card/50"
                       >
                         {items.length === 0 ? (
-                          <p className="px-1 py-4 text-center text-sm text-muted-foreground">No packs in this category.</p>
+                          <p className="px-1 py-4 text-center text-sm text-muted-foreground">
+                            No packs in this category.
+                          </p>
                         ) : (
                           <ul className="flex flex-col gap-3">
                             {items.map((p) => {
@@ -252,26 +277,45 @@ function PricingPage() {
                                     </p>
                                   </div>
                                   {credits ? (
-                                    <p className="mt-1 text-sm font-medium text-[#a3b693] dark:text-primary">{credits}</p>
+                                    <p className="mt-1 text-sm font-medium text-[#a3b693] dark:text-primary">
+                                      {credits}
+                                    </p>
                                   ) : null}
                                   {p.description ? (
-                                    <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{p.description}</p>
+                                    <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                                      {p.description}
+                                    </p>
                                   ) : null}
-                                  <button
-                                    type="button"
-                                    disabled={buyingId !== null}
-                                    onClick={() => void buyNow(p.id)}
-                                    className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#a3b693] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-opacity hover:opacity-95 disabled:opacity-60 dark:bg-primary dark:text-primary-foreground"
-                                  >
+                                  <div className="mt-4 space-y-2">
+                                    <button
+                                      type="button"
+                                      disabled={buyingId !== null}
+                                      onClick={() => void buyNow(p.id)}
+                                      className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#a3b693] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-opacity hover:opacity-95 disabled:opacity-60 dark:bg-primary dark:text-primary-foreground"
+                                    >
+                                      {buyingId === p.id ? (
+                                        <>
+                                          <Loader2
+                                            className="h-4 w-4 animate-spin shrink-0"
+                                            aria-hidden
+                                          />
+                                          <span>Redirecting…</span>
+                                        </>
+                                      ) : (
+                                        "Buy Now"
+                                      )}
+                                    </button>
                                     {buyingId === p.id ? (
-                                      <>
-                                        <Loader2 className="h-4 w-4 animate-spin shrink-0" aria-hidden />
-                                        <span>Creating checkout…</span>
-                                      </>
-                                    ) : (
-                                      "Buy Now"
-                                    )}
-                                  </button>
+                                      <p className="text-center text-xs text-muted-foreground">
+                                        Redirecting to secure payment…
+                                        {checkoutSlow ? (
+                                          <span className="mt-1 block font-medium text-foreground">
+                                            Still loading — please wait.
+                                          </span>
+                                        ) : null}
+                                      </p>
+                                    ) : null}
+                                  </div>
                                 </li>
                               );
                             })}
@@ -287,24 +331,14 @@ function PricingPage() {
 
           <p className="text-center text-xs text-muted-foreground">
             Questions?{" "}
-            <Link to="/me" className="font-medium text-[#a3b693] underline-offset-2 hover:underline dark:text-primary">
+            <Link
+              to="/me"
+              className="font-medium text-[#a3b693] underline-offset-2 hover:underline dark:text-primary"
+            >
               Contact us from your profile
             </Link>
             .
           </p>
-
-          {buyingId && !loading ? (
-            <div
-              className="fixed inset-0 z-[60] flex items-center justify-center bg-background/60 backdrop-blur-[2px]"
-              role="status"
-              aria-live="polite"
-            >
-              <div className="flex flex-col items-center gap-3 rounded-2xl border border-[#c5d4b8]/80 bg-card px-8 py-6 shadow-lg">
-                <Loader2 className="h-10 w-10 animate-spin text-[#a3b693]" aria-hidden />
-                <p className="text-sm font-medium text-[#a3b693] dark:text-foreground">Creating checkout…</p>
-              </div>
-            </div>
-          ) : null}
         </main>
       </div>
     </AppShell>

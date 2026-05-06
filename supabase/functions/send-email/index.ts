@@ -4,7 +4,9 @@ type TemplateName =
   | "booking_confirmation_class"
   | "booking_confirmation_sauna"
   | "booking_cancellation"
-  | "late_cancellation";
+  | "late_cancellation"
+  | "friend_request"
+  | "class_invite";
 
 type RequestPayload = {
   to: string;
@@ -38,6 +40,16 @@ function addonPill(text: string): string {
   return `<span style="display:inline-block;background:#a3b693;color:#fff;border-radius:20px;padding:4px 12px;font-size:12px;margin:4px 4px 0 0;">${esc(text)}</span>`;
 }
 
+function ctaButton(href: string, label: string): string {
+  return `<table cellpadding="0" cellspacing="0" style="margin:24px 0;">
+  <tr>
+    <td align="center">
+      <a href="${esc(href)}" style="display:inline-block;background-color:#a3b693;color:#ffffff;font-size:15px;font-weight:600;text-decoration:none;padding:14px 28px;border-radius:999px;">${esc(label)}</a>
+    </td>
+  </tr>
+</table>`;
+}
+
 function formatDateTime(value: unknown): { date: string; time: string } {
   const raw = String(value ?? "");
   const dt = raw ? new Date(raw) : new Date();
@@ -50,6 +62,37 @@ function formatDateTime(value: unknown): { date: string; time: string } {
 }
 
 function buildTemplate(template: TemplateName, data: Record<string, unknown> = {}) {
+  if (template === "friend_request") {
+    const fromName = String(data.from_name ?? "Someone");
+    const first = String(data.first_name ?? fromName.split(/\s+/)[0] ?? "A member");
+    return {
+      subject: `${fromName} wants to connect on One Flow`,
+      content: `
+        <h2 style="font-size:22px;font-weight:600;color:#a3b693;margin:0 0 16px;">Friend request</h2>
+        <p style="font-size:15px;line-height:1.6;color:#444;margin:0 0 12px;">${esc(first)} has sent you a friend request on One Flow. Open the app to accept.</p>
+        ${ctaButton("https://oneflow1.netlify.app/me/friends", "View Request")}
+        <p style="font-size:14px;color:#888;margin:24px 0 0;">One Flow Team</p>
+      `,
+    };
+  }
+
+  if (template === "class_invite") {
+    const inviterName = String(data.inviter_name ?? "A friend");
+    const className = String(data.class_name ?? "a class");
+    const when = String(data.when_line ?? "");
+    const openApp = String(data.open_url ?? "https://oneflow1.netlify.app/schedule");
+    return {
+      subject: `${inviterName} invited you to ${className}`,
+      content: `
+        <h2 style="font-size:22px;font-weight:600;color:#a3b693;margin:0 0 16px;">Class invite</h2>
+        <p style="font-size:15px;line-height:1.6;color:#444;margin:0 0 12px;">${esc(inviterName)} invited you to join <strong>${esc(className)}</strong>${when ? ` · ${esc(when)}` : ""}.</p>
+        <p style="font-size:15px;line-height:1.6;color:#444;margin:0 0 12px;">Open One Flow to view the invite and respond.</p>
+        ${ctaButton(openApp, "View invite")}
+        <p style="font-size:14px;color:#888;margin:24px 0 0;">One Flow Team</p>
+      `,
+    };
+  }
+
   const className = String(data.class_name ?? "Class");
   const guideName = String(data.guide_name ?? "Guide");
   const location = String(data.location ?? "One Flow Studio");

@@ -4,6 +4,7 @@ import { QRCodeSVG } from "qrcode.react";
 import { Clock, MapPin, X } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
+import { Skeleton } from "@/components/ui/skeleton";
 import { TypeBadge } from "@/components/TypeBadge";
 import { cancelBookingWithPolicy } from "@/lib/bookingCancellation";
 import { formatTime, formatDayLabel } from "@/lib/format";
@@ -166,8 +167,10 @@ Are you sure you want to cancel?`;
 
       <main className="flex-1 space-y-3 px-5 pt-4">
         {loading ? (
-          <div className="flex justify-center py-10">
-            <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+          <div className="space-y-3">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-36 w-full rounded-2xl" />
+            ))}
           </div>
         ) : (
           <>

@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { getUser, supabase } from "@/lib/supabase";
+import { applyStoredReferrerToProfile, captureReferrerFromSearch } from "@/lib/referral";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -33,6 +34,10 @@ export default function AuthPage() {
   const navigate = useNavigate();
 
   useEffect(() => {
+    captureReferrerFromSearch(window.location.search);
+  }, []);
+
+  useEffect(() => {
     const init = async () => {
       const params = new URLSearchParams(window.location.search);
       const code = params.get("code");
@@ -40,6 +45,7 @@ export default function AuthPage() {
         window.history.replaceState({}, "", "/auth");
         const { data, error } = await supabase.auth.exchangeCodeForSession(code);
         if (!error && data.session?.user) {
+          await applyStoredReferrerToProfile(data.session.user.id);
           const dest = await resolveDestination(data.session.user.id);
           navigate({ to: dest });
           return;
@@ -115,6 +121,7 @@ export default function AuthPage() {
       return;
     }
     if (data.session?.user) {
+      await applyStoredReferrerToProfile(data.session.user.id);
       navigate({ to: "/onboarding" });
       return;
     }

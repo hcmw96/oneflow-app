@@ -1,17 +1,19 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, MapPin, Clock } from "lucide-react";
+import { MapPin, Clock } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { BookingSheet } from "@/components/BookingSheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/auth";
 import { supabase } from "@/lib/supabase";
-import { addDays, isSameDay, startOfDay } from "@/lib/format";
+import { addDays, isSameDay, startOfDay, startOfWeekSunday } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/schedule")({
   component: SchedulePage,
 });
+
+const SAGE = "#a3b693";
 
 type ClassRow = {
   id: string;
@@ -24,6 +26,7 @@ type ClassRow = {
   booked_count: number;
   is_cancelled: boolean;
   guide_name: string | null;
+  description: string | null;
 };
 
 function scheduleDayKey(day: Date): string {
@@ -42,6 +45,31 @@ function ScheduleRowsSkeleton() {
   );
 }
 
+function useHorizontalDaySwipe(onPrev: () => void, onNext: () => void) {
+  const origin = useRef<{ x: number; y: number } | null>(null);
+
+  const onTouchStart = (e: React.TouchEvent) => {
+    origin.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  };
+
+  const onTouchEnd = (e: React.TouchEvent) => {
+    if (!origin.current) return;
+    const dx = e.changedTouches[0].clientX - origin.current.x;
+    const dy = e.changedTouches[0].clientY - origin.current.y;
+    origin.current = null;
+    if (Math.abs(dx) < 56) return;
+    if (Math.abs(dx) < Math.abs(dy) * 1.2) return;
+    if (dx < 0) onNext();
+    else onPrev();
+  };
+
+  return {
+    onTouchStart,
+    onTouchEnd,
+    style: { touchAction: "pan-y" } as const,
+  };
+}
+
 export default function SchedulePage() {
   const { user, authReady } = useAuth();
   const [selectedDay, setSelectedDay] = useState(() => startOfDay(new Date()));
@@ -52,9 +80,16 @@ export default function SchedulePage() {
   const [userBookings, setUserBookings] = useState<string[]>([]);
   const classesCacheRef = useRef(new Map<string, ClassRow[]>());
 
-  /**
-   * Stale-while-revalidate: show cached classes immediately for the day, refresh in background.
-   */
+  const goPrevDay = useCallback(() => {
+    setSelectedDay((d) => startOfDay(addDays(d, -1)));
+  }, []);
+
+  const goNextDay = useCallback(() => {
+    setSelectedDay((d) => startOfDay(addDays(d, 1)));
+  }, []);
+
+  const swipeHandlers = useHorizontalDaySwipe(goPrevDay, goNextDay);
+
   const loadDayData = useCallback(async (day: Date, uid: string) => {
     const key = scheduleDayKey(day);
     const cached = classesCacheRef.current.get(key);
@@ -77,7 +112,7 @@ export default function SchedulePage() {
       supabase
         .from("classes")
         .select(
-          "id, name, class_type, location, starts_at, ends_at, capacity, booked_count, is_cancelled, guide_name",
+          "id, name, class_type, location, starts_at, ends_at, capacity, booked_count, is_cancelled, guide_name, description",
         )
         .gte("starts_at", isoStart)
         .lte("starts_at", isoEnd)
@@ -117,8 +152,13 @@ export default function SchedulePage() {
     void loadDayData(selectedDay, user.id);
   }, [authReady, user?.id, selectedDay, loadDayData]);
 
-  const windowStart = useMemo(() => addDays(selectedDay, -2), [selectedDay]);
-  const days = Array.from({ length: 7 }, (_, i) => addDays(windowStart, i));
+  const weekStartSunday = useMemo(() => startOfWeekSunday(selectedDay), [selectedDay]);
+
+  const daysInWeek = useMemo(
+    () => Array.from({ length: 7 }, (_, i) => startOfDay(addDays(weekStartSunday, i))),
+    [weekStartSunday],
+  );
+
   const monthLabel = selectedDay.toLocaleDateString("en-ZA", {
     month: "long",
     year: "numeric",
@@ -130,6 +170,7 @@ export default function SchedulePage() {
   });
 
   const uid = user?.id;
+  const today = startOfDay(new Date());
 
   if (!authReady || !uid) {
     return (
@@ -163,27 +204,28 @@ export default function SchedulePage() {
 
       <div className="px-5 pt-4">
         <p className="mb-2 text-center text-sm text-muted-foreground">{monthLabel}</p>
-        <div className="flex items-center gap-1 rounded-2xl border border-border bg-card px-1 py-2">
-          <button
-            type="button"
-            aria-label="Previous day"
-            onClick={() => setSelectedDay(addDays(selectedDay, -1))}
-            className="flex h-8 w-6 shrink-0 items-center justify-center text-muted-foreground"
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </button>
-          <div className="flex flex-1 items-stretch justify-between gap-0.5">
-            {days.map((d) => {
-              const active = isSameDay(d, selectedDay);
+        <div className="rounded-2xl border border-border bg-card p-2">
+          <div className="flex items-stretch justify-between gap-0.5">
+            {daysInWeek.map((d) => {
+              const selected = isSameDay(d, selectedDay);
+              const isTodayCell = isSameDay(d, today);
               return (
                 <button
-                  key={d.toISOString()}
+                  key={scheduleDayKey(d)}
                   type="button"
                   onClick={() => setSelectedDay(d)}
                   className={cn(
-                    "flex flex-1 flex-col items-center justify-center rounded-xl px-1 py-1.5 transition-colors",
-                    active ? "bg-primary text-primary-foreground" : "text-foreground",
+                    "flex min-h-[52px] min-w-0 flex-1 flex-col items-center justify-center rounded-xl px-0.5 py-1.5 transition-all duration-200",
+                    selected && "text-white shadow-sm",
+                    !selected && isTodayCell && "ring-2 ring-[#a3b693]/80",
                   )}
+                  style={
+                    selected
+                      ? { backgroundColor: SAGE, color: "#fff" }
+                      : isTodayCell
+                        ? { backgroundColor: "transparent" }
+                        : undefined
+                  }
                 >
                   <span className="font-display text-base font-bold leading-none">
                     {d.getDate()}
@@ -191,7 +233,7 @@ export default function SchedulePage() {
                   <span
                     className={cn(
                       "mt-1 text-[10px] font-semibold uppercase tracking-wide",
-                      active ? "opacity-90" : "text-muted-foreground",
+                      selected ? "text-white/90" : "text-muted-foreground",
                     )}
                   >
                     {d.toLocaleDateString("en-ZA", { weekday: "short" }).slice(0, 3)}
@@ -200,14 +242,9 @@ export default function SchedulePage() {
               );
             })}
           </div>
-          <button
-            type="button"
-            aria-label="Next day"
-            onClick={() => setSelectedDay(addDays(selectedDay, 1))}
-            className="flex h-8 w-6 shrink-0 items-center justify-center text-muted-foreground"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </button>
+          <p className="mt-2 text-center text-[11px] text-muted-foreground">
+            Swipe the class list left or right to change day
+          </p>
         </div>
       </div>
 
@@ -216,24 +253,30 @@ export default function SchedulePage() {
           "flex-1 space-y-3 px-5 pt-5 transition-opacity",
           revalidating && "opacity-80",
         )}
+        {...swipeHandlers}
       >
         <h2 className="font-display text-lg font-bold">{longDayLabel}</h2>
-        {loading ? (
-          <ScheduleRowsSkeleton />
-        ) : classes.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-border bg-card/50 p-8 text-center text-sm text-muted-foreground">
-            No classes scheduled for this day.
-          </div>
-        ) : (
-          classes.map((c) => (
-            <ScheduleRow
-              key={c.id}
-              session={c}
-              alreadyBooked={userBookings.includes(c.id)}
-              onReserve={() => setBookingFor(c)}
-            />
-          ))
-        )}
+        <div
+          key={scheduleDayKey(selectedDay)}
+          className={cn("space-y-3", !loading && "schedule-content-animate")}
+        >
+          {loading ? (
+            <ScheduleRowsSkeleton />
+          ) : classes.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-border bg-card/50 p-8 text-center text-sm text-muted-foreground">
+              No classes scheduled for this day.
+            </div>
+          ) : (
+            classes.map((c) => (
+              <ScheduleRow
+                key={c.id}
+                session={c}
+                alreadyBooked={userBookings.includes(c.id)}
+                onReserve={() => setBookingFor(c)}
+              />
+            ))
+          )}
+        </div>
       </main>
 
       <BookingSheet
@@ -259,6 +302,9 @@ function ScheduleRow({
   alreadyBooked: boolean;
   onReserve: () => void;
 }) {
+  const [descExpanded, setDescExpanded] = useState(false);
+  const desc = session.description?.trim() ?? "";
+
   const guideName = session.guide_name?.trim() || null;
   const avatarLetter = (guideName?.charAt(0) || session.name.charAt(0) || "?").toUpperCase();
   const time = new Date(session.starts_at)
@@ -291,6 +337,31 @@ function ScheduleRow({
           {guideName && (
             <p className="mt-0.5 truncate text-xs text-muted-foreground">{guideName}</p>
           )}
+          {desc ? (
+            <div className="mt-1.5 min-w-0">
+              <p
+                className={cn(
+                  "text-xs leading-snug text-muted-foreground",
+                  !descExpanded && "line-clamp-2",
+                )}
+              >
+                {desc}
+              </p>
+              {(desc.length > 72 || descExpanded) && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setDescExpanded((v) => !v);
+                  }}
+                  className="mt-0.5 text-[11px] font-semibold"
+                  style={{ color: SAGE }}
+                >
+                  {descExpanded ? "Show less" : "Read more"}
+                </button>
+              )}
+            </div>
+          ) : null}
           <p className="mt-1 flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
             <MapPin className="h-3 w-3 shrink-0" aria-hidden />
             <span className="min-w-0 truncate">{session.location}</span>

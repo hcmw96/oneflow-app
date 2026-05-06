@@ -2,6 +2,20 @@
 @source "../src";
 @import "tw-animate-css";
 
+@keyframes schedule-content-enter {
+  from {
+    opacity: 0.65;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.schedule-content-animate {
+  animation: schedule-content-enter 0.28s ease-out;
+}
+
 @custom-variant dark (&:is(.dark *));
 
 /*
@@ -169,8 +183,9 @@
   .safe-bottom {
     padding-bottom: max(env(safe-area-inset-bottom), 0.75rem);
   }
-  .safe-bottom-nav {
-    padding-bottom: calc(max(env(safe-area-inset-bottom), 0.5rem) + 4.5rem);
+  /* Reserve space for fixed BottomNav (~80px row + safe area). See BottomNav.tsx */
+  .pb-with-bottom-nav {
+    padding-bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
   }
   .no-scrollbar::-webkit-scrollbar { display: none; }
   .no-scrollbar { scrollbar-width: none; }

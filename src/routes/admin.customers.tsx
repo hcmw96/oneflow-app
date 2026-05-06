@@ -1,10 +1,31 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Search, Plus } from "lucide-react";
+import { Loader2, Search, Plus } from "lucide-react";
+import { toast } from "sonner";
 import { PageHeader } from "@/components/admin/PageHeader";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { supabase } from "@/lib/supabase";
 
 export const Route = createFileRoute("/admin/customers")({
+  head: () => ({
+    meta: [{ title: "Customers — One Flow Admin" }],
+  }),
   component: CustomersPage,
 });
 
@@ -20,9 +41,18 @@ type MemberRow = {
 };
 
 function CustomersPage() {
+  const navigate = useNavigate();
   const [q, setQ] = useState("");
   const [members, setMembers] = useState<MemberRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [addOpen, setAddOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [dob, setDob] = useState("");
+  const [role, setRole] = useState("customer");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -39,7 +69,7 @@ function CustomersPage() {
     }
 
     const ids = (profiles ?? []).map((p: { id: string }) => p.id);
-    let creditByProfile: Record<string, number> = {};
+    const creditByProfile: Record<string, number> = {};
     if (ids.length) {
       const { data: credits } = await supabase
         .from("user_credits")
@@ -91,20 +121,157 @@ function CustomersPage() {
     [members, q],
   );
 
+  const resetAddForm = () => {
+    setFirstName("");
+    setLastName("");
+    setEmail("");
+    setPhone("");
+    setDob("");
+    setRole("customer");
+  };
+
+  const submitAddMember = async () => {
+    if (!firstName.trim() || !lastName.trim() || !email.trim()) {
+      toast.error("First name, last name, and email are required.");
+      return;
+    }
+    setSaving(true);
+    const { data, error } = await supabase.functions.invoke<{
+      success?: boolean;
+      full_name?: string;
+      error?: string;
+    }>("invite-member", {
+      body: {
+        first_name: firstName.trim(),
+        last_name: lastName.trim(),
+        email: email.trim(),
+        phone: phone.trim() || undefined,
+        date_of_birth: dob.trim() || undefined,
+        role: role,
+      },
+    });
+
+    if (error) {
+      toast.error(error.message || "Could not create member");
+      setSaving(false);
+      return;
+    }
+
+    if (data?.error) {
+      toast.error(data.error);
+      setSaving(false);
+      return;
+    }
+
+    const displayName = data?.full_name ?? `${firstName.trim()} ${lastName.trim()}`.trim();
+    toast.success("Member invited", {
+      description: `${displayName} will receive an email to set their password.`,
+    });
+    setAddOpen(false);
+    resetAddForm();
+    await load();
+    setSaving(false);
+  };
+
   return (
     <div>
       <PageHeader
         title="Customers"
         description={loading ? "Loading…" : `${members.length} members`}
         actions={
-          <button
+          <Button
             type="button"
-            className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground"
+            className="gap-2"
+            onClick={() => {
+              resetAddForm();
+              setAddOpen(true);
+            }}
           >
             <Plus className="h-4 w-4 shrink-0" aria-hidden /> Add member
-          </button>
+          </Button>
         }
       />
+
+      <Dialog open={addOpen} onOpenChange={setAddOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add member</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-3 py-2">
+            <div className="grid gap-1.5 sm:grid-cols-2 sm:gap-3">
+              <div>
+                <Label htmlFor="am-first">First name</Label>
+                <Input
+                  id="am-first"
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  autoComplete="given-name"
+                />
+              </div>
+              <div>
+                <Label htmlFor="am-last">Last name</Label>
+                <Input
+                  id="am-last"
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  autoComplete="family-name"
+                />
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="am-email">Email</Label>
+              <Input
+                id="am-email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoComplete="email"
+              />
+            </div>
+            <div>
+              <Label htmlFor="am-phone">Phone</Label>
+              <Input
+                id="am-phone"
+                type="tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                autoComplete="tel"
+              />
+            </div>
+            <div>
+              <Label htmlFor="am-dob">Date of birth</Label>
+              <Input id="am-dob" type="date" value={dob} onChange={(e) => setDob(e.target.value)} />
+            </div>
+            <div>
+              <Label>Role</Label>
+              <Select value={role} onValueChange={setRole}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Role" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="customer">Customer</SelectItem>
+                  <SelectItem value="other">Other</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button type="button" variant="outline" onClick={() => setAddOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="button" disabled={saving} onClick={() => void submitAddMember()}>
+              {saving ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Saving…
+                </>
+              ) : (
+                "Create & invite"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <div className="mb-4 max-w-md">
         <div className="relative">
@@ -136,7 +303,27 @@ function CustomersPage() {
             </thead>
             <tbody>
               {filtered.map((m) => (
-                <tr key={m.id} className="cursor-pointer border-t border-border hover:bg-muted/30">
+                <tr
+                  key={m.id}
+                  role="link"
+                  tabIndex={0}
+                  onClick={() =>
+                    navigate({
+                      to: "/admin/customers/$customerId",
+                      params: { customerId: m.id },
+                    })
+                  }
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      navigate({
+                        to: "/admin/customers/$customerId",
+                        params: { customerId: m.id },
+                      });
+                    }
+                  }}
+                  className="cursor-pointer border-t border-border hover:bg-muted/30"
+                >
                   <td className="max-w-[160px] truncate px-5 py-3 font-semibold sm:max-w-xs md:max-w-md">
                     {m.name}
                   </td>

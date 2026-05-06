@@ -32,9 +32,11 @@ type PageState =
       creditsAdded: number;
       isUnlimited: boolean;
     }
+  | { status: "success_class_invite" }
   | { status: "success_generic" };
 
 const CREDIT_GRANT_KEY = "oneflow_credits_granted";
+const CLASS_INVITE_FINALIZE_KEY = "oneflow_class_invite_finalized";
 
 function PaymentSuccessPage() {
   const [state, setState] = useState<PageState>({ status: "loading" });
@@ -47,10 +49,41 @@ function PaymentSuccessPage() {
       const packId = params.get("pack_id");
       const profileId = params.get("profile_id");
       const checkoutId = params.get("checkoutId");
+      const classInviteId = params.get("class_invite_id");
 
       const user = await getUser();
       if (!user) {
         if (!cancelled) setState({ status: "guest" });
+        return;
+      }
+
+      if (classInviteId && profileId) {
+        if (user.id !== profileId) {
+          if (!cancelled) {
+            setState({ status: "error", message: "This payment is linked to a different account." });
+          }
+          return;
+        }
+        const dedupeKey = `${CLASS_INVITE_FINALIZE_KEY}:${classInviteId}`;
+        if (sessionStorage.getItem(dedupeKey)) {
+          if (!cancelled) setState({ status: "success_class_invite" });
+          return;
+        }
+        const { error: finErr } = await supabase.functions.invoke("finalize-class-invite", {
+          body: { class_invite_id: classInviteId, after_payment: true },
+        });
+        if (finErr) {
+          console.error(finErr);
+          if (!cancelled) {
+            setState({
+              status: "error",
+              message: finErr.message ?? "Could not complete the class invite.",
+            });
+          }
+          return;
+        }
+        sessionStorage.setItem(dedupeKey, "1");
+        if (!cancelled) setState({ status: "success_class_invite" });
         return;
       }
 
@@ -206,6 +239,15 @@ function PaymentSuccessPage() {
             </h1>
             <p className="mt-4 text-sm text-muted-foreground">
               Your credits will appear shortly if payment completed.
+            </p>
+          </>
+        ) : state.status === "success_class_invite" ? (
+          <>
+            <h1 className="mt-8 font-display text-2xl font-bold leading-snug tracking-tight text-[#3d4f36] dark:text-foreground">
+              Payment successful!
+            </h1>
+            <p className="mt-4 text-sm text-muted-foreground">
+              Your friend has been notified and can book the class from their account.
             </p>
           </>
         ) : (

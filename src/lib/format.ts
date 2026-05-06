@@ -20,6 +20,14 @@ export const startOfWeek = (d: Date) => {
   return x;
 };
 
+/** Week starts Sunday (local). */
+export const startOfWeekSunday = (d: Date) => {
+  const x = startOfDay(d);
+  const dow = x.getDay(); // 0 = Sunday
+  x.setDate(x.getDate() - dow);
+  return x;
+};
+
 export const addDays = (d: Date, n: number) => {
   const x = new Date(d);
   x.setDate(x.getDate() + n);

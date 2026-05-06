@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Clock, MapPin, Users, Sparkles } from "lucide-react";
+import { Clock, MapPin, Users, Sparkles, UserPlus, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   Sheet,
@@ -21,6 +21,7 @@ interface ClassRow {
   capacity: number;
   booked_count: number;
   guide_name?: string | null;
+  description?: string | null;
 }
 
 interface Credit {
@@ -38,6 +39,23 @@ interface Props {
   onOpenChange: (open: boolean) => void;
 }
 
+type FriendOption = {
+  id: string;
+  first_name: string | null;
+  last_name: string | null;
+  avatar_url: string | null;
+};
+
+function friendLabel(f: FriendOption): string {
+  return [f.first_name, f.last_name].filter(Boolean).join(" ").trim() || "Friend";
+}
+
+function friendInitials(f: FriendOption): string {
+  const a = (f.first_name?.trim() || "F").charAt(0);
+  const b = (f.last_name?.trim() || a).charAt(0);
+  return (a + b).toUpperCase();
+}
+
 export function BookingSheet({ session, open, onOpenChange }: Props) {
   const [credits, setCredits] = useState<Credit[]>([]);
   const [selectedCredit, setSelectedCredit] = useState<string | null>(null);
@@ -48,6 +66,18 @@ export function BookingSheet({ session, open, onOpenChange }: Props) {
   const [loading, setLoading] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [acceptedFriends, setAcceptedFriends] = useState<FriendOption[]>([]);
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [selectedFriendId, setSelectedFriendId] = useState<string | null>(null);
+  const [inviteBusy, setInviteBusy] = useState(false);
+  const [payCheckoutSlow, setPayCheckoutSlow] = useState(false);
+
+  useEffect(() => {
+    if (!open) {
+      setInviteOpen(false);
+      setSelectedFriendId(null);
+    }
+  }, [open]);
 
   useEffect(() => {
     if (!open || !session) return;
@@ -57,7 +87,7 @@ export function BookingSheet({ session, open, onOpenChange }: Props) {
       setUserId(user.id);
       setUserEmail(user.email ?? null);
 
-      const [{ data: creditsData }, { data: pointsData }] = await Promise.all([
+      const [{ data: creditsData }, { data: pointsData }, { data: ships }] = await Promise.all([
         supabase
           .from("user_credits")
           .select(
@@ -72,6 +102,11 @@ export function BookingSheet({ session, open, onOpenChange }: Props) {
           .select("balance")
           .eq("profile_id", user.id)
           .maybeSingle(),
+        supabase
+          .from("friendships")
+          .select("requester_id, addressee_id")
+          .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`)
+          .eq("status", "accepted"),
       ]);
 
       const eligible = (creditsData ?? []).filter((c) => {
@@ -82,6 +117,20 @@ export function BookingSheet({ session, open, onOpenChange }: Props) {
       setCredits(eligible as Credit[]);
       setSelectedCredit(eligible[0]?.id ?? null);
       setFlowPoints(pointsData?.balance ?? 0);
+
+      const shipRows = (ships ?? []) as { requester_id: string; addressee_id: string }[];
+      const otherIds = shipRows.map((s) =>
+        s.requester_id === user.id ? s.addressee_id : s.requester_id,
+      );
+      if (otherIds.length === 0) {
+        setAcceptedFriends([]);
+      } else {
+        const { data: profs } = await supabase
+          .from("profiles")
+          .select("id, first_name, last_name, avatar_url")
+          .in("id", otherIds);
+        setAcceptedFriends((profs ?? []) as FriendOption[]);
+      }
     };
     void load();
   }, [open, session]);
@@ -178,7 +227,98 @@ export function BookingSheet({ session, open, onOpenChange }: Props) {
     onOpenChange(false);
   };
 
+  const runInviteOnly = async () => {
+    if (!userId || !session || !selectedFriendId) {
+      toast.error("Select a friend to invite.");
+      return;
+    }
+    setInviteBusy(true);
+    const { data: row, error } = await supabase
+      .from("class_invites")
+      .insert({
+        inviter_id: userId,
+        invitee_id: selectedFriendId,
+        class_id: session.id,
+        paid_by_inviter: false,
+        status: "pending",
+      })
+      .select("id")
+      .single();
+    if (error || !row) {
+      toast.error(error?.message ?? "Could not create invite");
+      setInviteBusy(false);
+      return;
+    }
+    const inviteId = (row as { id: string }).id;
+    const { error: finErr } = await supabase.functions.invoke("finalize-class-invite", {
+      body: { class_invite_id: inviteId, after_payment: false },
+    });
+    if (finErr) {
+      toast.error(finErr.message ?? "Invite created but notification failed.");
+    } else {
+      toast.success("Invite sent", { description: "Your friend was notified by email and in the app." });
+    }
+    setInviteBusy(false);
+    setInviteOpen(false);
+    setSelectedFriendId(null);
+  };
+
+  const runPayForFriend = async () => {
+    if (!userId || !session || !selectedFriendId) {
+      toast.error("Select a friend to invite.");
+      return;
+    }
+    setInviteBusy(true);
+    setPayCheckoutSlow(false);
+    const slow = window.setTimeout(() => setPayCheckoutSlow(true), 5000);
+    const { data: row, error } = await supabase
+      .from("class_invites")
+      .insert({
+        inviter_id: userId,
+        invitee_id: selectedFriendId,
+        class_id: session.id,
+        paid_by_inviter: true,
+        status: "pending_payment",
+      })
+      .select("id")
+      .single();
+    if (error || !row) {
+      window.clearTimeout(slow);
+      setPayCheckoutSlow(false);
+      toast.error(error?.message ?? "Could not start payment");
+      setInviteBusy(false);
+      return;
+    }
+    const inviteId = (row as { id: string }).id;
+    const origin = window.location.origin;
+    const { data: checkout, error: yocoErr } = await supabase.functions.invoke("yoco-checkout", {
+      body: {
+        type: "class_invite",
+        class_invite_id: inviteId,
+        inviter_profile_id: userId,
+        success_url: `${origin}/payment/success?class_invite_id=${inviteId}&profile_id=${userId}`,
+        cancel_url: `${origin}/schedule`,
+      },
+    });
+    window.clearTimeout(slow);
+    setPayCheckoutSlow(false);
+    setInviteBusy(false);
+    if (yocoErr) {
+      toast.error(yocoErr.message ?? "Checkout failed");
+      return;
+    }
+    const redirect =
+      (checkout as { redirectUrl?: string; redirect_url?: string } | null)?.redirectUrl ??
+      (checkout as { redirect_url?: string })?.redirect_url;
+    if (!redirect || typeof redirect !== "string") {
+      toast.error("No payment link returned");
+      return;
+    }
+    window.location.href = redirect;
+  };
+
   return (
+    <>
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="bottom"
@@ -190,6 +330,11 @@ export function BookingSheet({ session, open, onOpenChange }: Props) {
             <SheetDescription className="text-sm text-muted-foreground">
               {dateLine} at {timeLine}
             </SheetDescription>
+            {session.description?.trim() ? (
+              <p className="mt-3 text-left text-sm leading-relaxed text-foreground/90">
+                {session.description.trim()}
+              </p>
+            ) : null}
           </SheetHeader>
 
           <ul className="mt-6 space-y-2.5 text-sm text-muted-foreground">
@@ -314,6 +459,20 @@ export function BookingSheet({ session, open, onOpenChange }: Props) {
             </button>
           </div>
 
+          {acceptedFriends.length > 0 ? (
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedFriendId(acceptedFriends[0]?.id ?? null);
+                setInviteOpen(true);
+              }}
+              className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl border border-[#a3b693]/50 bg-card py-3.5 text-sm font-semibold text-[#4a6b3c] transition-colors hover:bg-muted/50"
+            >
+              <UserPlus className="h-4 w-4" />
+              Invite a friend
+            </button>
+          ) : null}
+
           <button
             type="button"
             onClick={() => void confirm()}
@@ -332,5 +491,89 @@ export function BookingSheet({ session, open, onOpenChange }: Props) {
         </div>
       </SheetContent>
     </Sheet>
+
+    <Sheet open={inviteOpen} onOpenChange={setInviteOpen}>
+      <SheetContent
+        side="bottom"
+        className="max-h-[85vh] overflow-y-auto rounded-t-3xl border-0 bg-background p-0"
+      >
+        <div className="px-6 pb-8 pt-6">
+          <SheetHeader className="text-left">
+            <SheetTitle className="font-display text-xl font-bold">Invite to this class</SheetTitle>
+            <SheetDescription className="text-sm text-muted-foreground">
+              Choose a friend. They&apos;ll get an in-app notification and email.
+            </SheetDescription>
+          </SheetHeader>
+
+          <div className="mt-4 space-y-2">
+            {acceptedFriends.map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                onClick={() => setSelectedFriendId(f.id)}
+                className={cn(
+                  "flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-colors",
+                  selectedFriendId === f.id ? "border-primary bg-primary/5" : "border-border bg-card",
+                )}
+              >
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary-soft text-sm font-semibold">
+                  {f.avatar_url?.trim() ? (
+                    <img src={f.avatar_url} alt="" className="h-full w-full object-cover" />
+                  ) : (
+                    friendInitials(f)
+                  )}
+                </div>
+                <p className="min-w-0 flex-1 truncate text-sm font-semibold">{friendLabel(f)}</p>
+              </button>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            disabled={!selectedFriendId || inviteBusy}
+            onClick={() => void runInviteOnly()}
+            className="mt-6 w-full rounded-xl border border-border bg-card py-3.5 text-sm font-semibold transition-opacity disabled:opacity-50"
+          >
+            {inviteBusy ? (
+              <span className="inline-flex items-center justify-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin" /> Working…
+              </span>
+            ) : (
+              "Invite only (they pay)"
+            )}
+          </button>
+
+          <button
+            type="button"
+            disabled={!selectedFriendId || inviteBusy}
+            onClick={() => void runPayForFriend()}
+            className="mt-2 w-full rounded-xl bg-primary py-3.5 text-sm font-semibold text-primary-foreground transition-opacity disabled:opacity-50"
+          >
+            {inviteBusy ? (
+              payCheckoutSlow ? (
+                <span className="inline-flex items-center justify-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Still opening Yoco…
+                </span>
+              ) : (
+                <span className="inline-flex items-center justify-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Payment…
+                </span>
+              )
+            ) : (
+              "Pay for them (Yoco)"
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setInviteOpen(false)}
+            className="mt-2 w-full rounded-xl py-3 text-sm font-medium text-muted-foreground"
+          >
+            Close
+          </button>
+        </div>
+      </SheetContent>
+    </Sheet>
+    </>
   );
 }

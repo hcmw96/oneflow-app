@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight, Loader2, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { getUser, supabase } from "@/lib/supabase";
+import { applyStoredReferrerToProfile } from "@/lib/referral";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -183,6 +184,8 @@ function OnboardingPage() {
       setSaving(false);
       return;
     }
+
+    await applyStoredReferrerToProfile(user.id);
 
     toast.success("You’re all set — welcome to One Flow.");
     navigate({ to: "/" });

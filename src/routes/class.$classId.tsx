@@ -21,7 +21,10 @@ export const Route = createFileRoute("/class/$classId")({
 type PaymentMethod = "credit" | "yoco" | "points";
 
 type GuideJoin = {
-  profiles: { first_name: string; last_name: string } | { first_name: string; last_name: string }[] | null;
+  profiles:
+    | { first_name: string; last_name: string }
+    | { first_name: string; last_name: string }[]
+    | null;
 };
 
 type ClassDetail = {
@@ -33,6 +36,8 @@ type ClassDetail = {
   ends_at: string;
   capacity: number;
   booked_count: number;
+  description?: string | null;
+  guide_name?: string | null;
   guides?: GuideJoin | GuideJoin[] | null;
 };
 
@@ -57,7 +62,7 @@ function ClassDetailPage() {
       supabase
         .from("classes")
         .select(
-          "id, name, class_type, location, starts_at, ends_at, capacity, booked_count, guides ( profiles ( first_name, last_name ) )",
+          "id, name, class_type, location, starts_at, ends_at, capacity, booked_count, description, guide_name, guides ( profiles ( first_name, last_name ) )",
         )
         .eq("id", classId)
         .maybeSingle(),
@@ -120,7 +125,8 @@ function ClassDetailPage() {
   const g = one(session.guides);
   const prof = g?.profiles;
   const p = one(prof);
-  const guideName = p ? `${p.first_name} ${p.last_name}`.trim() : null;
+  const guideNameFromJoin = p ? `${p.first_name} ${p.last_name}`.trim() : null;
+  const guideName = guideNameFromJoin || session.guide_name?.trim() || null;
   const initials = guideName
     ? guideName
         .split(/\s+/)
@@ -155,9 +161,18 @@ function ClassDetailPage() {
         <section className="rounded-3xl bg-primary-soft p-5">
           <TypeBadge type={badgeType} className="bg-card/60" />
           <h2 className="mt-2 font-display text-3xl font-semibold leading-tight">{session.name}</h2>
+          {session.description?.trim() ? (
+            <p className="mt-2 text-sm leading-relaxed text-foreground/85">
+              {session.description.trim()}
+            </p>
+          ) : null}
           <div className="mt-3 grid grid-cols-2 gap-y-2 text-sm">
             <Info icon={<Clock className="h-3.5 w-3.5" />}>
-              {startsAt.toLocaleDateString("en-ZA", { weekday: "long", day: "numeric", month: "short" })}
+              {startsAt.toLocaleDateString("en-ZA", {
+                weekday: "long",
+                day: "numeric",
+                month: "short",
+              })}
             </Info>
             <Info icon={<Clock className="h-3.5 w-3.5" />}>
               {formatTime(startsAt)} · {durationMin}m

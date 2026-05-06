@@ -1,7 +1,19 @@
 import { useEffect } from "react";
 import { Outlet, Link, createRootRoute, HeadContent, useRouterState } from "@tanstack/react-router";
+import { BottomNav } from "@/components/BottomNav";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider, useAuth } from "@/contexts/auth";
+import { captureReferrerFromSearch } from "@/lib/referral";
+
+function CustomerBottomNav() {
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const hide =
+    pathname.startsWith("/admin") ||
+    pathname.startsWith("/auth") ||
+    pathname === "/onboarding";
+  if (hide) return null;
+  return <BottomNav />;
+}
 
 function NotFoundComponent() {
   return (
@@ -51,7 +63,15 @@ export const Route = createRootRoute({
 });
 
 function isAuthPublicPath(pathname: string) {
-  return pathname === "/auth" || pathname === "/auth/callback";
+  return pathname === "/auth" || pathname === "/auth/callback" || pathname === "/faq";
+}
+
+function ReferralCapture() {
+  const search = useRouterState({ select: (s) => s.location.search });
+  useEffect(() => {
+    captureReferrerFromSearch(search ?? "");
+  }, [search]);
+  return null;
 }
 
 function ProtectedOutlet() {
@@ -72,7 +92,9 @@ function RootComponent() {
     <>
       <HeadContent />
       <AuthProvider>
+        <ReferralCapture />
         <ProtectedOutlet />
+        <CustomerBottomNav />
       </AuthProvider>
       <Toaster position="top-center" />
     </>

@@ -1,5 +1,4 @@
 import { type ReactNode, useEffect, useState } from "react";
-import { BottomNav } from "./BottomNav";
 import { WhatsAppFab } from "./WhatsAppFab";
 import { getUser, supabase } from "@/lib/supabase";
 import logo from "@/assets/oneflow-logo.webp";
@@ -29,7 +28,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="mx-auto flex min-h-screen max-w-md flex-col safe-bottom-nav">
+      <div className="mx-auto flex min-h-screen max-w-md flex-col pb-with-bottom-nav">
         <header className="safe-top sticky top-0 z-30 flex flex-col border-b border-border/60 bg-background/95 backdrop-blur">
           {showAdminCta && (
             <div className="border-b border-primary/20 bg-primary-soft/40 px-4 py-2">
@@ -49,7 +48,6 @@ export function AppShell({ children }: { children: ReactNode }) {
         {children}
       </div>
       <WhatsAppFab />
-      <BottomNav />
     </div>
   );
 }

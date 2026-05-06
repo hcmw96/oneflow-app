@@ -14,8 +14,10 @@ import { Route as RewardsRouteImport } from './routes/rewards'
 import { Route as PricingRouteImport } from './routes/pricing'
 import { Route as PackagesRouteImport } from './routes/packages'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
+import { Route as NotificationsRouteImport } from './routes/notifications'
 import { Route as MeRouteImport } from './routes/me'
 import { Route as GoalsRouteImport } from './routes/goals'
+import { Route as FaqRouteImport } from './routes/faq'
 import { Route as ChallengeRouteImport } from './routes/challenge'
 import { Route as BookingsRouteImport } from './routes/bookings'
 import { Route as AuthRouteImport } from './routes/auth'
@@ -23,6 +25,7 @@ import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as PaymentSuccessRouteImport } from './routes/payment.success'
+import { Route as MeFriendsRouteImport } from './routes/me.friends'
 import { Route as ClassClassIdRouteImport } from './routes/class.$classId'
 import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
 import { Route as AdminWhatsappRouteImport } from './routes/admin.whatsapp'
@@ -45,6 +48,7 @@ import { Route as AdminClassesRouteImport } from './routes/admin.classes'
 import { Route as AdminCheckInRouteImport } from './routes/admin.check-in'
 import { Route as AdminBookingsRouteImport } from './routes/admin.bookings'
 import { Route as AdminBadgesRouteImport } from './routes/admin.badges'
+import { Route as AdminCustomersCustomerIdRouteImport } from './routes/admin.customers.$customerId'
 
 const ScheduleRoute = ScheduleRouteImport.update({
   id: '/schedule',
@@ -71,6 +75,11 @@ const OnboardingRoute = OnboardingRouteImport.update({
   path: '/onboarding',
   getParentRoute: () => rootRouteImport,
 } as any)
+const NotificationsRoute = NotificationsRouteImport.update({
+  id: '/notifications',
+  path: '/notifications',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const MeRoute = MeRouteImport.update({
   id: '/me',
   path: '/me',
@@ -79,6 +88,11 @@ const MeRoute = MeRouteImport.update({
 const GoalsRoute = GoalsRouteImport.update({
   id: '/goals',
   path: '/goals',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FaqRoute = FaqRouteImport.update({
+  id: '/faq',
+  path: '/faq',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ChallengeRoute = ChallengeRouteImport.update({
@@ -115,6 +129,11 @@ const PaymentSuccessRoute = PaymentSuccessRouteImport.update({
   id: '/payment/success',
   path: '/payment/success',
   getParentRoute: () => rootRouteImport,
+} as any)
+const MeFriendsRoute = MeFriendsRouteImport.update({
+  id: '/friends',
+  path: '/friends',
+  getParentRoute: () => MeRoute,
 } as any)
 const ClassClassIdRoute = ClassClassIdRouteImport.update({
   id: '/class/$classId',
@@ -226,6 +245,12 @@ const AdminBadgesRoute = AdminBadgesRouteImport.update({
   path: '/badges',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminCustomersCustomerIdRoute =
+  AdminCustomersCustomerIdRouteImport.update({
+    id: '/$customerId',
+    path: '/$customerId',
+    getParentRoute: () => AdminCustomersRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -233,8 +258,10 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRouteWithChildren
   '/bookings': typeof BookingsRoute
   '/challenge': typeof ChallengeRoute
+  '/faq': typeof FaqRoute
   '/goals': typeof GoalsRoute
-  '/me': typeof MeRoute
+  '/me': typeof MeRouteWithChildren
+  '/notifications': typeof NotificationsRoute
   '/onboarding': typeof OnboardingRoute
   '/packages': typeof PackagesRoute
   '/pricing': typeof PricingRoute
@@ -245,7 +272,7 @@ export interface FileRoutesByFullPath {
   '/admin/check-in': typeof AdminCheckInRoute
   '/admin/classes': typeof AdminClassesRoute
   '/admin/client-comms': typeof AdminClientCommsRoute
-  '/admin/customers': typeof AdminCustomersRoute
+  '/admin/customers': typeof AdminCustomersRouteWithChildren
   '/admin/email': typeof AdminEmailRoute
   '/admin/guides': typeof AdminGuidesRoute
   '/admin/install-app': typeof AdminInstallAppRoute
@@ -262,16 +289,20 @@ export interface FileRoutesByFullPath {
   '/admin/whatsapp': typeof AdminWhatsappRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/class/$classId': typeof ClassClassIdRoute
+  '/me/friends': typeof MeFriendsRoute
   '/payment/success': typeof PaymentSuccessRoute
   '/admin/': typeof AdminIndexRoute
+  '/admin/customers/$customerId': typeof AdminCustomersCustomerIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRouteWithChildren
   '/bookings': typeof BookingsRoute
   '/challenge': typeof ChallengeRoute
+  '/faq': typeof FaqRoute
   '/goals': typeof GoalsRoute
-  '/me': typeof MeRoute
+  '/me': typeof MeRouteWithChildren
+  '/notifications': typeof NotificationsRoute
   '/onboarding': typeof OnboardingRoute
   '/packages': typeof PackagesRoute
   '/pricing': typeof PricingRoute
@@ -282,7 +313,7 @@ export interface FileRoutesByTo {
   '/admin/check-in': typeof AdminCheckInRoute
   '/admin/classes': typeof AdminClassesRoute
   '/admin/client-comms': typeof AdminClientCommsRoute
-  '/admin/customers': typeof AdminCustomersRoute
+  '/admin/customers': typeof AdminCustomersRouteWithChildren
   '/admin/email': typeof AdminEmailRoute
   '/admin/guides': typeof AdminGuidesRoute
   '/admin/install-app': typeof AdminInstallAppRoute
@@ -299,8 +330,10 @@ export interface FileRoutesByTo {
   '/admin/whatsapp': typeof AdminWhatsappRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/class/$classId': typeof ClassClassIdRoute
+  '/me/friends': typeof MeFriendsRoute
   '/payment/success': typeof PaymentSuccessRoute
   '/admin': typeof AdminIndexRoute
+  '/admin/customers/$customerId': typeof AdminCustomersCustomerIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -309,8 +342,10 @@ export interface FileRoutesById {
   '/auth': typeof AuthRouteWithChildren
   '/bookings': typeof BookingsRoute
   '/challenge': typeof ChallengeRoute
+  '/faq': typeof FaqRoute
   '/goals': typeof GoalsRoute
-  '/me': typeof MeRoute
+  '/me': typeof MeRouteWithChildren
+  '/notifications': typeof NotificationsRoute
   '/onboarding': typeof OnboardingRoute
   '/packages': typeof PackagesRoute
   '/pricing': typeof PricingRoute
@@ -321,7 +356,7 @@ export interface FileRoutesById {
   '/admin/check-in': typeof AdminCheckInRoute
   '/admin/classes': typeof AdminClassesRoute
   '/admin/client-comms': typeof AdminClientCommsRoute
-  '/admin/customers': typeof AdminCustomersRoute
+  '/admin/customers': typeof AdminCustomersRouteWithChildren
   '/admin/email': typeof AdminEmailRoute
   '/admin/guides': typeof AdminGuidesRoute
   '/admin/install-app': typeof AdminInstallAppRoute
@@ -338,8 +373,10 @@ export interface FileRoutesById {
   '/admin/whatsapp': typeof AdminWhatsappRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/class/$classId': typeof ClassClassIdRoute
+  '/me/friends': typeof MeFriendsRoute
   '/payment/success': typeof PaymentSuccessRoute
   '/admin/': typeof AdminIndexRoute
+  '/admin/customers/$customerId': typeof AdminCustomersCustomerIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -349,8 +386,10 @@ export interface FileRouteTypes {
     | '/auth'
     | '/bookings'
     | '/challenge'
+    | '/faq'
     | '/goals'
     | '/me'
+    | '/notifications'
     | '/onboarding'
     | '/packages'
     | '/pricing'
@@ -378,16 +417,20 @@ export interface FileRouteTypes {
     | '/admin/whatsapp'
     | '/auth/callback'
     | '/class/$classId'
+    | '/me/friends'
     | '/payment/success'
     | '/admin/'
+    | '/admin/customers/$customerId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/auth'
     | '/bookings'
     | '/challenge'
+    | '/faq'
     | '/goals'
     | '/me'
+    | '/notifications'
     | '/onboarding'
     | '/packages'
     | '/pricing'
@@ -415,8 +458,10 @@ export interface FileRouteTypes {
     | '/admin/whatsapp'
     | '/auth/callback'
     | '/class/$classId'
+    | '/me/friends'
     | '/payment/success'
     | '/admin'
+    | '/admin/customers/$customerId'
   id:
     | '__root__'
     | '/'
@@ -424,8 +469,10 @@ export interface FileRouteTypes {
     | '/auth'
     | '/bookings'
     | '/challenge'
+    | '/faq'
     | '/goals'
     | '/me'
+    | '/notifications'
     | '/onboarding'
     | '/packages'
     | '/pricing'
@@ -453,8 +500,10 @@ export interface FileRouteTypes {
     | '/admin/whatsapp'
     | '/auth/callback'
     | '/class/$classId'
+    | '/me/friends'
     | '/payment/success'
     | '/admin/'
+    | '/admin/customers/$customerId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -463,8 +512,10 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRouteWithChildren
   BookingsRoute: typeof BookingsRoute
   ChallengeRoute: typeof ChallengeRoute
+  FaqRoute: typeof FaqRoute
   GoalsRoute: typeof GoalsRoute
-  MeRoute: typeof MeRoute
+  MeRoute: typeof MeRouteWithChildren
+  NotificationsRoute: typeof NotificationsRoute
   OnboardingRoute: typeof OnboardingRoute
   PackagesRoute: typeof PackagesRoute
   PricingRoute: typeof PricingRoute
@@ -511,6 +562,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OnboardingRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/notifications': {
+      id: '/notifications'
+      path: '/notifications'
+      fullPath: '/notifications'
+      preLoaderRoute: typeof NotificationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/me': {
       id: '/me'
       path: '/me'
@@ -523,6 +581,13 @@ declare module '@tanstack/react-router' {
       path: '/goals'
       fullPath: '/goals'
       preLoaderRoute: typeof GoalsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/faq': {
+      id: '/faq'
+      path: '/faq'
+      fullPath: '/faq'
+      preLoaderRoute: typeof FaqRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/challenge': {
@@ -573,6 +638,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/payment/success'
       preLoaderRoute: typeof PaymentSuccessRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/me/friends': {
+      id: '/me/friends'
+      path: '/friends'
+      fullPath: '/me/friends'
+      preLoaderRoute: typeof MeFriendsRouteImport
+      parentRoute: typeof MeRoute
     }
     '/class/$classId': {
       id: '/class/$classId'
@@ -728,8 +800,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminBadgesRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/customers/$customerId': {
+      id: '/admin/customers/$customerId'
+      path: '/$customerId'
+      fullPath: '/admin/customers/$customerId'
+      preLoaderRoute: typeof AdminCustomersCustomerIdRouteImport
+      parentRoute: typeof AdminCustomersRoute
+    }
   }
 }
+
+interface AdminCustomersRouteChildren {
+  AdminCustomersCustomerIdRoute: typeof AdminCustomersCustomerIdRoute
+}
+
+const AdminCustomersRouteChildren: AdminCustomersRouteChildren = {
+  AdminCustomersCustomerIdRoute: AdminCustomersCustomerIdRoute,
+}
+
+const AdminCustomersRouteWithChildren = AdminCustomersRoute._addFileChildren(
+  AdminCustomersRouteChildren,
+)
 
 interface AdminRouteChildren {
   AdminBadgesRoute: typeof AdminBadgesRoute
@@ -737,7 +828,7 @@ interface AdminRouteChildren {
   AdminCheckInRoute: typeof AdminCheckInRoute
   AdminClassesRoute: typeof AdminClassesRoute
   AdminClientCommsRoute: typeof AdminClientCommsRoute
-  AdminCustomersRoute: typeof AdminCustomersRoute
+  AdminCustomersRoute: typeof AdminCustomersRouteWithChildren
   AdminEmailRoute: typeof AdminEmailRoute
   AdminGuidesRoute: typeof AdminGuidesRoute
   AdminInstallAppRoute: typeof AdminInstallAppRoute
@@ -761,7 +852,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminCheckInRoute: AdminCheckInRoute,
   AdminClassesRoute: AdminClassesRoute,
   AdminClientCommsRoute: AdminClientCommsRoute,
-  AdminCustomersRoute: AdminCustomersRoute,
+  AdminCustomersRoute: AdminCustomersRouteWithChildren,
   AdminEmailRoute: AdminEmailRoute,
   AdminGuidesRoute: AdminGuidesRoute,
   AdminInstallAppRoute: AdminInstallAppRoute,
@@ -791,14 +882,26 @@ const AuthRouteChildren: AuthRouteChildren = {
 
 const AuthRouteWithChildren = AuthRoute._addFileChildren(AuthRouteChildren)
 
+interface MeRouteChildren {
+  MeFriendsRoute: typeof MeFriendsRoute
+}
+
+const MeRouteChildren: MeRouteChildren = {
+  MeFriendsRoute: MeFriendsRoute,
+}
+
+const MeRouteWithChildren = MeRoute._addFileChildren(MeRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRouteWithChildren,
   AuthRoute: AuthRouteWithChildren,
   BookingsRoute: BookingsRoute,
   ChallengeRoute: ChallengeRoute,
+  FaqRoute: FaqRoute,
   GoalsRoute: GoalsRoute,
-  MeRoute: MeRoute,
+  MeRoute: MeRouteWithChildren,
+  NotificationsRoute: NotificationsRoute,
   OnboardingRoute: OnboardingRoute,
   PackagesRoute: PackagesRoute,
   PricingRoute: PricingRoute,

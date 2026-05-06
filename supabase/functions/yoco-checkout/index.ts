@@ -12,11 +12,95 @@ serve(async (req) => {
   const YOCO_SECRET = Deno.env.get("YOCO_SECRET_KEY")!;
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
   const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
-  const { pack_id, profile_id, success_url, cancel_url } = await req.json();
+  const raw = await req.json();
+  console.log("yoco-checkout body keys:", raw && typeof raw === "object" ? Object.keys(raw) : raw);
+
+  if (raw?.type === "class_invite") {
+    const class_invite_id = String(raw.class_invite_id ?? "");
+    const inviter_profile_id = String(raw.inviter_profile_id ?? "");
+    const success_url = String(raw.success_url ?? "");
+    const cancel_url = String(raw.cancel_url ?? "");
+    const amount_zar = Number(raw.amount_zar);
+
+    if (!class_invite_id || !inviter_profile_id || !success_url || !cancel_url) {
+      return new Response(
+        JSON.stringify({ error: "class_invite_id, inviter_profile_id, success_url, cancel_url required" }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    const { data: inv, error: invErr } = await supabase
+      .from("class_invites")
+      .select("id, inviter_id, status, paid_by_inviter")
+      .eq("id", class_invite_id)
+      .maybeSingle();
+
+    if (invErr || !inv) {
+      return new Response(JSON.stringify({ error: "Invite not found" }), {
+        status: 404,
+        headers: corsHeaders,
+      });
+    }
+
+    const invRow = inv as {
+      inviter_id: string;
+      status: string | null;
+      paid_by_inviter: boolean | null;
+    };
+    if (invRow.inviter_id !== inviter_profile_id || invRow.status !== "pending_payment") {
+      return new Response(JSON.stringify({ error: "Invalid invite for checkout" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    if (!invRow.paid_by_inviter) {
+      return new Response(JSON.stringify({ error: "Invite is not pay-for-friend" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const defaultZar = Number(Deno.env.get("CLASS_INVITE_AMOUNT_ZAR") ?? "180");
+    const zar = Number.isFinite(amount_zar) && amount_zar > 0 ? amount_zar : defaultZar;
+    const amountCents = Math.round(zar * 100);
+
+    const yocoRes = await fetch("https://payments.yoco.com/api/checkouts", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${YOCO_SECRET}`,
+      },
+      body: JSON.stringify({
+        amount: amountCents,
+        currency: "ZAR",
+        description: "One Flow — class invite (pay for friend)",
+        successUrl: success_url,
+        cancelUrl: cancel_url,
+        failureUrl: cancel_url,
+        metadata: {
+          type: "class_invite",
+          class_invite_id,
+          inviter_profile_id,
+        },
+      }),
+    });
+
+    const checkout = await yocoRes.json();
+    console.log("yoco class_invite status:", yocoRes.status);
+    console.log("yoco class_invite body:", JSON.stringify(checkout));
+    return new Response(JSON.stringify(checkout), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  const { pack_id, profile_id, success_url, cancel_url } = raw;
   console.log("pack_id:", pack_id, "profile_id:", profile_id);
 
-  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
   const { data: pack, error: packError } = await supabase
     .from("products")
     .select("*")

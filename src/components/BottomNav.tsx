@@ -14,8 +14,10 @@ export function BottomNav() {
   const loc = useLocation();
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-40 border-t border-border bg-card/95 backdrop-blur-md"
-      style={{ paddingBottom: "max(env(safe-area-inset-bottom), 0.25rem)" }}
+      className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-card/95 backdrop-blur-md"
+      style={{
+        paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 12px)",
+      }}
     >
       <ul className="mx-auto flex max-w-md items-stretch justify-around px-2 pt-2">
         {tabs.map(({ to, label, icon: Icon, exact }) => {
@@ -25,7 +27,7 @@ export function BottomNav() {
               <Link
                 to={to}
                 className={cn(
-                  "flex flex-col items-center gap-1 rounded-xl px-2 py-1 text-[11px] font-medium transition-colors",
+                  "flex min-h-[44px] flex-col items-center justify-center gap-1 rounded-xl px-2 py-1 text-[11px] font-medium transition-colors",
                   active ? "text-primary" : "text-muted-foreground",
                 )}
               >

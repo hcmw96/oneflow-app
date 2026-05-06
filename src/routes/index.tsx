@@ -6,6 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import challengeBg from "@/assets/challenge-bg.jpg";
 import { useAuth } from "@/contexts/auth";
 import { supabase } from "@/lib/supabase";
+import { addDays, startOfWeekSunday } from "@/lib/format";
 
 export const Route = createFileRoute("/")({
   component: HomePage,
@@ -34,11 +35,12 @@ function HomePage() {
   const [credits, setCredits] = useState(0);
   const [completed, setCompleted] = useState(0);
   const [points, setPoints] = useState(0);
+  const [weeklyGoal, setWeeklyGoal] = useState(3);
+  const [weeklyDone, setWeeklyDone] = useState(0);
   const stampedCount = 0;
   const challengeTotalDays = 31;
-  const weeklyGoal = 3;
-  const weeklyDone = 0;
-  const goalPct = Math.min(100, (weeklyDone / weeklyGoal) * 100);
+  const SAGE = "#a3b693";
+  const goalPct = weeklyGoal > 0 ? Math.min(100, (weeklyDone / weeklyGoal) * 100) : 0;
   const remaining = Math.max(0, weeklyGoal - weeklyDone);
 
   useEffect(() => {
@@ -52,6 +54,8 @@ function HomePage() {
       setCompleted(0);
       setPoints(0);
       setFirstName(null);
+      setWeeklyGoal(3);
+      setWeeklyDone(0);
 
       if (!user || cancelled) {
         if (!cancelled) setLoading(false);
@@ -59,14 +63,17 @@ function HomePage() {
       }
 
       const uid = user.id;
+      const weekStart = startOfWeekSunday(new Date());
+      const weekEnd = addDays(weekStart, 7);
 
       const [
         { data: profile },
         { data: creditRows },
         { count: attendedCount, error: attendedErr },
+        { count: weeklyAttended, error: weeklyErr },
         { data: pointsRow },
       ] = await Promise.all([
-        supabase.from("profiles").select("first_name").eq("id", uid).maybeSingle(),
+        supabase.from("profiles").select("first_name, weekly_goal").eq("id", uid).maybeSingle(),
         supabase
           .from("user_credits")
           .select("credits_remaining, is_unlimited")
@@ -76,12 +83,21 @@ function HomePage() {
           .select("id", { count: "exact", head: true })
           .eq("profile_id", uid)
           .eq("status", "attended"),
+        supabase
+          .from("bookings")
+          .select("id", { count: "exact", head: true })
+          .eq("profile_id", uid)
+          .eq("status", "attended")
+          .not("checked_in_at", "is", null)
+          .gte("checked_in_at", weekStart.toISOString())
+          .lt("checked_in_at", weekEnd.toISOString()),
         supabase.from("flow_points_balance").select("balance").eq("profile_id", uid).maybeSingle(),
       ]);
 
       if (cancelled) return;
 
       if (attendedErr) console.error(attendedErr);
+      if (weeklyErr) console.error(weeklyErr);
 
       const creditSum = (creditRows ?? []).reduce((acc, row) => {
         if (row.is_unlimited) return acc;
@@ -92,6 +108,13 @@ function HomePage() {
       setFirstName(profile?.first_name?.trim() || null);
       setCredits(creditSum);
       setCompleted(attendedCount ?? 0);
+      const wgRaw = (profile as { weekly_goal?: number | null } | null)?.weekly_goal;
+      const wg =
+        typeof wgRaw === "number" && Number.isFinite(wgRaw)
+          ? Math.min(14, Math.max(1, Math.round(wgRaw)))
+          : 3;
+      setWeeklyGoal(wg);
+      setWeeklyDone(weeklyAttended ?? 0);
       setPoints(pointsRow?.balance ?? 0);
       setLoading(false);
     }
@@ -191,7 +214,10 @@ function HomePage() {
             {weeklyDone} of {weeklyGoal} classes this week
           </p>
           <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-muted">
-            <div className="h-full rounded-full bg-primary" style={{ width: `${goalPct}%` }} />
+            <div
+              className="h-full rounded-full"
+              style={{ width: `${goalPct}%`, backgroundColor: SAGE }}
+            />
           </div>
           <p className="mt-3 text-sm text-muted-foreground">
             {remaining} more classes to reach your goal

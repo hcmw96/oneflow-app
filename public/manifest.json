@@ -1,0 +1,9 @@
+{
+  "name": "One Flow",
+  "short_name": "One Flow",
+  "description": "Book classes, track Flow Points, and manage your One Flow journey.",
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#a3b693",
+  "background_color": "#f5f5f0"
+}
