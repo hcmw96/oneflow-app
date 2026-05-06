@@ -27,6 +27,7 @@ import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as PaymentSuccessRouteImport } from './routes/payment.success'
 import { Route as MeFriendsRouteImport } from './routes/me.friends'
 import { Route as ClassClassIdRouteImport } from './routes/class.$classId'
+import { Route as AuthResetPasswordRouteImport } from './routes/auth.reset-password'
 import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
 import { Route as AdminWhatsappRouteImport } from './routes/admin.whatsapp'
 import { Route as AdminWaiversRouteImport } from './routes/admin.waivers'
@@ -139,6 +140,11 @@ const ClassClassIdRoute = ClassClassIdRouteImport.update({
   id: '/class/$classId',
   path: '/class/$classId',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AuthResetPasswordRoute = AuthResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
+  getParentRoute: () => AuthRoute,
 } as any)
 const AuthCallbackRoute = AuthCallbackRouteImport.update({
   id: '/callback',
@@ -288,6 +294,7 @@ export interface FileRoutesByFullPath {
   '/admin/waivers': typeof AdminWaiversRoute
   '/admin/whatsapp': typeof AdminWhatsappRoute
   '/auth/callback': typeof AuthCallbackRoute
+  '/auth/reset-password': typeof AuthResetPasswordRoute
   '/class/$classId': typeof ClassClassIdRoute
   '/me/friends': typeof MeFriendsRoute
   '/payment/success': typeof PaymentSuccessRoute
@@ -329,6 +336,7 @@ export interface FileRoutesByTo {
   '/admin/waivers': typeof AdminWaiversRoute
   '/admin/whatsapp': typeof AdminWhatsappRoute
   '/auth/callback': typeof AuthCallbackRoute
+  '/auth/reset-password': typeof AuthResetPasswordRoute
   '/class/$classId': typeof ClassClassIdRoute
   '/me/friends': typeof MeFriendsRoute
   '/payment/success': typeof PaymentSuccessRoute
@@ -372,6 +380,7 @@ export interface FileRoutesById {
   '/admin/waivers': typeof AdminWaiversRoute
   '/admin/whatsapp': typeof AdminWhatsappRoute
   '/auth/callback': typeof AuthCallbackRoute
+  '/auth/reset-password': typeof AuthResetPasswordRoute
   '/class/$classId': typeof ClassClassIdRoute
   '/me/friends': typeof MeFriendsRoute
   '/payment/success': typeof PaymentSuccessRoute
@@ -416,6 +425,7 @@ export interface FileRouteTypes {
     | '/admin/waivers'
     | '/admin/whatsapp'
     | '/auth/callback'
+    | '/auth/reset-password'
     | '/class/$classId'
     | '/me/friends'
     | '/payment/success'
@@ -457,6 +467,7 @@ export interface FileRouteTypes {
     | '/admin/waivers'
     | '/admin/whatsapp'
     | '/auth/callback'
+    | '/auth/reset-password'
     | '/class/$classId'
     | '/me/friends'
     | '/payment/success'
@@ -499,6 +510,7 @@ export interface FileRouteTypes {
     | '/admin/waivers'
     | '/admin/whatsapp'
     | '/auth/callback'
+    | '/auth/reset-password'
     | '/class/$classId'
     | '/me/friends'
     | '/payment/success'
@@ -652,6 +664,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/class/$classId'
       preLoaderRoute: typeof ClassClassIdRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/auth/reset-password': {
+      id: '/auth/reset-password'
+      path: '/reset-password'
+      fullPath: '/auth/reset-password'
+      preLoaderRoute: typeof AuthResetPasswordRouteImport
+      parentRoute: typeof AuthRoute
     }
     '/auth/callback': {
       id: '/auth/callback'
@@ -874,10 +893,12 @@ const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 
 interface AuthRouteChildren {
   AuthCallbackRoute: typeof AuthCallbackRoute
+  AuthResetPasswordRoute: typeof AuthResetPasswordRoute
 }
 
 const AuthRouteChildren: AuthRouteChildren = {
   AuthCallbackRoute: AuthCallbackRoute,
+  AuthResetPasswordRoute: AuthResetPasswordRoute,
 }
 
 const AuthRouteWithChildren = AuthRoute._addFileChildren(AuthRouteChildren)

@@ -3,6 +3,14 @@ import { useEffect, useState } from "react";
 import { getUser, supabase } from "@/lib/supabase";
 import { applyStoredReferrerToProfile, captureReferrerFromSearch } from "@/lib/referral";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
@@ -68,6 +76,32 @@ export default function AuthPage() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [forgotOpen, setForgotOpen] = useState(false);
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetSending, setResetSending] = useState(false);
+
+  const passwordResetRedirect = () =>
+    `${window.location.origin}/auth/reset-password`;
+
+  const handleForgotSubmit = async () => {
+    const trimmed = resetEmail.trim();
+    if (!trimmed) {
+      toast.error("Enter your email address.");
+      return;
+    }
+    setResetSending(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(trimmed, {
+      redirectTo: passwordResetRedirect(),
+    });
+    setResetSending(false);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    toast.success("Check your email for a password reset link");
+    setForgotOpen(false);
+    setResetEmail("");
+  };
 
   const handleSignIn = async () => {
     if (!email.trim() || !password) {
@@ -186,11 +220,10 @@ export default function AuthPage() {
             </div>
             <button
               type="button"
-              onClick={() =>
-                toast.info("Contact support", {
-                  description: "Password reset is not available in the app yet. Please reach out to the studio.",
-                })
-              }
+              onClick={() => {
+                setResetEmail(email.trim());
+                setForgotOpen(true);
+              }}
               className="text-xs font-medium text-primary underline-offset-4 hover:underline"
             >
               Forgot password?
@@ -323,6 +356,43 @@ export default function AuthPage() {
           Contact the studio
         </a>
       </p>
+
+      <Dialog open={forgotOpen} onOpenChange={setForgotOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-display text-lg">Reset password</DialogTitle>
+            <DialogDescription>
+              We&apos;ll send a link to your email to choose a new password.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label htmlFor="reset-email">Email</Label>
+            <Input
+              id="reset-email"
+              type="email"
+              autoComplete="email"
+              value={resetEmail}
+              onChange={(e) => setResetEmail(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && void handleForgotSubmit()}
+              placeholder="you@example.com"
+              className="h-11 bg-background"
+            />
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setForgotOpen(false)}
+              disabled={resetSending}
+            >
+              Cancel
+            </Button>
+            <Button type="button" onClick={() => void handleForgotSubmit()} disabled={resetSending}>
+              {resetSending ? "Sending…" : "Send link"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -63,7 +63,7 @@ export const Route = createRootRoute({
 });
 
 function isAuthPublicPath(pathname: string) {
-  return pathname === "/auth" || pathname === "/auth/callback" || pathname === "/faq";
+  return pathname.startsWith("/auth") || pathname === "/faq";
 }
 
 function ReferralCapture() {
