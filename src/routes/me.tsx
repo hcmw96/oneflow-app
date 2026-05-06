@@ -85,8 +85,9 @@ type ProfileRow = {
   weekly_goal: number | null;
   date_of_birth: string | null;
   avatar_url: string | null;
-  unread_notification_count: number | null;
   is_searchable: boolean | null;
+  notification_preferences: unknown | null;
+  role: string | null;
 };
 
 function MePage() {
@@ -96,6 +97,7 @@ function MePage() {
   const [email, setEmail] = useState("");
   const [profile, setProfile] = useState<ProfileRow | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [historyRows, setHistoryRows] = useState<{ id: string; label: string; date: Date }[]>([]);
 
   const tabIdx = Math.max(
@@ -119,6 +121,7 @@ function MePage() {
     if (!user) {
       setProfile(null);
       setUserId(null);
+      setUnreadCount(0);
       setEmail("");
       setHistoryRows([]);
       setLoading(false);
@@ -128,24 +131,36 @@ function MePage() {
     setEmail(user.email ?? "");
     setUserId(user.id);
 
-    const [{ data: prof }, { data: hist }] = await Promise.all([
-      supabase
-        .from("profiles")
-        .select(
-          "first_name, last_name, email, phone, weekly_goal, date_of_birth, avatar_url, unread_notification_count, is_searchable",
-        )
-        .eq("id", user.id)
-        .maybeSingle(),
-      supabase
-        .from("bookings")
-        .select("id, classes ( name, starts_at )")
-        .eq("profile_id", user.id)
-        .eq("status", "attended")
-        .order("created_at", { ascending: false })
-        .limit(12),
-    ]);
+    const [
+      { data: prof, error: profErr },
+      { count: unreadNotif, error: unreadErr },
+      { data: hist },
+    ] = await Promise.all([
+        supabase
+          .from("profiles")
+          .select(
+            "first_name, last_name, email, phone, date_of_birth, avatar_url, weekly_goal, is_searchable, notification_preferences, role",
+          )
+          .eq("id", user.id)
+          .maybeSingle(),
+        supabase
+          .from("notifications")
+          .select("id", { count: "exact", head: true })
+          .eq("profile_id", user.id)
+          .eq("is_read", false),
+        supabase
+          .from("bookings")
+          .select("id, classes ( name, starts_at )")
+          .eq("profile_id", user.id)
+          .eq("status", "attended")
+          .order("created_at", { ascending: false })
+          .limit(12),
+      ]);
 
-    setProfile(prof as ProfileRow | null);
+    if (profErr) console.error(profErr);
+    if (unreadErr) console.error(unreadErr);
+    setProfile(profErr ? null : ((prof ?? null) as ProfileRow | null));
+    setUnreadCount(typeof unreadNotif === "number" ? unreadNotif : 0);
 
     const rows =
       (hist ?? []).map((raw: Record<string, unknown>) => {
@@ -174,9 +189,6 @@ function MePage() {
     first.charAt(0) + (profile?.last_name?.charAt(0) || first.charAt(0))
   ).toUpperCase();
 
-  const unread =
-    typeof profile?.unread_notification_count === "number" ? profile.unread_notification_count : 0;
-
   return (
     <AppShell>
       <div className="flex items-center justify-between px-5 pt-3">
@@ -187,9 +199,9 @@ function MePage() {
           className="relative z-30 flex h-10 w-10 items-center justify-center rounded-full border border-border bg-card"
         >
           <Bell className="h-4 w-4" />
-          {unread > 0 ? (
+          {unreadCount > 0 ? (
             <span className="absolute -right-0.5 -top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold leading-none text-white">
-              {unread > 99 ? "99+" : unread}
+              {unreadCount > 99 ? "99+" : unreadCount}
             </span>
           ) : null}
         </Link>

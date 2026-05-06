@@ -26,7 +26,7 @@ type ClassRow = {
   booked_count: number;
   is_cancelled: boolean;
   guide_name: string | null;
-  description: string | null;
+  description?: string;
 };
 
 function scheduleDayKey(day: Date): string {
