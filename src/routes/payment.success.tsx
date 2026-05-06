@@ -104,6 +104,26 @@ function PaymentSuccessPage() {
         typeof creditCountRaw === "number" ? creditCountRaw : Number(creditCountRaw ?? 0) || 0;
       const isUnlimited = creditCount >= 999;
 
+      // Ensure profile exists before inserting credits
+      const { data: existingProfile } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("id", profileId)
+        .maybeSingle();
+
+      if (!existingProfile) {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        await supabase.from("profiles").insert({
+          id: profileId,
+          email: user?.email ?? "",
+          role: "customer",
+        });
+        // Wait briefly for profile to be created
+        await new Promise((r) => setTimeout(r, 500));
+      }
+
       const insertRow = {
         profile_id: profileId,
         product_id: packId,
