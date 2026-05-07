@@ -1,6 +1,6 @@
 import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from "react";
 import type { User } from "@supabase/supabase-js";
-import { getUser, supabase } from "@/lib/supabase";
+import { supabase } from "@/lib/supabase";
 
 type AuthProfile = {
   onboarding_complete: boolean | null;
@@ -54,17 +54,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
-    void getUser().then((u) => {
+
+    void supabase.auth.getSession().then(({ data: { session } }) => {
       if (cancelled) return;
-      setUser(u);
+      setUser(session?.user ?? null);
       setAuthReady(true);
     });
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
       setUser(session?.user ?? null);
       setAuthReady(true);
+      if (event === "SIGNED_OUT") {
+        setProfile(null);
+        setProfileReady(true);
+      }
     });
 
     return () => {

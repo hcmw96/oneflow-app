@@ -31,6 +31,17 @@ function hasRecoveryMarker(): boolean {
   );
 }
 
+/** PKCE code, magic-link token, or implicit/hash tokens (Supabase uses access_token in fragment). */
+function hasOAuthOrMagicLinkCallback(): boolean {
+  const search = new URLSearchParams(window.location.search);
+  if (search.has("code") || search.has("token")) return true;
+  const hashRaw = window.location.hash.startsWith("#")
+    ? window.location.hash.slice(1)
+    : window.location.hash;
+  const hash = new URLSearchParams(hashRaw);
+  return hash.has("access_token") || hash.has("refresh_token") || hash.has("token");
+}
+
 async function loadProfileGate(userId: string) {
   const { data } = await supabase
     .from("profiles")
@@ -65,6 +76,12 @@ export default function AuthCallback() {
         return;
       }
 
+      if (!hasOAuthOrMagicLinkCallback()) {
+        done.current = true;
+        navigate({ to: "/auth" });
+        return;
+      }
+
       const params = new URLSearchParams(window.location.search);
       const code = params.get("code");
       if (code) {
@@ -82,6 +99,7 @@ export default function AuthCallback() {
         return;
       }
 
+      // Implicit or magic-link session established from URL fragment / existing session after redirect.
       const {
         data: { session },
       } = await supabase.auth.getSession();

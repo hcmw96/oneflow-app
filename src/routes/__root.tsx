@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { Outlet, Link, createRootRoute, HeadContent, useRouterState } from "@tanstack/react-router";
+import { Loader2 } from "lucide-react";
 import { BottomNav } from "@/components/BottomNav";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider, useAuth } from "@/contexts/auth";
@@ -75,11 +76,18 @@ function ReferralCapture() {
 }
 
 function ProtectedOutlet() {
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { user, authReady, profile, profileReady } = useAuth();
+
+  const onboardingDone = profile?.onboarding_complete === true;
+  const role = (profile?.role ?? "").toLowerCase();
+  const isStaff = role === "director" || role === "management" || role === "guide";
 
   useEffect(() => {
     if (!authReady) return;
+    if (user && !profileReady) return;
+
+    const pathname = window.location.pathname;
+
     const publicPath = isAuthPublicPath(pathname);
 
     if (!user) {
@@ -87,11 +95,6 @@ function ProtectedOutlet() {
       return;
     }
 
-    if (!profileReady) return;
-
-    const role = (profile?.role ?? "").toLowerCase();
-    const isStaff = role === "director" || role === "management" || role === "guide";
-    const onboardingDone = profile?.onboarding_complete === true;
     const onOnboarding = pathname === "/onboarding";
     const onAdmin = pathname.startsWith("/admin");
     const onAuth = pathname.startsWith("/auth");
@@ -114,7 +117,18 @@ function ProtectedOutlet() {
     if (!isStaff && onAdmin) {
       window.location.assign("/");
     }
-  }, [authReady, user, profile, profileReady, pathname]);
+  }, [authReady, user?.id, profileReady, onboardingDone, isStaff]);
+
+  const sessionResolving = !authReady || (!!user && !profileReady);
+
+  if (sessionResolving) {
+    return (
+      <div className="flex min-h-[100dvh] flex-col items-center justify-center gap-3 bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" aria-hidden />
+        <p className="text-sm text-muted-foreground">Loading…</p>
+      </div>
+    );
+  }
 
   return <Outlet />;
 }
