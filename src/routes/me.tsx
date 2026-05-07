@@ -10,7 +10,7 @@ import {
   Camera,
   LogOut,
   Bell,
-  UserPlus,
+  Share2,
   ChevronRight,
   Shield,
   HelpCircle,
@@ -743,9 +743,9 @@ function SettingsPanel({
         onClick={() => void runInviteFriend(userId)}
       >
         <span className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-foreground">
-          <UserPlus className="h-4 w-4" />
+          <Share2 className="h-4 w-4" />
         </span>
-        <span className="flex-1 text-sm font-semibold">Invite a friend</span>
+        <span className="flex-1 text-sm font-semibold">Share with a friend</span>
         <ChevronRight className="h-4 w-4 text-muted-foreground" />
       </button>
 

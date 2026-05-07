@@ -14,6 +14,23 @@ type ProfileGate = {
   onboarding_complete?: boolean | null;
 };
 
+function hasRecoveryMarker(): boolean {
+  const search = new URLSearchParams(window.location.search);
+  const hashRaw = window.location.hash.startsWith("#")
+    ? window.location.hash.slice(1)
+    : window.location.hash;
+  const hash = new URLSearchParams(hashRaw);
+  const typeSearch = (search.get("type") ?? "").toLowerCase();
+  const typeHash = (hash.get("type") ?? "").toLowerCase();
+
+  return (
+    typeSearch === "recovery" ||
+    typeHash === "recovery" ||
+    search.has("recovery_token") ||
+    hash.has("recovery_token")
+  );
+}
+
 async function loadProfileGate(userId: string) {
   const { data } = await supabase
     .from("profiles")
@@ -40,6 +57,13 @@ export default function AuthCallback() {
   useEffect(() => {
     const run = async () => {
       if (done.current) return;
+
+      // Recovery links must bypass onboarding/role routing.
+      if (hasRecoveryMarker()) {
+        done.current = true;
+        window.location.assign(`/auth/reset-password${window.location.search}${window.location.hash}`);
+        return;
+      }
 
       const params = new URLSearchParams(window.location.search);
       const code = params.get("code");

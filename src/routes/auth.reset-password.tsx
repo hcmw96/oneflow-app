@@ -20,6 +20,21 @@ export const Route = createFileRoute("/auth/reset-password")({
 
 type Gate = "loading" | "ready" | "invalid";
 
+async function resolveAfterReset(): Promise<"/" | "/admin"> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return "/";
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
+  const role = String(profile?.role ?? "").toLowerCase();
+  if (role === "director" || role === "management" || role === "guide") return "/admin";
+  return "/";
+}
+
 export default function ResetPasswordPage() {
   const navigate = useNavigate();
   const [gate, setGate] = useState<Gate>("loading");
@@ -89,7 +104,8 @@ export default function ResetPasswordPage() {
       return;
     }
     toast.success("Password updated.");
-    navigate({ to: "/" });
+    const dest = await resolveAfterReset();
+    navigate({ to: dest });
   };
 
   return (
@@ -97,7 +113,7 @@ export default function ResetPasswordPage() {
       <img src={oneflowLogo} alt="One Flow" className="mb-6 h-14 w-auto" />
       <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-sm">
         <h1 className="font-display text-center text-xl font-semibold text-card-foreground">
-          New password
+          Set new password
         </h1>
         <p className="mt-1 text-center text-xs text-muted-foreground">
           Choose a password for your One Flow account.
