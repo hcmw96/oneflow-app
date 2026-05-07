@@ -654,6 +654,7 @@ function WalkInSheet({
         class_id: classId,
         status: "attended",
         payment_method: "drop_in",
+        qr_token: globalThis.crypto.randomUUID(),
         checked_in: true,
         checked_in_at: checkedAt,
       })

@@ -185,7 +185,7 @@
   }
   /* Reserve space for fixed BottomNav (~80px row + safe area). See BottomNav.tsx */
   .pb-with-bottom-nav {
-    padding-bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
+    padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px));
   }
   .no-scrollbar::-webkit-scrollbar { display: none; }
   .no-scrollbar { scrollbar-width: none; }
