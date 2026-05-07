@@ -2,9 +2,16 @@ import { createContext, type ReactNode, useContext, useEffect, useMemo, useState
 import type { User } from "@supabase/supabase-js";
 import { getUser, supabase } from "@/lib/supabase";
 
+type AuthProfile = {
+  onboarding_complete: boolean | null;
+  role: string | null;
+};
+
 type AuthState = {
   user: User | null;
   authReady: boolean;
+  profile: AuthProfile | null;
+  profileReady: boolean;
 };
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -12,6 +19,38 @@ const AuthContext = createContext<AuthState | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
+  const [profile, setProfile] = useState<AuthProfile | null>(null);
+  const [profileReady, setProfileReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadProfile() {
+      if (!user) {
+        setProfile(null);
+        setProfileReady(true);
+        return;
+      }
+      setProfileReady(false);
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("onboarding_complete, role")
+        .eq("id", user.id)
+        .maybeSingle();
+      if (cancelled) return;
+      if (error) {
+        console.error(error);
+        setProfile(null);
+        setProfileReady(true);
+        return;
+      }
+      setProfile((data as AuthProfile | null) ?? null);
+      setProfileReady(true);
+    }
+    void loadProfile();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   useEffect(() => {
     let cancelled = false;
@@ -34,7 +73,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const value = useMemo(() => ({ user, authReady }), [user, authReady]);
+  const value = useMemo(
+    () => ({ user, authReady, profile, profileReady }),
+    [user, authReady, profile, profileReady],
+  );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

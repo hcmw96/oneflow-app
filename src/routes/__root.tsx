@@ -76,13 +76,45 @@ function ReferralCapture() {
 
 function ProtectedOutlet() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const { user, authReady } = useAuth();
+  const { user, authReady, profile, profileReady } = useAuth();
 
   useEffect(() => {
     if (!authReady) return;
-    if (isAuthPublicPath(pathname)) return;
-    if (!user) window.location.assign("/auth");
-  }, [authReady, user, pathname]);
+    const publicPath = isAuthPublicPath(pathname);
+
+    if (!user) {
+      if (!publicPath) window.location.assign("/auth");
+      return;
+    }
+
+    if (!profileReady) return;
+
+    const role = (profile?.role ?? "").toLowerCase();
+    const isStaff = role === "director" || role === "management" || role === "guide";
+    const onboardingDone = profile?.onboarding_complete === true;
+    const onOnboarding = pathname === "/onboarding";
+    const onAdmin = pathname.startsWith("/admin");
+    const onAuth = pathname.startsWith("/auth");
+
+    if (!onboardingDone) {
+      if (!onOnboarding) window.location.assign("/onboarding");
+      return;
+    }
+
+    if (onOnboarding || onAuth) {
+      window.location.assign(isStaff ? "/admin" : "/");
+      return;
+    }
+
+    if (isStaff && !onAdmin) {
+      window.location.assign("/admin");
+      return;
+    }
+
+    if (!isStaff && onAdmin) {
+      window.location.assign("/");
+    }
+  }, [authReady, user, profile, profileReady, pathname]);
 
   return <Outlet />;
 }
