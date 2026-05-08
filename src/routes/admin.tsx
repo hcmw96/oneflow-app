@@ -1,8 +1,8 @@
 import { createFileRoute, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { isGuideRole, isPathAllowedForGuide } from "@/components/admin/AdminNav";
-import { getUser, supabase } from "@/lib/supabase";
+import { useAuth } from "@/contexts/auth";
 
 export const Route = createFileRoute("/admin")({
   head: () => ({
@@ -22,46 +22,37 @@ function isAdminRole(role: string | null | undefined) {
 function AdminLayout() {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const [gate, setGate] = useState<"loading" | "ok" | "denied">("loading");
-  const [profileRole, setProfileRole] = useState<string | null>(null);
+  const { user, authReady, profile, profileReady } = useAuth();
+  const profileRole = profile?.role ?? null;
 
   useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      const user = await getUser();
-      if (cancelled) return;
-      if (!user) {
-        window.location.assign("/auth");
-        return;
-      }
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("id", user.id)
-        .maybeSingle();
-      if (cancelled) return;
-      const role = profile?.role ?? null;
-      setProfileRole(role);
-      if (!isAdminRole(role)) {
-        setGate("denied");
-        navigate({ to: "/" });
-        return;
-      }
-      setGate("ok");
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [navigate]);
+    if (authReady && !user) {
+      window.location.assign("/auth");
+    }
+  }, [authReady, user]);
 
   useEffect(() => {
-    if (gate !== "ok") return;
+    if (!authReady || !user || !profileReady) return;
+    if (!isAdminRole(profileRole)) {
+      navigate({ to: "/", replace: true });
+    }
+  }, [authReady, user, profileReady, profileRole, navigate]);
+
+  useEffect(() => {
+    if (!authReady || !user || !profileReady) return;
+    if (!isAdminRole(profileRole)) return;
     if (isGuideRole(profileRole) && !isPathAllowedForGuide(pathname)) {
       navigate({ to: "/admin/check-in", replace: true });
     }
-  }, [gate, profileRole, pathname, navigate]);
+  }, [authReady, user, profileReady, profileRole, pathname, navigate]);
 
-  if (gate === "loading") {
+  const loading =
+    !authReady || (!!user && !profileReady) || (authReady && !user);
+
+  const canAccess =
+    authReady && !!user && profileReady && isAdminRole(profileRole);
+
+  if (loading) {
     return (
       <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted-foreground">
         Checking access…
@@ -69,7 +60,7 @@ function AdminLayout() {
     );
   }
 
-  if (gate === "denied") {
+  if (!canAccess) {
     return null;
   }
 

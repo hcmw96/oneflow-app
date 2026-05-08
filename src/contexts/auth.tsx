@@ -1,6 +1,6 @@
 import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from "react";
 import type { User } from "@supabase/supabase-js";
-import { supabase } from "@/lib/supabase";
+import { supabase, syncCachedAuthUser } from "@/lib/supabase";
 
 type AuthProfile = {
   onboarding_complete: boolean | null;
@@ -57,14 +57,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     void supabase.auth.getSession().then(({ data: { session } }) => {
       if (cancelled) return;
-      setUser(session?.user ?? null);
+      const u = session?.user ?? null;
+      syncCachedAuthUser(u);
+      setUser(u);
       setAuthReady(true);
     });
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
-      setUser(session?.user ?? null);
+      const u = session?.user ?? null;
+      syncCachedAuthUser(u);
+      setUser(u);
       setAuthReady(true);
       if (event === "SIGNED_OUT") {
         setProfile(null);

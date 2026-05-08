@@ -50,24 +50,14 @@ export default function AuthPage() {
     const init = async () => {
       const params = new URLSearchParams(window.location.search);
       const code = params.get("code");
-      if (code) {
-        window.history.replaceState({}, "", "/auth");
-        const { data, error } = await supabase.auth.exchangeCodeForSession(code);
-        if (!error && data.session?.user) {
-          await ensureProfileNamesFromOAuth(data.session.user);
-          await applyStoredReferrerToProfile(data.session.user.id);
-          const dest = await resolveDestination(data.session.user.id);
-          navigate({ to: dest });
-          return;
-        }
-      }
+      if (!code) return;
 
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (session?.user) {
-        await ensureProfileNamesFromOAuth(session.user);
-        const dest = await resolveDestination(session.user.id);
+      window.history.replaceState({}, "", "/auth");
+      const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+      if (!error && data.session?.user) {
+        await ensureProfileNamesFromOAuth(data.session.user);
+        await applyStoredReferrerToProfile(data.session.user.id);
+        const dest = await resolveDestination(data.session.user.id);
         navigate({ to: dest });
       }
     };

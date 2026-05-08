@@ -8,6 +8,11 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 let cachedUser: User | null = null;
 let getUserPromise: Promise<User | null> | null = null;
 
+/** Keep getUser()'s cache aligned with wherever we resolve session first (avoid /admin gate vs React auth mismatch). */
+export function syncCachedAuthUser(user: User | null) {
+  cachedUser = user;
+}
+
 supabase.auth.onAuthStateChange((_event, session) => {
   cachedUser = session?.user ?? null;
 });
