@@ -1,8 +1,9 @@
 -- Admin dashboard tables: shifts, timesheets, guide_invoices, badges, member_badges,
--- promotions, email_campaigns, messages, studio_settings.
+-- promotions, email_campaigns, studio_messages, studio_settings.
 -- Idempotent — safe to re-run.
 
--- Helper: privileged role check used by RLS policies on most tables.
+-- Helper kept for any non-RLS callers; RLS policies inline the check below
+-- because PostgREST + RLS were not honoring the wrapper consistently.
 create or replace function public.is_admin_role()
 returns boolean
 language sql
@@ -39,20 +40,49 @@ alter table public.shifts enable row level security;
 drop policy if exists shifts_select_self_or_admin on public.shifts;
 create policy shifts_select_self_or_admin on public.shifts
   for select using (
-    profile_id = auth.uid() or public.is_admin_role()
+    profile_id = auth.uid()
+    or exists (
+      select 1 from public.profiles
+      where id = auth.uid()
+        and role::text in ('director', 'management')
+    )
   );
 
 drop policy if exists shifts_admin_write on public.shifts;
 create policy shifts_admin_write on public.shifts
-  for insert with check (public.is_admin_role());
+  for insert with check (
+    exists (
+      select 1 from public.profiles
+      where id = auth.uid()
+        and role::text in ('director', 'management')
+    )
+  );
 
 drop policy if exists shifts_admin_update on public.shifts;
 create policy shifts_admin_update on public.shifts
-  for update using (public.is_admin_role()) with check (public.is_admin_role());
+  for update using (
+    exists (
+      select 1 from public.profiles
+      where id = auth.uid()
+        and role::text in ('director', 'management')
+    )
+  ) with check (
+    exists (
+      select 1 from public.profiles
+      where id = auth.uid()
+        and role::text in ('director', 'management')
+    )
+  );
 
 drop policy if exists shifts_admin_delete on public.shifts;
 create policy shifts_admin_delete on public.shifts
-  for delete using (public.is_admin_role());
+  for delete using (
+    exists (
+      select 1 from public.profiles
+      where id = auth.uid()
+        and role::text in ('director', 'management')
+    )
+  );
 
 ------------------------------------------------------------
 -- timesheets
@@ -76,26 +106,52 @@ alter table public.timesheets enable row level security;
 drop policy if exists timesheets_select_self_or_admin on public.timesheets;
 create policy timesheets_select_self_or_admin on public.timesheets
   for select using (
-    profile_id = auth.uid() or public.is_admin_role()
+    profile_id = auth.uid()
+    or exists (
+      select 1 from public.profiles
+      where id = auth.uid()
+        and role::text in ('director', 'management')
+    )
   );
 
 drop policy if exists timesheets_insert_self_or_admin on public.timesheets;
 create policy timesheets_insert_self_or_admin on public.timesheets
   for insert with check (
-    profile_id = auth.uid() or public.is_admin_role()
+    profile_id = auth.uid()
+    or exists (
+      select 1 from public.profiles
+      where id = auth.uid()
+        and role::text in ('director', 'management')
+    )
   );
 
 drop policy if exists timesheets_update_self_or_admin on public.timesheets;
 create policy timesheets_update_self_or_admin on public.timesheets
   for update using (
-    profile_id = auth.uid() or public.is_admin_role()
+    profile_id = auth.uid()
+    or exists (
+      select 1 from public.profiles
+      where id = auth.uid()
+        and role::text in ('director', 'management')
+    )
   ) with check (
-    profile_id = auth.uid() or public.is_admin_role()
+    profile_id = auth.uid()
+    or exists (
+      select 1 from public.profiles
+      where id = auth.uid()
+        and role::text in ('director', 'management')
+    )
   );
 
 drop policy if exists timesheets_delete_admin on public.timesheets;
 create policy timesheets_delete_admin on public.timesheets
-  for delete using (public.is_admin_role());
+  for delete using (
+    exists (
+      select 1 from public.profiles
+      where id = auth.uid()
+        and role::text in ('director', 'management')
+    )
+  );
 
 ------------------------------------------------------------
 -- guide_invoices
@@ -124,18 +180,40 @@ alter table public.guide_invoices enable row level security;
 drop policy if exists guide_invoices_select on public.guide_invoices;
 create policy guide_invoices_select on public.guide_invoices
   for select using (
-    guide_id = auth.uid() or public.is_admin_role()
+    guide_id = auth.uid()
+    or exists (
+      select 1 from public.profiles
+      where id = auth.uid()
+        and role::text in ('director', 'management')
+    )
   );
 
 drop policy if exists guide_invoices_insert_self on public.guide_invoices;
 create policy guide_invoices_insert_self on public.guide_invoices
   for insert with check (
-    guide_id = auth.uid() or public.is_admin_role()
+    guide_id = auth.uid()
+    or exists (
+      select 1 from public.profiles
+      where id = auth.uid()
+        and role::text in ('director', 'management')
+    )
   );
 
 drop policy if exists guide_invoices_update_admin on public.guide_invoices;
 create policy guide_invoices_update_admin on public.guide_invoices
-  for update using (public.is_admin_role()) with check (public.is_admin_role());
+  for update using (
+    exists (
+      select 1 from public.profiles
+      where id = auth.uid()
+        and role::text in ('director', 'management')
+    )
+  ) with check (
+    exists (
+      select 1 from public.profiles
+      where id = auth.uid()
+        and role::text in ('director', 'management')
+    )
+  );
 
 ------------------------------------------------------------
 -- badges + member_badges
@@ -161,7 +239,19 @@ create policy badges_select_authenticated on public.badges
 
 drop policy if exists badges_admin_all on public.badges;
 create policy badges_admin_all on public.badges
-  for all using (public.is_admin_role()) with check (public.is_admin_role());
+  for all using (
+    exists (
+      select 1 from public.profiles
+      where id = auth.uid()
+        and role::text in ('director', 'management')
+    )
+  ) with check (
+    exists (
+      select 1 from public.profiles
+      where id = auth.uid()
+        and role::text in ('director', 'management')
+    )
+  );
 
 create table if not exists public.member_badges (
   id uuid primary key default gen_random_uuid(),
@@ -181,12 +271,29 @@ alter table public.member_badges enable row level security;
 drop policy if exists member_badges_select on public.member_badges;
 create policy member_badges_select on public.member_badges
   for select using (
-    profile_id = auth.uid() or public.is_admin_role()
+    profile_id = auth.uid()
+    or exists (
+      select 1 from public.profiles
+      where id = auth.uid()
+        and role::text in ('director', 'management')
+    )
   );
 
 drop policy if exists member_badges_admin_write on public.member_badges;
 create policy member_badges_admin_write on public.member_badges
-  for all using (public.is_admin_role()) with check (public.is_admin_role());
+  for all using (
+    exists (
+      select 1 from public.profiles
+      where id = auth.uid()
+        and role::text in ('director', 'management')
+    )
+  ) with check (
+    exists (
+      select 1 from public.profiles
+      where id = auth.uid()
+        and role::text in ('director', 'management')
+    )
+  );
 
 -- Seed badges
 insert into public.badges (name, description, icon, criteria_type, criteria_value)
@@ -230,7 +337,19 @@ create policy promotions_select_authenticated on public.promotions
 
 drop policy if exists promotions_admin_all on public.promotions;
 create policy promotions_admin_all on public.promotions
-  for all using (public.is_admin_role()) with check (public.is_admin_role());
+  for all using (
+    exists (
+      select 1 from public.profiles
+      where id = auth.uid()
+        and role::text in ('director', 'management')
+    )
+  ) with check (
+    exists (
+      select 1 from public.profiles
+      where id = auth.uid()
+        and role::text in ('director', 'management')
+    )
+  );
 
 ------------------------------------------------------------
 -- email_campaigns
@@ -253,12 +372,38 @@ alter table public.email_campaigns enable row level security;
 
 drop policy if exists email_campaigns_admin_all on public.email_campaigns;
 create policy email_campaigns_admin_all on public.email_campaigns
-  for all using (public.is_admin_role()) with check (public.is_admin_role());
+  for all using (
+    exists (
+      select 1 from public.profiles
+      where id = auth.uid()
+        and role::text in ('director', 'management')
+    )
+  ) with check (
+    exists (
+      select 1 from public.profiles
+      where id = auth.uid()
+        and role::text in ('director', 'management')
+    )
+  );
 
 ------------------------------------------------------------
--- messages
+-- studio_messages (renamed from messages — avoids conflict with reserved/auth schemas)
 ------------------------------------------------------------
-create table if not exists public.messages (
+-- If the previous incarnation of this migration created public.messages, rename it.
+do $$
+begin
+  if exists (
+    select 1 from information_schema.tables
+    where table_schema = 'public' and table_name = 'messages'
+  ) and not exists (
+    select 1 from information_schema.tables
+    where table_schema = 'public' and table_name = 'studio_messages'
+  ) then
+    execute 'alter table public.messages rename to studio_messages';
+  end if;
+end$$;
+
+create table if not exists public.studio_messages (
   id uuid primary key default gen_random_uuid(),
   from_profile_id uuid references public.profiles (id) on delete set null,
   to_profile_id uuid references public.profiles (id) on delete cascade,
@@ -269,38 +414,69 @@ create table if not exists public.messages (
   message_type text not null default 'direct'
 );
 
-create index if not exists idx_messages_to_profile on public.messages (to_profile_id, created_at desc);
-create index if not exists idx_messages_from_profile on public.messages (from_profile_id, created_at desc);
-create index if not exists idx_messages_type on public.messages (message_type);
+create index if not exists idx_studio_messages_to_profile on public.studio_messages (to_profile_id, created_at desc);
+create index if not exists idx_studio_messages_from_profile on public.studio_messages (from_profile_id, created_at desc);
+create index if not exists idx_studio_messages_type on public.studio_messages (message_type);
 
-alter table public.messages enable row level security;
+alter table public.studio_messages enable row level security;
 
-drop policy if exists messages_select on public.messages;
-create policy messages_select on public.messages
+-- Drop legacy "messages_*" policy names if they still exist on the renamed table.
+drop policy if exists messages_select on public.studio_messages;
+drop policy if exists messages_insert on public.studio_messages;
+drop policy if exists messages_update_recipient on public.studio_messages;
+drop policy if exists messages_delete_admin on public.studio_messages;
+
+drop policy if exists studio_messages_select on public.studio_messages;
+create policy studio_messages_select on public.studio_messages
   for select using (
     to_profile_id = auth.uid()
     or from_profile_id = auth.uid()
     or message_type = 'announcement'
-    or public.is_admin_role()
+    or exists (
+      select 1 from public.profiles
+      where id = auth.uid()
+        and role::text in ('director', 'management')
+    )
   );
 
-drop policy if exists messages_insert on public.messages;
-create policy messages_insert on public.messages
+drop policy if exists studio_messages_insert on public.studio_messages;
+create policy studio_messages_insert on public.studio_messages
   for insert with check (
-    from_profile_id = auth.uid() or public.is_admin_role()
+    from_profile_id = auth.uid()
+    or exists (
+      select 1 from public.profiles
+      where id = auth.uid()
+        and role::text in ('director', 'management')
+    )
   );
 
-drop policy if exists messages_update_recipient on public.messages;
-create policy messages_update_recipient on public.messages
+drop policy if exists studio_messages_update_recipient on public.studio_messages;
+create policy studio_messages_update_recipient on public.studio_messages
   for update using (
-    to_profile_id = auth.uid() or public.is_admin_role()
+    to_profile_id = auth.uid()
+    or exists (
+      select 1 from public.profiles
+      where id = auth.uid()
+        and role::text in ('director', 'management')
+    )
   ) with check (
-    to_profile_id = auth.uid() or public.is_admin_role()
+    to_profile_id = auth.uid()
+    or exists (
+      select 1 from public.profiles
+      where id = auth.uid()
+        and role::text in ('director', 'management')
+    )
   );
 
-drop policy if exists messages_delete_admin on public.messages;
-create policy messages_delete_admin on public.messages
-  for delete using (public.is_admin_role());
+drop policy if exists studio_messages_delete_admin on public.studio_messages;
+create policy studio_messages_delete_admin on public.studio_messages
+  for delete using (
+    exists (
+      select 1 from public.profiles
+      where id = auth.uid()
+        and role::text in ('director', 'management')
+    )
+  );
 
 ------------------------------------------------------------
 -- studio_settings
@@ -323,7 +499,19 @@ create policy studio_settings_select on public.studio_settings
 
 drop policy if exists studio_settings_admin_write on public.studio_settings;
 create policy studio_settings_admin_write on public.studio_settings
-  for all using (public.is_admin_role()) with check (public.is_admin_role());
+  for all using (
+    exists (
+      select 1 from public.profiles
+      where id = auth.uid()
+        and role::text in ('director', 'management')
+    )
+  ) with check (
+    exists (
+      select 1 from public.profiles
+      where id = auth.uid()
+        and role::text in ('director', 'management')
+    )
+  );
 
 -- Seed defaults
 insert into public.studio_settings (key, value)

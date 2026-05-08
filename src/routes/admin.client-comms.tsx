@@ -90,7 +90,7 @@ function ClientCommsPage() {
 
     const [msgsRes, membersRes] = await Promise.all([
       supabase
-        .from("messages")
+        .from("studio_messages")
         .select("id, from_profile_id, to_profile_id, subject, body, is_read, message_type, created_at")
         .order("created_at", { ascending: false })
         .limit(2000),
@@ -191,7 +191,7 @@ function ClientCommsPage() {
 
   const markRead = async (id: string) => {
     const { error } = await supabase
-      .from("messages")
+      .from("studio_messages")
       .update({ is_read: true })
       .eq("id", id);
     if (error) {
@@ -212,7 +212,7 @@ function ClientCommsPage() {
     }
     setSending(true);
     const user = await getUser();
-    const { error: msgErr } = await supabase.from("messages").insert({
+    const { error: msgErr } = await supabase.from("studio_messages").insert({
       from_profile_id: user?.id ?? null,
       to_profile_id: sendToId,
       subject: sendSubject.trim() || null,
@@ -275,7 +275,7 @@ function ClientCommsPage() {
       body: annBody.trim().slice(0, 200) || null,
     }));
     const [mRes, nRes] = await Promise.all([
-      supabase.from("messages").insert(messageInserts),
+      supabase.from("studio_messages").insert(messageInserts),
       supabase.from("notifications").insert(notifInserts),
     ]);
     setAnnSending(false);
