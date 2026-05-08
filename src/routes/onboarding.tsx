@@ -1,14 +1,15 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight, Loader2, Upload } from "lucide-react";
 import { toast } from "sonner";
-import { getUser, supabase } from "@/lib/supabase";
+import { supabase } from "@/lib/supabase";
 import { applyStoredReferrerToProfile } from "@/lib/referral";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { useAuth } from "@/contexts/auth";
 
 export const Route = createFileRoute("/onboarding")({
   head: () => ({
@@ -48,7 +49,7 @@ const STEPS = 3;
 
 function OnboardingPage() {
   const navigate = useNavigate();
-  const [authReady, setAuthReady] = useState(false);
+  const { user, authReady, profile, profileReady } = useAuth();
   const [step, setStep] = useState(1);
   const [saving, setSaving] = useState(false);
 
@@ -62,35 +63,6 @@ function OnboardingPage() {
 
   const [waiverAccepted, setWaiverAccepted] = useState(false);
 
-  const loadGate = useCallback(async () => {
-    const user = await getUser();
-    if (!user) {
-      navigate({ to: "/auth" });
-      return;
-    }
-
-    const { data: profile, error: profileErr } = await supabase
-      .from("profiles")
-      .select("onboarding_complete")
-      .eq("id", user.id)
-      .maybeSingle();
-
-    if (
-      !profileErr &&
-      profile &&
-      (profile as { onboarding_complete?: boolean | null }).onboarding_complete === true
-    ) {
-      navigate({ to: "/" });
-      return;
-    }
-
-    setAuthReady(true);
-  }, [navigate]);
-
-  useEffect(() => {
-    void loadGate();
-  }, [loadGate]);
-
   useEffect(() => {
     if (!photoFile) {
       setPhotoPreview(null);
@@ -100,6 +72,14 @@ function OnboardingPage() {
     setPhotoPreview(url);
     return () => URL.revokeObjectURL(url);
   }, [photoFile]);
+
+  useEffect(() => {
+    if (!authReady || !user || !profileReady) return;
+    if (profile?.onboarding_complete !== true) return;
+    const role = (profile.role ?? "").toLowerCase();
+    const isStaff = role === "director" || role === "management" || role === "guide";
+    navigate({ to: isStaff ? "/admin" : "/", replace: true });
+  }, [authReady, user, profileReady, profile, navigate]);
 
   const validateStep1 = () => {
     if (!firstName.trim() || !lastName.trim()) {
@@ -139,7 +119,6 @@ function OnboardingPage() {
       return;
     }
 
-    const user = await getUser();
     if (!user) {
       navigate({ to: "/auth" });
       return;
@@ -198,6 +177,16 @@ function OnboardingPage() {
       </div>
     );
   }
+
+  if (!user || !profileReady) {
+    return (
+      <div className="flex min-h-[100dvh] items-center justify-center bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" aria-hidden />
+      </div>
+    );
+  }
+
+  if (profile?.onboarding_complete === true) return null;
 
   return (
     <div className="min-h-[100dvh] bg-background px-4 pb-10 pt-[max(1rem,env(safe-area-inset-top))]">

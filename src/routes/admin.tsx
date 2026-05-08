@@ -26,19 +26,6 @@ function AdminLayout() {
   const profileRole = profile?.role ?? null;
 
   useEffect(() => {
-    if (authReady && !user) {
-      window.location.assign("/auth");
-    }
-  }, [authReady, user]);
-
-  useEffect(() => {
-    if (!authReady || !user || !profileReady) return;
-    if (!isAdminRole(profileRole)) {
-      navigate({ to: "/", replace: true });
-    }
-  }, [authReady, user, profileReady, profileRole, navigate]);
-
-  useEffect(() => {
     if (!authReady || !user || !profileReady) return;
     if (!isAdminRole(profileRole)) return;
     if (isGuideRole(profileRole) && !isPathAllowedForGuide(pathname)) {
@@ -46,11 +33,8 @@ function AdminLayout() {
     }
   }, [authReady, user, profileReady, profileRole, pathname, navigate]);
 
-  const loading =
-    !authReady || (!!user && !profileReady) || (authReady && !user);
-
-  const canAccess =
-    authReady && !!user && profileReady && isAdminRole(profileRole);
+  const loading = !authReady || (!!user && !profileReady);
+  const canAccess = !!user && isAdminRole(profileRole);
 
   if (loading) {
     return (
