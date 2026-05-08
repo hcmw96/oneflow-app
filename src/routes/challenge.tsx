@@ -122,7 +122,7 @@ function ChallengePage() {
       return;
     }
 
-    setCheckins((data ?? []) as CheckInApiRow[]);
+    setCheckins((data ?? []) as unknown as CheckInApiRow[]);
     setLoading(false);
   }, []);
 

@@ -11,12 +11,7 @@ export const Route = createFileRoute("/admin/")({
   component: AdminDashboard,
 });
 
-type GuideJoin = {
-  profiles:
-    | { first_name: string; last_name: string }
-    | { first_name: string; last_name: string }[]
-    | null;
-} | null;
+const TZ = "Africa/Johannesburg";
 
 type TodayClassRow = {
   id: string;
@@ -24,18 +19,8 @@ type TodayClassRow = {
   starts_at: string;
   booked_count: number;
   capacity: number;
-  guides: GuideJoin | GuideJoin[] | null;
+  guide_name: string | null;
 };
-
-function guideLabel(guides: TodayClassRow["guides"]): string {
-  if (!guides) return "—";
-  const g = Array.isArray(guides) ? guides[0] : guides;
-  if (!g?.profiles) return "—";
-  const p = Array.isArray(g.profiles) ? g.profiles[0] : g.profiles;
-  if (!p) return "—";
-  const name = `${p.first_name} ${p.last_name}`.trim();
-  return name || "—";
-}
 
 function AdminDashboardSkeleton() {
   return (
@@ -59,38 +44,57 @@ function AdminDashboardSkeleton() {
   );
 }
 
+// Africa/Johannesburg is UTC+2 with no DST, so we can derive day boundaries reliably.
+function jhbDayBounds(): { startUtcIso: string; endUtcIso: string; dateKey: string } {
+  const now = new Date();
+  const jhbNow = new Date(now.toLocaleString("en-US", { timeZone: TZ }));
+  const y = jhbNow.getFullYear();
+  const m = jhbNow.getMonth();
+  const d = jhbNow.getDate();
+  // 00:00 JHB = 22:00 UTC previous day
+  const startUtc = new Date(Date.UTC(y, m, d, -2, 0, 0, 0));
+  const endUtc = new Date(Date.UTC(y, m, d + 1, -2, 0, 0, -1));
+  const dateKey = `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  return { startUtcIso: startUtc.toISOString(), endUtcIso: endUtc.toISOString(), dateKey };
+}
+
 function AdminDashboard() {
   const [classes, setClasses] = useState<TodayClassRow[]>([]);
   const [memberCount, setMemberCount] = useState<number | null>(null);
+  const [signInsToday, setSignInsToday] = useState<number>(0);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const day = new Date();
-    const start = new Date(day);
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(day);
-    end.setHours(23, 59, 59, 999);
+    const { startUtcIso, endUtcIso } = jhbDayBounds();
 
-    const [{ data: classData, error: classError }, { count, error: countError }] =
-      await Promise.all([
-        supabase
-          .from("classes")
-          .select(
-            "id, name, starts_at, booked_count, capacity, guides ( id, profiles ( first_name, last_name ) )",
-          )
-          .gte("starts_at", start.toISOString())
-          .lte("starts_at", end.toISOString())
-          .eq("is_cancelled", false)
-          .order("starts_at"),
-        supabase.from("profiles").select("id", { count: "exact", head: true }).eq("role", "member"),
-      ]);
+    const [classesRes, memberRes, signInsRes] = await Promise.all([
+      supabase
+        .from("classes")
+        .select("id, name, starts_at, booked_count, capacity, guide_name")
+        .gte("starts_at", startUtcIso)
+        .lte("starts_at", endUtcIso)
+        .eq("is_cancelled", false)
+        .order("starts_at"),
+      supabase
+        .from("profiles")
+        .select("id", { count: "exact", head: true })
+        .eq("role", "customer"),
+      supabase
+        .from("bookings")
+        .select("id", { count: "exact", head: true })
+        .eq("checked_in", true)
+        .gte("checked_in_at", startUtcIso)
+        .lte("checked_in_at", endUtcIso),
+    ]);
 
-    if (classError) console.error("admin dashboard classes", classError);
-    if (countError) console.error("admin dashboard member count", countError);
+    if (classesRes.error) console.error("admin dashboard classes", classesRes.error);
+    if (memberRes.error) console.error("admin dashboard member count", memberRes.error);
+    if (signInsRes.error) console.error("admin dashboard sign-ins", signInsRes.error);
 
-    setClasses((classData ?? []) as TodayClassRow[]);
-    setMemberCount(count ?? 0);
+    setClasses((classesRes.data ?? []) as TodayClassRow[]);
+    setMemberCount(memberRes.count ?? 0);
+    setSignInsToday(signInsRes.count ?? 0);
     setLoading(false);
   }, []);
 
@@ -98,7 +102,6 @@ function AdminDashboard() {
     void load();
   }, [load]);
 
-  const totalSignIns = classes.reduce((sum, c) => sum + (c.booked_count ?? 0), 0);
   const classCount = classes.length;
   const occPcts = classes
     .filter((c) => c.capacity > 0)
@@ -111,6 +114,7 @@ function AdminDashboard() {
     month: "long",
     day: "numeric",
     year: "numeric",
+    timeZone: TZ,
   });
 
   return (
@@ -124,7 +128,7 @@ function AdminDashboard() {
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
             <StatCard
               label="Total Sign-ins Today"
-              value={totalSignIns.toLocaleString()}
+              value={signInsToday.toLocaleString()}
               icon={<UserCheck className="h-4 w-4" />}
             />
             <StatCard
@@ -177,17 +181,17 @@ function AdminDashboard() {
                           hour: "numeric",
                           minute: "2-digit",
                           hour12: true,
+                          timeZone: TZ,
                         })
                         .toUpperCase();
+                      const guide = c.guide_name?.trim() || "—";
                       return (
                         <tr key={c.id} className="border-t border-border">
                           <td className="whitespace-nowrap px-5 py-3 font-medium tabular-nums">
                             {time}
                           </td>
                           <td className="px-5 py-3 font-medium">{c.name}</td>
-                          <td className="px-5 py-3 text-muted-foreground">
-                            {guideLabel(c.guides)}
-                          </td>
+                          <td className="px-5 py-3 text-muted-foreground">{guide}</td>
                           <td className="whitespace-nowrap px-5 py-3 tabular-nums text-muted-foreground">
                             {c.booked_count} / {c.capacity}
                           </td>

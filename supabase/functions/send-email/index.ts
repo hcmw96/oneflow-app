@@ -6,7 +6,9 @@ type TemplateName =
   | "booking_cancellation"
   | "late_cancellation"
   | "friend_request"
-  | "class_invite";
+  | "class_invite"
+  | "waiver_reminder"
+  | "marketing";
 
 type RequestPayload = {
   to: string;
@@ -73,6 +75,28 @@ function buildTemplate(template: TemplateName, data: Record<string, unknown> = {
         ${ctaButton("https://oneflow1.netlify.app/me/friends", "View Request")}
         <p style="font-size:14px;color:#888;margin:24px 0 0;">One Flow Team</p>
       `,
+    };
+  }
+
+  if (template === "waiver_reminder") {
+    const firstName = String(data.first_name ?? data.name ?? "there");
+    return {
+      subject: "Action required — please sign your One Flow waiver",
+      content: `
+        <h2 style="font-size:22px;font-weight:600;color:#a3b693;margin:0 0 16px;">Please sign your waiver</h2>
+        <p style="font-size:15px;line-height:1.6;color:#444;margin:0 0 12px;">Hi ${esc(firstName)}, we noticed you haven't completed your One Flow studio waiver yet. Please log into the app and complete your profile setup to book classes.</p>
+        ${ctaButton("https://oneflow1.netlify.app/onboarding", "Complete waiver")}
+        <p style="font-size:14px;color:#888;margin:24px 0 0;">One Flow Team</p>
+      `,
+    };
+  }
+
+  if (template === "marketing") {
+    const subject = String(data.subject ?? "An update from One Flow");
+    const htmlBody = String(data.body_html ?? "");
+    return {
+      subject,
+      content: htmlBody,
     };
   }
 

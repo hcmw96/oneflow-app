@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { deleteMayChallengeCheckInForBooking } from "@/lib/mayChallengeCheckIn";
+import { awardClassesAttendedBadges } from "@/lib/badges";
 
 export const Route = createFileRoute("/admin/check-in")({
   component: CheckInPage,
@@ -262,6 +263,7 @@ function CheckInPage() {
           class_date: new Date(row.classStartsAt).toISOString().split("T")[0],
           booking_id: id,
         });
+        void awardClassesAttendedBadges(row.profileId);
       }
     } else {
       await deleteMayChallengeCheckInForBooking(id);
@@ -357,6 +359,7 @@ function CheckInPage() {
         class_date: new Date(startsAt).toISOString().split("T")[0],
         booking_id: booking.id as string,
       });
+      void awardClassesAttendedBadges(booking.profile_id as string);
     }
 
     toast.success(`Welcome ${firstName}!`, {
@@ -671,6 +674,7 @@ function WalkInSheet({
         class_date: new Date(session.starts_at).toISOString().split("T")[0],
         booking_id: newBooking.id as string,
       });
+      void awardClassesAttendedBadges(profileId);
     }
     toast.success(`${displayName} checked in`);
     onOpenChange(false);

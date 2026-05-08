@@ -50,7 +50,7 @@ export function navItemsForRole(role: string | null | undefined): AdminNavItem[]
   const r = (role ?? "").toLowerCase();
   if (r === "director" || r === "management") return adminNavItems;
   if (isGuideRole(role)) {
-    const allow = new Set(GUIDE_ALLOWED_ADMIN_ROUTES);
+    const allow = new Set<string>(GUIDE_ALLOWED_ADMIN_ROUTES);
     return adminNavItems
       .filter((i) => allow.has(i.to))
       .map((i) => (i.to === "/admin/scheduling" ? { ...i, label: "Schedule" } : i));

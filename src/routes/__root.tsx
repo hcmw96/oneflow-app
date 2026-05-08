@@ -68,9 +68,18 @@ function isAuthPublicPath(pathname: string) {
 }
 
 function ReferralCapture() {
-  const search = useRouterState({ select: (s) => s.location.search });
+  const search = useRouterState({ select: (s) => s.location.search }) as unknown as
+    | string
+    | Record<string, unknown>
+    | undefined;
   useEffect(() => {
-    captureReferrerFromSearch(search ?? "");
+    const str =
+      typeof search === "string"
+        ? search
+        : search
+          ? new URLSearchParams(search as Record<string, string>).toString()
+          : "";
+    captureReferrerFromSearch(str);
   }, [search]);
   return null;
 }

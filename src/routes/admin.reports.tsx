@@ -14,7 +14,6 @@ import { Banknote, CalendarCheck, CreditCard, TrendingUp, UserPlus, Users } from
 import { PageHeader } from "@/components/admin/PageHeader";
 import { StatCard } from "@/components/admin/StatCard";
 import { supabase } from "@/lib/supabase";
-import type { PostgrestFilterBuilder } from "@supabase/postgrest-js";
 import { addDays, startOfDay, startOfWeek } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -106,13 +105,8 @@ function oneProduct(p: PurchaseRow["products"]): ProductJoin {
   return Array.isArray(p) ? (p[0] ?? null) : p;
 }
 
-type BookingsCountQuery = PostgrestFilterBuilder<
-  Record<string, unknown>,
-  Record<string, unknown>,
-  "bookings",
-  unknown,
-  "bookings"
->;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type BookingsCountQuery = any;
 
 async function sumCountForClassIds(
   classIds: string[],

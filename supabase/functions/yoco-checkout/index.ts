@@ -125,14 +125,79 @@ serve(async (req) => {
     (profile as { late_cancel_fee_pending?: boolean } | null)?.late_cancel_fee_pending,
   );
   const baseAmountCents = Number.isFinite(priceZar) ? Math.round(priceZar * 100) : NaN;
+
+  let promoDiscountCents = 0;
+  let promoApplied: { id: string; code: string } | null = null;
+  const rawPromoCode = String(raw?.promo_code ?? "").trim().toUpperCase();
+  if (rawPromoCode) {
+    const { data: promo } = await supabase
+      .from("promotions")
+      .select(
+        "id, code, discount_type, discount_value, applies_to, max_uses, uses_count, valid_from, valid_until, is_active",
+      )
+      .eq("code", rawPromoCode)
+      .maybeSingle();
+    const p = promo as
+      | {
+          id: string;
+          code: string;
+          discount_type: string;
+          discount_value: number;
+          applies_to: string;
+          max_uses: number | null;
+          uses_count: number | null;
+          valid_from: string | null;
+          valid_until: string | null;
+          is_active: boolean;
+        }
+      | null;
+    if (p && p.is_active) {
+      const now = Date.now();
+      const validFrom = p.valid_from ? new Date(p.valid_from).getTime() : null;
+      const validUntil = p.valid_until ? new Date(p.valid_until).getTime() : null;
+      const inWindow =
+        (validFrom == null || now >= validFrom) && (validUntil == null || now <= validUntil);
+      const usesOk = p.max_uses == null || (p.uses_count ?? 0) < p.max_uses;
+      const packCategory = String((pack as { category?: string }).category ?? "");
+      const appliesOk =
+        p.applies_to === "all" ||
+        (p.applies_to === "yoga" && packCategory === "yoga") ||
+        (p.applies_to === "wellzone" && packCategory === "wellzone");
+      if (inWindow && usesOk && appliesOk && Number.isFinite(baseAmountCents)) {
+        if (p.discount_type === "percentage") {
+          promoDiscountCents = Math.min(
+            baseAmountCents,
+            Math.round((baseAmountCents * Number(p.discount_value)) / 100),
+          );
+        } else {
+          promoDiscountCents = Math.min(
+            baseAmountCents,
+            Math.round(Number(p.discount_value) * 100),
+          );
+        }
+        promoApplied = { id: p.id, code: p.code };
+      }
+    }
+  }
+
   const amountCents = Number.isFinite(baseAmountCents)
-    ? baseAmountCents + (hasLateCancelFee ? 10000 : 0)
+    ? Math.max(0, baseAmountCents - promoDiscountCents) + (hasLateCancelFee ? 10000 : 0)
     : NaN;
   if (!Number.isFinite(amountCents) || amountCents <= 0) {
     return new Response(JSON.stringify({ error: "Invalid price_zar on product" }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
+  }
+
+  if (promoApplied) {
+    const { data: cur } = await supabase
+      .from("promotions")
+      .select("uses_count")
+      .eq("id", promoApplied.id)
+      .maybeSingle();
+    const next = (Number((cur as { uses_count?: number } | null)?.uses_count ?? 0) || 0) + 1;
+    await supabase.from("promotions").update({ uses_count: next }).eq("id", promoApplied.id);
   }
 
   const yocoRes = await fetch("https://payments.yoco.com/api/checkouts", {
@@ -155,6 +220,8 @@ serve(async (req) => {
         profile_id,
         late_cancel_fee_applied: hasLateCancelFee,
         description: hasLateCancelFee ? "+ R100 late cancellation fee" : "",
+        promo_code_applied: promoApplied?.code ?? null,
+        promo_discount_zar: promoDiscountCents > 0 ? Math.round(promoDiscountCents / 100) : 0,
       },
     }),
   });

@@ -50,7 +50,7 @@ export const Route = createFileRoute("/me")({
 const TABS: {
   id: TabId;
   label: string;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
 }[] = [
   { id: "profile", label: "Profile", icon: UserIcon },
   { id: "billing", label: "Pass", icon: CreditCard },

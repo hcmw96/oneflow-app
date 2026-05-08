@@ -66,6 +66,13 @@ function PricingPage() {
   const [loading, setLoading] = useState(true);
   const [buyingId, setBuyingId] = useState<string | null>(null);
   const [checkoutSlow, setCheckoutSlow] = useState(false);
+  const [promoInput, setPromoInput] = useState("");
+  const [promoCode, setPromoCode] = useState("");
+  const [promoStatus, setPromoStatus] = useState<
+    | { kind: "idle" }
+    | { kind: "valid"; label: string }
+    | { kind: "invalid"; message: string }
+  >({ kind: "idle" });
   const [openSections, setOpenSections] = useState<Record<ProductCategory, boolean>>({
     yoga: true,
     wellzone: false,
@@ -160,6 +167,7 @@ function PricingPage() {
         profile_id: user.id,
         success_url: `${origin}/payment/success?pack_id=${packId}&profile_id=${user.id}`,
         cancel_url: `${origin}/pricing`,
+        promo_code: promoCode || undefined,
       },
     });
     setBuyingId(null);
@@ -201,6 +209,100 @@ function PricingPage() {
           <h1 className="font-display text-2xl font-bold tracking-tight text-[#a3b693] dark:text-foreground">
             Buy A Pass
           </h1>
+
+          <div className="rounded-2xl border border-[#c5d4b8]/70 bg-card p-3 shadow-sm dark:border-border">
+            <label
+              htmlFor="promo-input"
+              className="block text-[11px] font-bold uppercase tracking-[0.12em] text-[#a3b693] dark:text-foreground"
+            >
+              Promo code
+            </label>
+            <div className="mt-1.5 flex items-center gap-2">
+              <input
+                id="promo-input"
+                value={promoInput}
+                onChange={(e) => {
+                  setPromoInput(e.target.value.toUpperCase());
+                  setPromoStatus({ kind: "idle" });
+                }}
+                placeholder="Enter code"
+                className="min-w-0 flex-1 rounded-lg border border-border bg-background px-3 py-2 font-mono text-sm uppercase outline-none focus:border-[#a3b693]"
+              />
+              <button
+                type="button"
+                onClick={async () => {
+                  const code = promoInput.trim().toUpperCase();
+                  if (!code) {
+                    setPromoCode("");
+                    setPromoStatus({ kind: "idle" });
+                    return;
+                  }
+                  const { data: promo } = await supabase
+                    .from("promotions")
+                    .select(
+                      "code, discount_type, discount_value, applies_to, max_uses, uses_count, valid_from, valid_until, is_active",
+                    )
+                    .eq("code", code)
+                    .maybeSingle();
+                  const p = promo as
+                    | {
+                        code: string;
+                        discount_type: string;
+                        discount_value: number;
+                        applies_to: string;
+                        max_uses: number | null;
+                        uses_count: number | null;
+                        valid_from: string | null;
+                        valid_until: string | null;
+                        is_active: boolean;
+                      }
+                    | null;
+                  if (!p || !p.is_active) {
+                    setPromoCode("");
+                    setPromoStatus({ kind: "invalid", message: "Code not found." });
+                    return;
+                  }
+                  const now = Date.now();
+                  if (p.valid_from && new Date(p.valid_from).getTime() > now) {
+                    setPromoCode("");
+                    setPromoStatus({ kind: "invalid", message: "Code not yet valid." });
+                    return;
+                  }
+                  if (p.valid_until && new Date(p.valid_until).getTime() < now) {
+                    setPromoCode("");
+                    setPromoStatus({ kind: "invalid", message: "Code has expired." });
+                    return;
+                  }
+                  if (p.max_uses != null && (p.uses_count ?? 0) >= p.max_uses) {
+                    setPromoCode("");
+                    setPromoStatus({
+                      kind: "invalid",
+                      message: "Code has reached its usage limit.",
+                    });
+                    return;
+                  }
+                  const label =
+                    p.discount_type === "percentage"
+                      ? `${p.discount_value}% off`
+                      : `R${Number(p.discount_value).toLocaleString("en-ZA")} off`;
+                  setPromoCode(code);
+                  setPromoStatus({ kind: "valid", label });
+                  toast.success(`Code applied — ${label}`);
+                }}
+                className="shrink-0 rounded-lg bg-[#a3b693] px-4 py-2 text-sm font-semibold text-white hover:opacity-95"
+              >
+                Apply
+              </button>
+            </div>
+            {promoStatus.kind === "valid" && (
+              <p className="mt-1.5 text-xs font-medium text-[#a3b693] dark:text-primary">
+                ✓ {promoStatus.label}
+              </p>
+            )}
+            {promoStatus.kind === "invalid" && (
+              <p className="mt-1.5 text-xs font-medium text-destructive">{promoStatus.message}</p>
+            )}
+          </div>
 
           {loading ? (
             <div className="flex justify-center py-16">
