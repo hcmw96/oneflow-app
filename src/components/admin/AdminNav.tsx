@@ -7,7 +7,6 @@ import {
   Users,
   Package,
   UserCog,
-  CalendarClock,
   Clock,
   GraduationCap,
   DollarSign,
@@ -35,6 +34,8 @@ export const GUIDE_ALLOWED_ADMIN_ROUTES = [
   "/admin/check-in",
   "/admin/bookings",
   "/admin/classes",
+  // /admin/scheduling redirects to /admin/classes; keep it allow-listed so
+  // the redirect can complete before the guide-route guard fires.
   "/admin/scheduling",
 ] as const;
 
@@ -51,9 +52,7 @@ export function navItemsForRole(role: string | null | undefined): AdminNavItem[]
   if (r === "director" || r === "management") return adminNavItems;
   if (isGuideRole(role)) {
     const allow = new Set<string>(GUIDE_ALLOWED_ADMIN_ROUTES);
-    return adminNavItems
-      .filter((i) => allow.has(i.to))
-      .map((i) => (i.to === "/admin/scheduling" ? { ...i, label: "Schedule" } : i));
+    return adminNavItems.filter((i) => allow.has(i.to));
   }
   return adminNavItems;
 }
@@ -66,7 +65,6 @@ export const adminNavItems: AdminNavItem[] = [
   { to: "/admin/customers", label: "Customers", icon: Users },
   { to: "/admin/products", label: "Products", icon: Package },
   { to: "/admin/staff", label: "Staff", icon: UserCog },
-  { to: "/admin/scheduling", label: "Scheduling", icon: CalendarClock },
   { to: "/admin/timesheets", label: "Timesheets", icon: Clock },
   { to: "/admin/guides", label: "Guides", icon: GraduationCap },
   { to: "/admin/payouts", label: "Payouts", icon: DollarSign },

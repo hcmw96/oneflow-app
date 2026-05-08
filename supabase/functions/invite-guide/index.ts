@@ -68,6 +68,17 @@ serve(async (req) => {
     const first_name = String(body?.first_name ?? "").trim();
     const last_name = String(body?.last_name ?? "").trim();
     const disciplines = normalizeDisciplines(body?.disciplines);
+    const ALLOWED_ROLES = new Set([
+      "director",
+      "management",
+      "guide",
+      "boh",
+      "marketing",
+      "team",
+    ]);
+    const requestedRole = String(body?.role ?? "guide").toLowerCase();
+    const role = ALLOWED_ROLES.has(requestedRole) ? requestedRole : "guide";
+    const phone = String(body?.phone ?? "").trim() || null;
 
     if (!email || !first_name || !last_name) {
       return new Response(
@@ -97,13 +108,14 @@ serve(async (req) => {
       });
     }
 
-    const profilePayload = {
+    const profilePayload: Record<string, unknown> = {
       id: invitedUser.id,
       email,
       first_name,
       last_name,
-      role: "guide",
+      role,
     };
+    if (phone) profilePayload.phone = phone;
 
     const { error: profileErr } = await admin
       .from("profiles")
@@ -115,20 +127,22 @@ serve(async (req) => {
       });
     }
 
-    const { error: guideErr } = await admin.from("guides").upsert(
-      {
-        profile_id: invitedUser.id,
-        disciplines,
-        is_active: true,
-      },
-      { onConflict: "profile_id" },
-    );
+    if (role === "guide") {
+      const { error: guideErr } = await admin.from("guides").upsert(
+        {
+          profile_id: invitedUser.id,
+          disciplines,
+          is_active: true,
+        },
+        { onConflict: "profile_id" },
+      );
 
-    if (guideErr) {
-      return new Response(JSON.stringify({ error: guideErr.message }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      if (guideErr) {
+        return new Response(JSON.stringify({ error: guideErr.message }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
     }
 
     return new Response(
@@ -138,6 +152,7 @@ serve(async (req) => {
         email,
         first_name,
         last_name,
+        role,
         disciplines,
       }),
       {
