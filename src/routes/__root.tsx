@@ -119,13 +119,6 @@ function ProtectedOutlet() {
       return;
     }
 
-    if (isStaff && !onAdmin) {
-      target = "/admin";
-      initialRouteResolved.current = true;
-      if (target && target !== pathname) navigate({ to: target, replace: true });
-      return;
-    }
-
     if (!isStaff && onAdmin) {
       target = "/";
       initialRouteResolved.current = true;
