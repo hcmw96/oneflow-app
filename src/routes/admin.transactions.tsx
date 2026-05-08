@@ -109,7 +109,7 @@ function TransactionsPage() {
     const { data, error } = await supabase
       .from("user_credits")
       .select(
-        "id, purchased_at, profile_id, product_id, product_name, yoco_payment_id, profiles!inner(first_name, last_name), products(name, price_zar)",
+        "id, purchased_at, profile_id, product_id, product_name, yoco_payment_id, profile:profile_id(first_name, last_name), product:product_id(name, price_zar)",
       )
       .order("purchased_at", { ascending: false })
       .limit(2000);
@@ -123,10 +123,10 @@ function TransactionsPage() {
     }
 
     const mapped: TxRow[] = (data ?? []).map((raw: Record<string, unknown>) => {
-      const profile = (Array.isArray(raw.profiles) ? raw.profiles[0] : raw.profiles) as
+      const profile = (Array.isArray(raw.profile) ? raw.profile[0] : raw.profile) as
         | { first_name?: string; last_name?: string }
         | null;
-      const product = (Array.isArray(raw.products) ? raw.products[0] : raw.products) as
+      const product = (Array.isArray(raw.product) ? raw.product[0] : raw.product) as
         | { name?: string; price_zar?: number }
         | null;
       const memberName =

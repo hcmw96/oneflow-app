@@ -217,13 +217,15 @@ function TimesheetsPage() {
         .order("first_name", { ascending: true }),
       supabase
         .from("shifts")
-        .select("id, profile_id, starts_at, ends_at, role_label, location, profiles(first_name, last_name)")
+        .select(
+          "id, profile_id, starts_at, ends_at, role_label, location, profile:profile_id(first_name, last_name)",
+        )
         .order("starts_at", { ascending: false })
         .limit(500),
       supabase
         .from("timesheets")
         .select(
-          "id, profile_id, date, clocked_in_at, clocked_out_at, shift_id, notes, profiles(first_name, last_name)",
+          "id, profile_id, date, clocked_in_at, clocked_out_at, shift_id, notes, profile:profile_id(first_name, last_name)",
         )
         .order("date", { ascending: false })
         .limit(1000),
@@ -249,7 +251,7 @@ function TimesheetsPage() {
     } else {
       setShifts(
         (shiftsRes.data ?? []).map((raw: Record<string, unknown>) => {
-          const p = (Array.isArray(raw.profiles) ? raw.profiles[0] : raw.profiles) as
+          const p = (Array.isArray(raw.profile) ? raw.profile[0] : raw.profile) as
             | { first_name?: string; last_name?: string }
             | null;
           return {
@@ -273,7 +275,7 @@ function TimesheetsPage() {
     } else {
       setTimesheets(
         (tsRes.data ?? []).map((raw: Record<string, unknown>) => {
-          const p = (Array.isArray(raw.profiles) ? raw.profiles[0] : raw.profiles) as
+          const p = (Array.isArray(raw.profile) ? raw.profile[0] : raw.profile) as
             | { first_name?: string; last_name?: string }
             | null;
           return {

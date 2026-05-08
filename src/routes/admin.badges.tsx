@@ -147,7 +147,7 @@ function BadgesPage() {
       supabase
         .from("member_badges")
         .select(
-          "id, badge_id, profile_id, awarded_at, badges(name, icon), profiles(first_name, last_name)",
+          "id, badge_id, profile_id, awarded_at, badge:badge_id(name, icon), profile:profile_id(first_name, last_name)",
         )
         .order("awarded_at", { ascending: false })
         .limit(2000),
@@ -169,10 +169,10 @@ function BadgesPage() {
 
     if (!awardsRes.error) {
       const rows: AwardRow[] = (awardsRes.data ?? []).map((raw: Record<string, unknown>) => {
-        const b = (Array.isArray(raw.badges) ? raw.badges[0] : raw.badges) as
+        const b = (Array.isArray(raw.badge) ? raw.badge[0] : raw.badge) as
           | { name?: string; icon?: string | null }
           | null;
-        const p = (Array.isArray(raw.profiles) ? raw.profiles[0] : raw.profiles) as
+        const p = (Array.isArray(raw.profile) ? raw.profile[0] : raw.profile) as
           | { first_name?: string; last_name?: string }
           | null;
         const fullName = `${p?.first_name ?? ""} ${p?.last_name ?? ""}`.trim() || "Member";

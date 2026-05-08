@@ -175,7 +175,7 @@ function PayoutsPage() {
     const query = supabase
       .from("guide_invoices")
       .select(
-        "id, guide_id, submitted_at, period_start, period_end, line_items, total_amount, status, approved_at, paid_at, notes, profiles!guide_invoices_guide_id_fkey(first_name, last_name, email)",
+        "id, guide_id, submitted_at, period_start, period_end, line_items, total_amount, status, approved_at, paid_at, notes, guide:guide_id(first_name, last_name, email)",
       )
       .order("submitted_at", { ascending: false })
       .limit(500);
@@ -188,7 +188,7 @@ function PayoutsPage() {
       return;
     }
     const rows: InvoiceRow[] = (data ?? []).map((raw: Record<string, unknown>) => {
-      const p = (Array.isArray(raw.profiles) ? raw.profiles[0] : raw.profiles) as
+      const p = (Array.isArray(raw.guide) ? raw.guide[0] : raw.guide) as
         | { first_name?: string; last_name?: string; email?: string }
         | null;
       const li: LineItem[] = Array.isArray(raw.line_items)

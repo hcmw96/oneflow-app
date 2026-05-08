@@ -166,12 +166,12 @@ function EmailPage() {
     if (recipientType === "with_credits") {
       const { data, error } = await supabase
         .from("user_credits")
-        .select("profiles(email)")
+        .select("profile:profile_id(email)")
         .gt("credits_remaining", 0);
       if (error) throw error;
       const emails = new Set<string>();
       for (const r of (data ?? []) as Record<string, unknown>[]) {
-        const p = (Array.isArray(r.profiles) ? r.profiles[0] : r.profiles) as
+        const p = (Array.isArray(r.profile) ? r.profile[0] : r.profile) as
           | { email?: string | null }
           | null;
         if (p?.email) emails.add(p.email);
@@ -183,12 +183,12 @@ function EmailPage() {
       since.setDate(since.getDate() - 30);
       const { data, error } = await supabase
         .from("bookings")
-        .select("profiles(email)")
+        .select("profile:profile_id(email)")
         .gte("created_at", since.toISOString());
       if (error) throw error;
       const emails = new Set<string>();
       for (const r of (data ?? []) as Record<string, unknown>[]) {
-        const p = (Array.isArray(r.profiles) ? r.profiles[0] : r.profiles) as
+        const p = (Array.isArray(r.profile) ? r.profile[0] : r.profile) as
           | { email?: string | null }
           | null;
         if (p?.email) emails.add(p.email);
