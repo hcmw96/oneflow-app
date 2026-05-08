@@ -1,5 +1,5 @@
-import { useEffect } from "react";
-import { Outlet, Link, createRootRoute, HeadContent, useRouterState } from "@tanstack/react-router";
+import { useEffect, useRef } from "react";
+import { Outlet, Link, createRootRoute, HeadContent, useNavigate, useRouterState } from "@tanstack/react-router";
 import { Loader2 } from "lucide-react";
 import { BottomNav } from "@/components/BottomNav";
 import { Toaster } from "@/components/ui/sonner";
@@ -76,22 +76,28 @@ function ReferralCapture() {
 }
 
 function ProtectedOutlet() {
+  const navigate = useNavigate();
   const { user, authReady, profile, profileReady } = useAuth();
+  const initialRouteResolved = useRef(false);
 
   const onboardingDone = profile?.onboarding_complete === true;
   const role = (profile?.role ?? "").toLowerCase();
   const isStaff = role === "director" || role === "management" || role === "guide";
 
   useEffect(() => {
+    if (initialRouteResolved.current) return;
     if (!authReady) return;
     if (user && !profileReady) return;
 
     const pathname = window.location.pathname;
+    let target: "/" | "/admin" | "/auth" | "/onboarding" | null = null;
 
     const publicPath = isAuthPublicPath(pathname);
 
     if (!user) {
-      if (!publicPath) window.location.assign("/auth");
+      if (!publicPath) target = "/auth";
+      initialRouteResolved.current = true;
+      if (target && target !== pathname) navigate({ to: target, replace: true });
       return;
     }
 
@@ -100,24 +106,35 @@ function ProtectedOutlet() {
     const onAuth = pathname.startsWith("/auth");
 
     if (!onboardingDone) {
-      if (!onOnboarding) window.location.assign("/onboarding");
+      if (!onOnboarding) target = "/onboarding";
+      initialRouteResolved.current = true;
+      if (target && target !== pathname) navigate({ to: target, replace: true });
       return;
     }
 
     if (onOnboarding || onAuth) {
-      window.location.assign(isStaff ? "/admin" : "/");
+      target = isStaff ? "/admin" : "/";
+      initialRouteResolved.current = true;
+      if (target && target !== pathname) navigate({ to: target, replace: true });
       return;
     }
 
     if (isStaff && !onAdmin) {
-      window.location.assign("/admin");
+      target = "/admin";
+      initialRouteResolved.current = true;
+      if (target && target !== pathname) navigate({ to: target, replace: true });
       return;
     }
 
     if (!isStaff && onAdmin) {
-      window.location.assign("/");
+      target = "/";
+      initialRouteResolved.current = true;
+      if (target && target !== pathname) navigate({ to: target, replace: true });
+      return;
     }
-  }, [authReady, user?.id, profileReady, onboardingDone, isStaff]);
+
+    initialRouteResolved.current = true;
+  }, [authReady, user?.id, profileReady, onboardingDone, isStaff, navigate]);
 
   const sessionResolving = !authReady || (!!user && !profileReady);
 
