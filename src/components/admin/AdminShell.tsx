@@ -83,18 +83,17 @@ export function AdminShell({ children }: { children: ReactNode }) {
         <AdminNav collapsed={collapsed} role={profile?.role} />
 
         <div className="mt-auto flex flex-col border-t border-sidebar-border">
-          <button
-            type="button"
-            onClick={() => window.location.assign("/")}
+          <Link
+            to="/"
             title={collapsed ? "My Customer View" : undefined}
             className={cn(
               "flex w-full items-center gap-2 text-xs font-semibold text-sidebar-foreground transition-colors hover:bg-sidebar-accent/50",
               collapsed ? "justify-center px-0 py-3" : "px-3 py-2.5 text-left",
             )}
           >
-            <Home className="h-4 w-4 shrink-0" />
+            <Home className="h-4 w-4 shrink-0" aria-hidden />
             {!collapsed && <span>My Customer View</span>}
-          </button>
+          </Link>
           <div
             className={cn(
               "flex items-center gap-2 border-t border-sidebar-border px-3 py-3 text-xs",
@@ -158,17 +157,14 @@ export function AdminShell({ children }: { children: ReactNode }) {
                   onNavigate={() => setMobileOpen(false)}
                 />
                 <div className="mt-auto flex flex-col border-t border-sidebar-border">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMobileOpen(false);
-                      window.location.assign("/");
-                    }}
+                  <Link
+                    to="/"
+                    onClick={() => setMobileOpen(false)}
                     className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-semibold text-sidebar-foreground transition-colors hover:bg-sidebar-accent/50"
                   >
-                    <Home className="h-4 w-4 shrink-0" />
+                    <Home className="h-4 w-4 shrink-0" aria-hidden />
                     <span>My Customer View</span>
-                  </button>
+                  </Link>
                   <div className="flex items-center gap-2 border-t border-sidebar-border px-3 py-3 text-xs">
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-[11px] text-sidebar-foreground">{emailLine}</p>
