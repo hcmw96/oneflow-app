@@ -8,6 +8,8 @@ import { useAuth } from "@/contexts/auth";
 import { supabase } from "@/lib/supabase";
 import { addDays, isSameDay, startOfDay, startOfWeekSunday } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { TypeBadge } from "@/components/TypeBadge";
+import { displayClassType } from "@/types/studio";
 
 export const Route = createFileRoute("/schedule")({
   component: SchedulePage,
@@ -39,7 +41,7 @@ function ScheduleRowsSkeleton() {
   return (
     <>
       {Array.from({ length: 5 }).map((_, i) => (
-        <Skeleton key={i} className="h-28 w-full rounded-2xl" />
+        <Skeleton key={i} className="h-40 w-full rounded-2xl" />
       ))}
     </>
   );
@@ -185,7 +187,7 @@ export default function SchedulePage() {
           <Skeleton className="mx-auto mb-2 h-4 w-32" />
           <Skeleton className="h-14 w-full rounded-2xl" />
         </div>
-        <main className="flex-1 space-y-3 px-5 pt-5">
+        <main className="flex-1 space-y-5 px-5 pt-5">
           <Skeleton className="h-7 w-52" />
           <ScheduleRowsSkeleton />
         </main>
@@ -250,7 +252,7 @@ export default function SchedulePage() {
 
       <main
         className={cn(
-          "flex-1 space-y-3 px-5 pt-5 transition-opacity",
+          "flex-1 space-y-5 px-5 pt-5 transition-opacity",
           revalidating && "opacity-80",
         )}
         {...swipeHandlers}
@@ -258,7 +260,7 @@ export default function SchedulePage() {
         <h2 className="font-display text-lg font-bold">{longDayLabel}</h2>
         <div
           key={scheduleDayKey(selectedDay)}
-          className={cn("space-y-3", !loading && "schedule-content-animate")}
+          className={cn("space-y-5", !loading && "schedule-content-animate")}
         >
           {loading ? (
             <ScheduleRowsSkeleton />
@@ -306,7 +308,7 @@ function ScheduleRow({
   const desc = session.description?.trim() ?? "";
 
   const guideName = session.guide_name?.trim() || null;
-  const avatarLetter = (guideName?.charAt(0) || session.name.charAt(0) || "?").toUpperCase();
+  const badgeType = displayClassType(session.class_type);
   const time = new Date(session.starts_at)
     .toLocaleTimeString("en-ZA", { hour: "numeric", minute: "2-digit", hour12: true })
     .toUpperCase();
@@ -317,76 +319,94 @@ function ScheduleRow({
   const almostFull = session.booked_count / session.capacity >= 0.8;
 
   return (
-    <div className="rounded-2xl border border-border bg-card p-4">
-      <div className="flex items-start gap-3">
-        <div className="w-14 shrink-0 pt-1 text-xs font-semibold tabular-nums">{time}</div>
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted text-sm font-bold">
-          <span aria-hidden>{avatarLetter}</span>
-        </div>
+    <div className="rounded-2xl border border-border bg-card px-5 py-5">
+      <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 items-center gap-2">
-            <h3 className="min-w-0 flex-1 truncate font-display text-[15px] font-bold leading-tight">
-              {session.name}
-            </h3>
-            {almostFull && !full && (
-              <span className="shrink-0 rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-semibold text-orange-700">
-                Almost Full
-              </span>
-            )}
-          </div>
-          {guideName && (
-            <p className="mt-0.5 truncate text-xs text-muted-foreground">{guideName}</p>
+          {almostFull && !full && (
+            <span className="inline-flex rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-semibold text-orange-700">
+              Almost Full
+            </span>
           )}
-          {desc ? (
-            <div className="mt-1.5 min-w-0">
-              <p
-                className={cn(
-                  "text-xs leading-snug text-muted-foreground",
-                  !descExpanded && "line-clamp-2",
-                )}
-              >
-                {desc}
-              </p>
-              {(desc.length > 72 || descExpanded) && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setDescExpanded((v) => !v);
-                  }}
-                  className="mt-0.5 text-[11px] font-semibold"
-                  style={{ color: SAGE }}
-                >
-                  {descExpanded ? "Show less" : "Read more"}
-                </button>
-              )}
-            </div>
-          ) : null}
-          <p className="mt-1 flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
-            <MapPin className="h-3 w-3 shrink-0" aria-hidden />
-            <span className="min-w-0 truncate">{session.location}</span>
-          </p>
-          <p className="mt-0.5 flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
-            <Clock className="h-3 w-3 shrink-0" aria-hidden />
-            <span className="min-w-0">{durationMin} mins</span>
-          </p>
         </div>
-        <button
-          type="button"
-          onClick={onReserve}
-          disabled={alreadyBooked}
-          className={cn(
-            "shrink-0 self-center rounded-lg px-4 py-2 text-sm font-semibold transition-opacity",
-            alreadyBooked
-              ? "bg-muted text-muted-foreground"
-              : full
-                ? "bg-muted text-muted-foreground"
-                : "bg-primary text-primary-foreground active:opacity-90",
-          )}
-        >
-          {alreadyBooked ? "Booked" : full ? "Full" : "Reserve"}
-        </button>
+        <TypeBadge
+          type={badgeType}
+          className="shrink-0 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide"
+        />
       </div>
+
+      <h3 className="mt-2 font-display text-lg font-bold leading-snug tracking-tight break-words text-foreground">
+        {session.name}
+      </h3>
+
+      <p
+        className={cn(
+          "mt-1.5 text-sm font-medium leading-snug",
+          guideName ? "" : "text-muted-foreground",
+        )}
+        style={guideName ? { color: SAGE } : undefined}
+      >
+        {guideName ?? "Unguided"}
+      </p>
+
+      <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs leading-relaxed text-muted-foreground">
+        <span className="inline-flex items-center gap-1 font-medium tabular-nums">
+          <Clock className="h-3.5 w-3.5 shrink-0" aria-hidden />
+          {time}
+        </span>
+        <span className="text-muted-foreground/40" aria-hidden>
+          ·
+        </span>
+        <span className="inline-flex min-w-0 items-center gap-1">
+          <MapPin className="h-3.5 w-3.5 shrink-0" aria-hidden />
+          <span className="break-words">{session.location}</span>
+        </span>
+        <span className="text-muted-foreground/40" aria-hidden>
+          ·
+        </span>
+        <span className="tabular-nums">{durationMin} mins</span>
+      </p>
+
+      {desc ? (
+        <div className="mt-3 min-w-0">
+          <p
+            className={cn(
+              "text-xs leading-snug text-muted-foreground",
+              !descExpanded && "line-clamp-2",
+            )}
+          >
+            {desc}
+          </p>
+          {(desc.length > 72 || descExpanded) && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setDescExpanded((v) => !v);
+              }}
+              className="mt-0.5 text-[11px] font-semibold"
+              style={{ color: SAGE }}
+            >
+              {descExpanded ? "Show less" : "Read more"}
+            </button>
+          )}
+        </div>
+      ) : null}
+
+      <button
+        type="button"
+        onClick={onReserve}
+        disabled={alreadyBooked}
+        className={cn(
+          "mt-4 w-full rounded-xl py-3 text-sm font-semibold transition-opacity",
+          alreadyBooked
+            ? "bg-muted text-muted-foreground"
+            : full
+              ? "bg-muted text-muted-foreground"
+              : "bg-primary text-primary-foreground active:opacity-90",
+        )}
+      >
+        {alreadyBooked ? "Booked" : full ? "Full" : "Reserve"}
+      </button>
     </div>
   );
 }
