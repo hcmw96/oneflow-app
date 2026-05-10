@@ -28,7 +28,21 @@ serve(async (req) => {
   try {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
-    const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const secretKeysRaw = Deno.env.get("SUPABASE_SECRET_KEYS");
+    if (!secretKeysRaw) {
+      return new Response(JSON.stringify({ error: "SUPABASE_SECRET_KEYS is not configured" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const secretKeys = JSON.parse(secretKeysRaw) as Record<string, string>;
+    const adminApiKey = secretKeys["default"];
+    if (!adminApiKey) {
+      return new Response(JSON.stringify({ error: "No default key in SUPABASE_SECRET_KEYS" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     const authHeader = req.headers.get("Authorization") ?? "";
 
@@ -90,7 +104,7 @@ serve(async (req) => {
       );
     }
 
-    const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+    const admin = createClient(SUPABASE_URL, adminApiKey);
 
     const { data: inviteData, error: inviteErr } = await admin.auth.admin.inviteUserByEmail(email);
     if (inviteErr) {
