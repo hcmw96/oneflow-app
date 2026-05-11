@@ -99,7 +99,7 @@ export function FriendsPanel() {
   }, []);
 
   useEffect(() => {
-    const t = window.setTimeout(() => setDebouncedQ(q.trim()), 400);
+    const t = window.setTimeout(() => setDebouncedQ(q.trim()), 300);
     return () => window.clearTimeout(t);
   }, [q]);
 
@@ -122,8 +122,9 @@ export function FriendsPanel() {
   }, [refreshFriendships]);
 
   useEffect(() => {
-    if (!userId || debouncedQ.length === 0) {
+    if (!userId || debouncedQ.length < 2) {
       setResults([]);
+      setSearching(false);
       return;
     }
 
@@ -131,37 +132,23 @@ export function FriendsPanel() {
     (async () => {
       setSearching(true);
       const pattern = `%${escapeIlike(debouncedQ)}%`;
-      const sel =
-        "id, first_name, last_name, avatar_url, email" as const;
-      const [{ data: byFirst, error: e1 }, { data: byLast, error: e2 }] = await Promise.all([
-        supabase
-          .from("profiles")
-          .select(sel)
-          .eq("is_searchable", true)
-          .neq("id", userId)
-          .ilike("first_name", pattern),
-        supabase
-          .from("profiles")
-          .select(sel)
-          .eq("is_searchable", true)
-          .neq("id", userId)
-          .ilike("last_name", pattern),
-      ]);
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("id, first_name, last_name, avatar_url, email")
+        .or(`first_name.ilike.${pattern},last_name.ilike.${pattern}`)
+        .neq("id", userId)
+        .eq("is_active", true)
+        .limit(10);
 
       if (cancelled) return;
       setSearching(false);
-      const error = e1 || e2;
       if (error) {
         console.error(error);
         toast.error(error.message);
         setResults([]);
         return;
       }
-      const merged = new Map<string, ProfileMini>();
-      for (const p of [...(byFirst ?? []), ...(byLast ?? [])] as ProfileMini[]) {
-        merged.set(p.id, p);
-      }
-      setResults([...merged.values()]);
+      setResults((data ?? []) as ProfileMini[]);
     })();
     return () => {
       cancelled = true;
@@ -180,7 +167,12 @@ export function FriendsPanel() {
           }
         }
         if (s.status === "pending") {
-          if (s.requester_id === userId && s.addressee_id === otherId) return "requested" as const;
+          if (
+            (s.requester_id === userId && s.addressee_id === otherId) ||
+            (s.addressee_id === userId && s.requester_id === otherId)
+          ) {
+            return "requested" as const;
+          }
         }
       }
       return "none" as const;
@@ -278,9 +270,13 @@ export function FriendsPanel() {
           className="w-full rounded-lg border border-border bg-muted/60 py-3 pl-9 pr-3 text-sm outline-none focus:border-primary"
         />
       </div>
-      {debouncedQ.length > 0 && (
+      {q.trim().length > 0 && (
         <ul className="divide-y divide-border">
-          {searching ? (
+          {debouncedQ.length < 2 ? (
+            <li className="py-4 text-center text-sm text-muted-foreground">
+              Type at least 2 characters to search.
+            </li>
+          ) : searching ? (
             <li className="flex justify-center py-8">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </li>
@@ -295,7 +291,7 @@ export function FriendsPanel() {
                   <p className="min-w-0 flex-1 truncate text-sm font-semibold">{fullName(p)}</p>
                   {rel === "friends" ? (
                     <span className="shrink-0 rounded-full bg-primary/15 px-2.5 py-0.5 text-[11px] font-semibold text-primary">
-                      Friends
+                      Friends ✓
                     </span>
                   ) : rel === "requested" ? (
                     <span className="shrink-0 rounded-full bg-muted px-2.5 py-0.5 text-[11px] font-semibold text-muted-foreground">
