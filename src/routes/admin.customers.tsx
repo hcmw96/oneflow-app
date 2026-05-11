@@ -9,23 +9,13 @@ import {
   type AssignPackageTarget,
 } from "@/components/admin/AssignPackageDialog";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
-import {
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -106,11 +96,6 @@ function CustomersPage() {
 
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetCustomerId, setSheetCustomerId] = useState<string | null>(null);
-
-  const [listRolePending, setListRolePending] = useState<{ id: string; role: AllRole } | null>(
-    null,
-  );
-  const [listRoleConfirmOpen, setListRoleConfirmOpen] = useState(false);
 
   const canManageCustomers =
     (viewerRole ?? "").toLowerCase() === "director" ||
@@ -270,32 +255,23 @@ function CustomersPage() {
     setSaving(false);
   };
 
-  const saveListMemberRole = async (memberId: string, next: AllRole) => {
+  const saveListMemberRole = async (memberId: string, previous: AllRole, next: AllRole) => {
+    setMembers((prev) => prev.map((m) => (m.id === memberId ? { ...m, role: next } : m)));
     const { error } = await supabase.from("profiles").update({ role: next }).eq("id", memberId);
     if (error) {
       toast.error(error.message);
+      setMembers((prev) => prev.map((m) => (m.id === memberId ? { ...m, role: previous } : m)));
       return;
     }
     toast.success("Role updated");
-    setListRoleConfirmOpen(false);
-    setListRolePending(null);
-    await load();
   };
 
   const onListRoleChange = (memberId: string, currentRole: string, value: string) => {
     if (!isAllRole(value)) return;
     if (!canManageCustomers) return;
     if (value === currentRole) return;
-    if (value !== "customer") {
-      setListRolePending({ id: memberId, role: value });
-      setListRoleConfirmOpen(true);
-      return;
-    }
-    void saveListMemberRole(memberId, "customer");
-  };
-
-  const confirmListRoleUpgrade = () => {
-    if (listRolePending) void saveListMemberRole(listRolePending.id, listRolePending.role);
+    if (!isAllRole(currentRole)) return;
+    void saveListMemberRole(memberId, currentRole, value);
   };
 
   return (
@@ -413,36 +389,6 @@ function CustomersPage() {
         canAssign={canManageCustomers}
         onAssigned={() => void load()}
       />
-
-      <AlertDialog
-        open={listRoleConfirmOpen}
-        onOpenChange={(o) => {
-          setListRoleConfirmOpen(o);
-          if (!o) setListRolePending(null);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Grant admin access?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will give them admin access. Only staff with the correct responsibilities should
-              receive roles other than Customer. Continue?
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setListRolePending(null)}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-[#a3b693] text-white hover:bg-[#8fa67d]"
-              onClick={(e) => {
-                e.preventDefault();
-                confirmListRoleUpgrade();
-              }}
-            >
-              Save role
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
       <div className="mb-4 max-w-md">
         <div className="relative">
