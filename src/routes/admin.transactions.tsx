@@ -109,9 +109,9 @@ function TransactionsPage() {
     const { data, error } = await supabase
       .from("user_credits")
       .select(
-        "id, purchased_at, profile_id, product_id, product_name, yoco_payment_id, profile:profile_id(first_name, last_name), product:product_id(name, price_zar)",
+        "id, created_at, profile_id, product_id, product_name, yoco_payment_id, profile:profile_id(first_name, last_name), product:product_id(name, price_zar)",
       )
-      .order("purchased_at", { ascending: false })
+      .order("created_at", { ascending: false })
       .limit(2000);
 
     if (error) {
@@ -137,7 +137,7 @@ function TransactionsPage() {
       const yoco = (raw.yoco_payment_id as string | null) ?? null;
       return {
         id: String(raw.id),
-        date: (raw.purchased_at as string) ?? new Date().toISOString(),
+        date: (raw.created_at as string) ?? new Date().toISOString(),
         memberId: (raw.profile_id as string | null) ?? null,
         memberName,
         productId: (raw.product_id as string | null) ?? null,

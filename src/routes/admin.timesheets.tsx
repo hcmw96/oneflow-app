@@ -71,7 +71,7 @@ type TimesheetRow = {
   id: string;
   profile_id: string;
   staffName: string;
-  date: string | null;
+  shift_date: string | null;
   clocked_in_at: string | null;
   clocked_out_at: string | null;
   shift_id: string | null;
@@ -225,9 +225,9 @@ function TimesheetsPage() {
       supabase
         .from("timesheets")
         .select(
-          "id, profile_id, date, clocked_in_at, clocked_out_at, shift_id, notes, profile:profile_id(first_name, last_name)",
+          "id, profile_id, shift_date, clocked_in_at, clocked_out_at, shift_id, notes, profile:profile_id(first_name, last_name)",
         )
-        .order("date", { ascending: false })
+        .order("shift_date", { ascending: false })
         .limit(1000),
     ]);
 
@@ -283,7 +283,7 @@ function TimesheetsPage() {
             profile_id: String(raw.profile_id),
             staffName:
               `${p?.first_name ?? ""} ${p?.last_name ?? ""}`.toString().trim() || "Staff",
-            date: (raw.date as string | null) ?? null,
+            shift_date: (raw.shift_date as string | null) ?? null,
             clocked_in_at: (raw.clocked_in_at as string | null) ?? null,
             clocked_out_at: (raw.clocked_out_at as string | null) ?? null,
             shift_id: (raw.shift_id as string | null) ?? null,
@@ -318,19 +318,19 @@ function TimesheetsPage() {
     let out = timesheets.filter((t) => {
       if (q && !t.staffName.toLowerCase().includes(q)) return false;
       if (tsStaff !== "all" && t.profile_id !== tsStaff) return false;
-      if (tsFrom && (t.date ?? "9999") < tsFrom) return false;
-      if (tsTo && (t.date ?? "0000") > tsTo) return false;
+      if (tsFrom && (t.shift_date ?? "9999") < tsFrom) return false;
+      if (tsTo && (t.shift_date ?? "0000") > tsTo) return false;
       return true;
     });
     out = [...out].sort((a, b) => {
       switch (tsSort) {
         case "date_asc":
-          return (a.date ?? "").localeCompare(b.date ?? "");
+          return (a.shift_date ?? "").localeCompare(b.shift_date ?? "");
         case "name_asc":
           return a.staffName.localeCompare(b.staffName);
         case "date_desc":
         default:
-          return (b.date ?? "").localeCompare(a.date ?? "");
+          return (b.shift_date ?? "").localeCompare(a.shift_date ?? "");
       }
     });
     return out;
@@ -458,7 +458,7 @@ function TimesheetsPage() {
     const { error } = await supabase.from("timesheets").insert({
       profile_id: me,
       clocked_in_at: now,
-      date: todayJhbISODate(),
+      shift_date: todayJhbISODate(),
       shift_id: myTodaysShift?.id ?? null,
     });
     setClocking(false);
@@ -489,7 +489,7 @@ function TimesheetsPage() {
   const exportTimesheets = () => {
     const header = ["Date", "Staff", "Clock in", "Clock out", "Hours", "Notes"];
     const body = filteredTimesheets.map((t) => [
-      t.date ?? "",
+      t.shift_date ?? "",
       t.staffName,
       formatTime(t.clocked_in_at),
       formatTime(t.clocked_out_at),
@@ -699,7 +699,7 @@ function TimesheetsPage() {
                   {tsPageRows.map((t) => (
                     <tr key={t.id} className="border-t border-border">
                       <td className="whitespace-nowrap px-5 py-3 tabular-nums text-muted-foreground">
-                        {t.date ?? "—"}
+                        {t.shift_date ?? "—"}
                       </td>
                       <td className="px-5 py-3 font-semibold">{t.staffName}</td>
                       <td className="whitespace-nowrap px-5 py-3 tabular-nums text-muted-foreground">
