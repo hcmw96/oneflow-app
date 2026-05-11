@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Loader2, Search, Plus } from "lucide-react";
+import { Loader2, Package, Plus, Search } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/admin/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -20,7 +20,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { supabase } from "@/lib/supabase";
+import { getUser, supabase } from "@/lib/supabase";
+import {
+  AssignPackageDialog,
+  type AssignPackageTarget,
+} from "@/components/admin/AssignPackageDialog";
 
 export const Route = createFileRoute("/admin/customers")({
   head: () => ({
@@ -45,6 +49,9 @@ function CustomersPage() {
   const [q, setQ] = useState("");
   const [members, setMembers] = useState<MemberRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [viewerRole, setViewerRole] = useState<string | null>(null);
+  const [assignOpen, setAssignOpen] = useState(false);
+  const [assignTarget, setAssignTarget] = useState<AssignPackageTarget | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [firstName, setFirstName] = useState("");
@@ -53,6 +60,23 @@ function CustomersPage() {
   const [phone, setPhone] = useState("");
   const [dob, setDob] = useState("");
   const [role, setRole] = useState("customer");
+
+  const canAssignPackages =
+    (viewerRole ?? "").toLowerCase() === "director" ||
+    (viewerRole ?? "").toLowerCase() === "management";
+
+  useEffect(() => {
+    void (async () => {
+      const user = await getUser();
+      if (!user) return;
+      const { data } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .maybeSingle();
+      setViewerRole((data?.role as string | null) ?? null);
+    })();
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -273,6 +297,14 @@ function CustomersPage() {
         </DialogContent>
       </Dialog>
 
+      <AssignPackageDialog
+        open={assignOpen}
+        onOpenChange={setAssignOpen}
+        target={assignTarget}
+        canAssign={canAssignPackages}
+        onAssigned={() => void load()}
+      />
+
       <div className="mb-4 max-w-md">
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -299,6 +331,7 @@ function CustomersPage() {
                 <th className="px-5 py-3 font-medium">Credits</th>
                 <th className="px-5 py-3 font-medium">Last visit</th>
                 <th className="px-5 py-3 font-medium">Status</th>
+                <th className="px-5 py-3 font-medium">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -346,6 +379,28 @@ function CustomersPage() {
                     >
                       {m.status}
                     </span>
+                  </td>
+                  <td className="px-5 py-3" onClick={(e) => e.stopPropagation()}>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5"
+                      disabled={!canAssignPackages}
+                      onClick={() => {
+                        const email = m.email.trim() === "—" || !m.email.trim() ? null : m.email;
+                        setAssignTarget({
+                          profileId: m.id,
+                          displayName: m.name,
+                          email,
+                          firstName: m.name.split(/\s+/)[0] ?? null,
+                        });
+                        setAssignOpen(true);
+                      }}
+                    >
+                      <Package className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                      Assign package
+                    </Button>
                   </td>
                 </tr>
               ))}

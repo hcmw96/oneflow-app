@@ -5,9 +5,11 @@ import {
   ChevronRight,
   Loader2,
   Mail,
+  Package,
   Phone,
   Plus,
   Search,
+  User,
   UserCog,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -34,6 +36,18 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  AssignPackageDialog,
+  type AssignPackageTarget,
+} from "@/components/admin/AssignPackageDialog";
+import {
+  Sheet,
+  SheetClose,
+  SheetContent,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import {
   Select,
   SelectContent,
@@ -140,6 +154,10 @@ function StaffPage() {
 
   // Deactivate confirmation
   const [deactivateTarget, setDeactivateTarget] = useState<StaffRow | null>(null);
+
+  const [profileSheetRow, setProfileSheetRow] = useState<StaffRow | null>(null);
+  const [assignOpen, setAssignOpen] = useState(false);
+  const [assignTarget, setAssignTarget] = useState<AssignPackageTarget | null>(null);
 
   const isDirector = (viewerRole ?? "").toLowerCase() === "director";
   const canManage = isDirector || (viewerRole ?? "").toLowerCase() === "management";
@@ -266,25 +284,78 @@ function StaffPage() {
       return;
     }
     setSaving(true);
-    const { error } = await supabase
-      .from("profiles")
-      .update({
-        first_name: eFirst.trim(),
-        last_name: eLast.trim(),
-        email: eEmail.trim().toLowerCase(),
-        phone: ePhone.trim() || null,
-        role: eRole,
-      })
-      .eq("id", editingId);
-    setSaving(false);
-    if (error) {
-      toast.error(error.message);
-      return;
+    try {
+      const id = editingId;
+      const nextRole = eRole;
+
+      const { error: fieldsError } = await supabase
+        .from("profiles")
+        .update({
+          first_name: eFirst.trim(),
+          last_name: eLast.trim(),
+          email: eEmail.trim().toLowerCase(),
+          phone: ePhone.trim() || null,
+        })
+        .eq("id", id);
+
+      if (fieldsError) {
+        toast.error(fieldsError.message);
+        return;
+      }
+
+      const { data: roleRow, error: roleError } = await supabase
+        .from("profiles")
+        .update({ role: nextRole })
+        .eq("id", id)
+        .select("id, role")
+        .single();
+
+      if (roleError) {
+        toast.error(roleError.message);
+        await load();
+        return;
+      }
+      if (!roleRow) {
+        toast.error("Role update did not apply (no row returned).");
+        await load();
+        return;
+      }
+
+      const returnedRole = String(roleRow.role ?? "").toLowerCase();
+      if (returnedRole !== nextRole || !isStaffRole(returnedRole)) {
+        toast.error("Role did not persist as expected.");
+        await load();
+        return;
+      }
+
+      const first = eFirst.trim();
+      const last = eLast.trim();
+      const email = eEmail.trim().toLowerCase();
+      const phone = ePhone.trim();
+
+      setRows((prev) =>
+        prev.map((r) =>
+          r.id === id
+            ? {
+                ...r,
+                firstName: first,
+                lastName: last,
+                fullName: `${first} ${last}`.trim() || email || "Staff",
+                email,
+                phone,
+                role: returnedRole as StaffRole,
+              }
+            : r,
+        ),
+      );
+
+      toast.success("Staff member updated");
+      setEditOpen(false);
+      setEditingId(null);
+      await load();
+    } finally {
+      setSaving(false);
     }
-    toast.success("Staff member updated");
-    setEditOpen(false);
-    setEditingId(null);
-    await load();
   };
 
   const submitInvite = async () => {
@@ -438,6 +509,7 @@ function StaffPage() {
                 <th className="px-5 py-3 font-medium">Role</th>
                 <th className="px-5 py-3 font-medium">Joined</th>
                 <th className="px-5 py-3 font-medium">Active</th>
+                <th className="px-5 py-3 font-medium">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -526,6 +598,39 @@ function StaffPage() {
                       className="data-[state=checked]:bg-[#a3b693]"
                     />
                   </td>
+                  <td className="px-5 py-3" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 gap-1 px-2 text-xs"
+                        disabled={!canManage}
+                        onClick={() => {
+                          setAssignTarget({
+                            profileId: r.id,
+                            displayName: r.fullName,
+                            email: r.email?.trim() || null,
+                            firstName: r.firstName,
+                          });
+                          setAssignOpen(true);
+                        }}
+                      >
+                        <Package className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                        Assign
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 gap-1 px-2 text-xs"
+                        onClick={() => setProfileSheetRow(r)}
+                      >
+                        <User className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                        Profile
+                      </Button>
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -561,8 +666,111 @@ function StaffPage() {
         </div>
       )}
 
+      <AssignPackageDialog
+        open={assignOpen}
+        onOpenChange={setAssignOpen}
+        target={assignTarget}
+        canAssign={canManage}
+        onAssigned={() => void load()}
+      />
+
+      <Sheet open={profileSheetRow !== null} onOpenChange={(o) => !o && setProfileSheetRow(null)}>
+        <SheetContent side="right" className="w-full max-w-md overflow-y-auto">
+          {profileSheetRow ? (
+            <>
+              <SheetHeader>
+                <SheetTitle>Staff profile</SheetTitle>
+              </SheetHeader>
+              <div className="mt-6 space-y-4 text-sm">
+                <div className="flex items-center gap-3">
+                  {profileSheetRow.avatarUrl ? (
+                    <img
+                      src={profileSheetRow.avatarUrl}
+                      alt=""
+                      className="h-14 w-14 rounded-full object-cover ring-2 ring-border"
+                    />
+                  ) : (
+                    <div className="grid h-14 w-14 place-content-center rounded-full bg-[#a3b693] text-lg font-bold text-white">
+                      {initials(
+                        profileSheetRow.firstName,
+                        profileSheetRow.lastName,
+                        profileSheetRow.email,
+                      )}
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <p className="font-display text-lg font-bold leading-tight">
+                      {profileSheetRow.fullName}
+                    </p>
+                    <p className="text-muted-foreground">{ROLE_LABEL[profileSheetRow.role]}</p>
+                  </div>
+                </div>
+                <dl className="space-y-3">
+                  <div className="flex gap-2">
+                    <dt className="w-20 shrink-0 text-muted-foreground">Email</dt>
+                    <dd className="min-w-0 break-all">{profileSheetRow.email || "—"}</dd>
+                  </div>
+                  <div className="flex gap-2">
+                    <dt className="w-20 shrink-0 text-muted-foreground">Phone</dt>
+                    <dd>{profileSheetRow.phone?.trim() || "—"}</dd>
+                  </div>
+                  <div className="flex gap-2">
+                    <dt className="w-20 shrink-0 text-muted-foreground">Joined</dt>
+                    <dd>
+                      {profileSheetRow.createdAt
+                        ? formatDate(profileSheetRow.createdAt)
+                        : "—"}
+                    </dd>
+                  </div>
+                </dl>
+              </div>
+              <SheetFooter className="mt-8 flex-col gap-2 sm:flex-col">
+                <Button
+                  type="button"
+                  className="w-full gap-2 bg-[#a3b693] text-white hover:bg-[#8fa67d]"
+                  disabled={!canManage}
+                  onClick={() => {
+                    const row = profileSheetRow;
+                    setAssignTarget({
+                      profileId: row.id,
+                      displayName: row.fullName,
+                      email: row.email?.trim() || null,
+                      firstName: row.firstName,
+                    });
+                    setAssignOpen(true);
+                    setProfileSheetRow(null);
+                  }}
+                >
+                  <Package className="h-4 w-4 shrink-0" aria-hidden />
+                  Assign package
+                </Button>
+                <SheetClose asChild>
+                  <Button type="button" variant="outline" className="w-full">
+                    Close
+                  </Button>
+                </SheetClose>
+              </SheetFooter>
+            </>
+          ) : null}
+        </SheetContent>
+      </Sheet>
+
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent
+          className="max-w-md"
+          onPointerDownOutside={(e) => {
+            const t = e.target as HTMLElement;
+            if (t.closest("[data-radix-select-content]") || t.closest('[role="listbox"]')) {
+              e.preventDefault();
+            }
+          }}
+          onInteractOutside={(e) => {
+            const t = e.target as HTMLElement;
+            if (t.closest("[data-radix-select-content]") || t.closest('[role="listbox"]')) {
+              e.preventDefault();
+            }
+          }}
+        >
           <DialogHeader>
             <DialogTitle>Edit staff member</DialogTitle>
           </DialogHeader>

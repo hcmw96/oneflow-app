@@ -1,8 +1,13 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
-import { ArrowLeft, Calendar, Mail, Phone, Shield, User } from "lucide-react";
+import { ArrowLeft, Calendar, Mail, Package, Phone, Shield, User } from "lucide-react";
 import { PageHeader } from "@/components/admin/PageHeader";
-import { supabase } from "@/lib/supabase";
+import {
+  AssignPackageDialog,
+  type AssignPackageTarget,
+} from "@/components/admin/AssignPackageDialog";
+import { Button } from "@/components/ui/button";
+import { getUser, supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/admin/customers/$customerId")({
@@ -48,9 +53,29 @@ function oneClass(c: BookingRow["classes"]): { name: string; starts_at: string }
 function CustomerProfilePage() {
   const { customerId } = Route.useParams();
   const [loading, setLoading] = useState(true);
+  const [viewerRole, setViewerRole] = useState<string | null>(null);
+  const [assignOpen, setAssignOpen] = useState(false);
+  const [assignTarget, setAssignTarget] = useState<AssignPackageTarget | null>(null);
   const [profile, setProfile] = useState<ProfileRow | null>(null);
   const [credits, setCredits] = useState<CreditRow[]>([]);
   const [bookings, setBookings] = useState<BookingRow[]>([]);
+
+  const canAssignPackages =
+    (viewerRole ?? "").toLowerCase() === "director" ||
+    (viewerRole ?? "").toLowerCase() === "management";
+
+  useEffect(() => {
+    void (async () => {
+      const user = await getUser();
+      if (!user) return;
+      const { data } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .maybeSingle();
+      setViewerRole((data?.role as string | null) ?? null);
+    })();
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -149,7 +174,39 @@ function CustomerProfilePage() {
         </Link>
       </div>
 
-      <PageHeader title={fullName} description="Member profile" />
+      <PageHeader
+        title={fullName}
+        description="Member profile"
+        actions={
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="gap-2"
+            disabled={!canAssignPackages}
+            onClick={() => {
+              setAssignTarget({
+                profileId: profile.id,
+                displayName: fullName,
+                email: profile.email?.trim() || null,
+                firstName: profile.first_name,
+              });
+              setAssignOpen(true);
+            }}
+          >
+            <Package className="h-4 w-4 shrink-0" aria-hidden />
+            Assign package
+          </Button>
+        }
+      />
+
+      <AssignPackageDialog
+        open={assignOpen}
+        onOpenChange={setAssignOpen}
+        target={assignTarget}
+        canAssign={canAssignPackages}
+        onAssigned={() => void load()}
+      />
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,320px)_1fr]">
         <section className="rounded-2xl border border-border bg-card p-6">

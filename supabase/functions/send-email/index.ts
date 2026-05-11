@@ -8,6 +8,7 @@ type TemplateName =
   | "friend_request"
   | "class_invite"
   | "waiver_reminder"
+  | "package_assigned"
   | "marketing";
 
 type RequestPayload = {
@@ -86,6 +87,25 @@ function buildTemplate(template: TemplateName, data: Record<string, unknown> = {
         <h2 style="font-size:22px;font-weight:600;color:#a3b693;margin:0 0 16px;">Please sign your waiver</h2>
         <p style="font-size:15px;line-height:1.6;color:#444;margin:0 0 12px;">Hi ${esc(firstName)}, we noticed you haven't completed your One Flow studio waiver yet. Please log into the app and complete your profile setup to book classes.</p>
         ${ctaButton("https://oneflow1.netlify.app/onboarding", "Complete waiver")}
+        <p style="font-size:14px;color:#888;margin:24px 0 0;">One Flow Team</p>
+      `,
+    };
+  }
+
+  if (template === "package_assigned") {
+    const first = String(data.first_name ?? "there");
+    const packageName = String(data.package_name ?? "Your package");
+    const creditsLine = String(
+      data.credits_description ??
+        "Your credits are now available and ready to use.",
+    );
+    const note = data.note ? String(data.note).trim() : "";
+    return {
+      subject: "Your One Flow package has been activated",
+      content: `
+        <h2 style="font-size:22px;font-weight:600;color:#a3b693;margin:0 0 16px;">Package activated</h2>
+        <p style="font-size:15px;line-height:1.6;color:#444;margin:0 0 12px;">Hi ${esc(first)}, ${esc(packageName)} has been added to your account by the One Flow team. ${esc(creditsLine)}</p>
+        ${note ? `<p style="font-size:14px;line-height:1.5;color:#555;margin:16px 0 0;padding:12px 14px;background:#f5f5f0;border-radius:8px;"><span style="font-weight:600;">Note from the team:</span> ${esc(note)}</p>` : ""}
         <p style="font-size:14px;color:#888;margin:24px 0 0;">One Flow Team</p>
       `,
     };
