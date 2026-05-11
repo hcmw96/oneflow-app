@@ -29,29 +29,30 @@ export interface AdminNavItem {
   icon: LucideIcon;
 }
 
-/** Routes guides may open (nav + deep-link guard in `admin.tsx`). */
-export const GUIDE_ALLOWED_ADMIN_ROUTES = [
+/** Routes guide/front-desk roles may open (nav + deep-link guard in `admin.tsx`). */
+export const LIMITED_ADMIN_ROUTES = [
   "/admin/check-in",
   "/admin/bookings",
   "/admin/classes",
   // /admin/scheduling redirects to /admin/classes; keep it allow-listed so
-  // the redirect can complete before the guide-route guard fires.
+  // the redirect can complete before the limited-role guard fires.
   "/admin/scheduling",
 ] as const;
 
-export function isGuideRole(role: string | null | undefined) {
-  return (role ?? "").toLowerCase() === "guide";
+export function isLimitedAdminRole(role: string | null | undefined) {
+  const r = (role ?? "").toLowerCase();
+  return r === "guide" || r === "front_desk";
 }
 
-export function isPathAllowedForGuide(pathname: string) {
-  return GUIDE_ALLOWED_ADMIN_ROUTES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+export function isPathAllowedForLimitedRole(pathname: string) {
+  return LIMITED_ADMIN_ROUTES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
 export function navItemsForRole(role: string | null | undefined): AdminNavItem[] {
   const r = (role ?? "").toLowerCase();
   if (r === "director" || r === "management") return adminNavItems;
-  if (isGuideRole(role)) {
-    const allow = new Set<string>(GUIDE_ALLOWED_ADMIN_ROUTES);
+  if (isLimitedAdminRole(role)) {
+    const allow = new Set<string>(LIMITED_ADMIN_ROUTES);
     return adminNavItems.filter((i) => allow.has(i.to));
   }
   return adminNavItems;

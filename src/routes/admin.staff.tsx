@@ -66,14 +66,23 @@ export const Route = createFileRoute("/admin/staff")({
 const TZ = "Africa/Johannesburg";
 const PAGE_SIZE = 20;
 
-type StaffRole = "director" | "management" | "guide" | "boh" | "marketing" | "team";
+type StaffRole = "director" | "management" | "guide" | "front_desk" | "boh" | "marketing" | "team";
 
-const STAFF_ROLES: StaffRole[] = ["director", "management", "guide", "boh", "marketing", "team"];
+const STAFF_ROLES: StaffRole[] = [
+  "director",
+  "management",
+  "guide",
+  "front_desk",
+  "boh",
+  "marketing",
+  "team",
+];
 
 const ROLE_LABEL: Record<StaffRole, string> = {
   director: "Director",
   management: "Management",
   guide: "Guide",
+  front_desk: "Front Desk",
   boh: "BOH",
   marketing: "Marketing",
   team: "Team",
@@ -83,6 +92,7 @@ const ROLE_BADGE: Record<StaffRole, string> = {
   director: "bg-[#a3b693] text-white",
   management: "bg-blue-100 text-blue-800",
   guide: "bg-purple-100 text-purple-800",
+  front_desk: "bg-cyan-100 text-cyan-800",
   boh: "bg-orange-100 text-orange-800",
   marketing: "bg-pink-100 text-pink-800",
   team: "bg-gray-200 text-gray-800",

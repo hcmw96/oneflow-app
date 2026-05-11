@@ -1,7 +1,7 @@
 import { createFileRoute, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { AdminShell } from "@/components/admin/AdminShell";
-import { isGuideRole, isPathAllowedForGuide } from "@/components/admin/AdminNav";
+import { isLimitedAdminRole, isPathAllowedForLimitedRole } from "@/components/admin/AdminNav";
 import { useAuth } from "@/contexts/auth";
 
 export const Route = createFileRoute("/admin")({
@@ -16,7 +16,7 @@ export const Route = createFileRoute("/admin")({
 
 function isAdminRole(role: string | null | undefined) {
   const r = (role ?? "").toLowerCase();
-  return r === "director" || r === "management" || r === "guide";
+  return r === "director" || r === "management" || r === "guide" || r === "front_desk";
 }
 
 function AdminLayout() {
@@ -28,7 +28,7 @@ function AdminLayout() {
   useEffect(() => {
     if (!authReady || !user || !profileReady) return;
     if (!isAdminRole(profileRole)) return;
-    if (isGuideRole(profileRole) && !isPathAllowedForGuide(pathname)) {
+    if (isLimitedAdminRole(profileRole) && !isPathAllowedForLimitedRole(pathname)) {
       navigate({ to: "/admin/check-in", replace: true });
     }
   }, [authReady, user, profileReady, profileRole, pathname, navigate]);

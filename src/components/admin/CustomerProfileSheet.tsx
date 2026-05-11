@@ -38,6 +38,7 @@ import { cn } from "@/lib/utils";
 const ALL_ROLES = [
   "customer",
   "guide",
+  "front_desk",
   "management",
   "director",
   "boh",
@@ -54,6 +55,7 @@ function isAllRole(r: string): r is AllRole {
 const ROLE_LABEL: Record<string, string> = {
   customer: "Customer",
   guide: "Guide",
+  front_desk: "Front Desk",
   management: "Management",
   director: "Director",
   boh: "BOH",
