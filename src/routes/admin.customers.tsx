@@ -3,6 +3,21 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Loader2, Package, Plus, Search } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/admin/PageHeader";
+import { CustomerProfileSheet } from "@/components/admin/CustomerProfileSheet";
+import {
+  AssignPackageDialog,
+  type AssignPackageTarget,
+} from "@/components/admin/AssignPackageDialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -21,23 +36,49 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { getUser, supabase } from "@/lib/supabase";
-import {
-  AssignPackageDialog,
-  type AssignPackageTarget,
-} from "@/components/admin/AssignPackageDialog";
 
 export const Route = createFileRoute("/admin/customers")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    profile: typeof search.profile === "string" ? search.profile : undefined,
+  }),
   head: () => ({
     meta: [{ title: "Customers — One Flow Admin" }],
   }),
   component: CustomersPage,
 });
 
+const ALL_ROLES = [
+  "customer",
+  "guide",
+  "management",
+  "director",
+  "boh",
+  "marketing",
+  "team",
+] as const;
+
+type AllRole = (typeof ALL_ROLES)[number];
+
+function isAllRole(r: string): r is AllRole {
+  return (ALL_ROLES as readonly string[]).includes(r);
+}
+
+const ROLE_LABEL: Record<string, string> = {
+  customer: "Customer",
+  guide: "Guide",
+  management: "Management",
+  director: "Director",
+  boh: "BOH",
+  marketing: "Marketing",
+  team: "Team",
+};
+
 type MemberRow = {
   id: string;
   name: string;
   email: string;
   phone: string;
+  role: string;
   plan: string;
   credits: number;
   lastVisit: string;
@@ -46,6 +87,8 @@ type MemberRow = {
 
 function CustomersPage() {
   const navigate = useNavigate();
+  const search = Route.useSearch();
+
   const [q, setQ] = useState("");
   const [members, setMembers] = useState<MemberRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -61,7 +104,15 @@ function CustomersPage() {
   const [dob, setDob] = useState("");
   const [role, setRole] = useState("customer");
 
-  const canAssignPackages =
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [sheetCustomerId, setSheetCustomerId] = useState<string | null>(null);
+
+  const [listRolePending, setListRolePending] = useState<{ id: string; role: AllRole } | null>(
+    null,
+  );
+  const [listRoleConfirmOpen, setListRoleConfirmOpen] = useState(false);
+
+  const canManageCustomers =
     (viewerRole ?? "").toLowerCase() === "director" ||
     (viewerRole ?? "").toLowerCase() === "management";
 
@@ -77,6 +128,27 @@ function CustomersPage() {
       setViewerRole((data?.role as string | null) ?? null);
     })();
   }, []);
+
+  useEffect(() => {
+    if (search.profile) {
+      setSheetCustomerId(search.profile);
+      setSheetOpen(true);
+    }
+  }, [search.profile]);
+
+  const openProfileSheet = (id: string) => {
+    setSheetCustomerId(id);
+    setSheetOpen(true);
+    void navigate({ to: "/admin/customers", search: { profile: id }, replace: true });
+  };
+
+  const closeProfileSheet = (open: boolean) => {
+    setSheetOpen(open);
+    if (!open) {
+      setSheetCustomerId(null);
+      void navigate({ to: "/admin/customers", search: { profile: undefined }, replace: true });
+    }
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -119,6 +191,7 @@ function CustomersPage() {
         name,
         email: String(p.email ?? "—"),
         phone: String(p.phone ?? "—"),
+        role: String(p.role ?? "customer").toLowerCase(),
         plan: "—",
         credits: creditByProfile[id] ?? 0,
         lastVisit: "—",
@@ -197,6 +270,34 @@ function CustomersPage() {
     setSaving(false);
   };
 
+  const saveListMemberRole = async (memberId: string, next: AllRole) => {
+    const { error } = await supabase.from("profiles").update({ role: next }).eq("id", memberId);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    toast.success("Role updated");
+    setListRoleConfirmOpen(false);
+    setListRolePending(null);
+    await load();
+  };
+
+  const onListRoleChange = (memberId: string, currentRole: string, value: string) => {
+    if (!isAllRole(value)) return;
+    if (!canManageCustomers) return;
+    if (value === currentRole) return;
+    if (value !== "customer") {
+      setListRolePending({ id: memberId, role: value });
+      setListRoleConfirmOpen(true);
+      return;
+    }
+    void saveListMemberRole(memberId, "customer");
+  };
+
+  const confirmListRoleUpgrade = () => {
+    if (listRolePending) void saveListMemberRole(listRolePending.id, listRolePending.role);
+  };
+
   return (
     <div>
       <PageHeader
@@ -214,6 +315,14 @@ function CustomersPage() {
             <Plus className="h-4 w-4 shrink-0" aria-hidden /> Add member
           </Button>
         }
+      />
+
+      <CustomerProfileSheet
+        customerId={sheetCustomerId}
+        open={sheetOpen}
+        onOpenChange={closeProfileSheet}
+        viewerRole={viewerRole}
+        onProfileUpdated={() => void load()}
       />
 
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
@@ -301,9 +410,39 @@ function CustomersPage() {
         open={assignOpen}
         onOpenChange={setAssignOpen}
         target={assignTarget}
-        canAssign={canAssignPackages}
+        canAssign={canManageCustomers}
         onAssigned={() => void load()}
       />
+
+      <AlertDialog
+        open={listRoleConfirmOpen}
+        onOpenChange={(o) => {
+          setListRoleConfirmOpen(o);
+          if (!o) setListRolePending(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Grant admin access?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will give them admin access. Only staff with the correct responsibilities should
+              receive roles other than Customer. Continue?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setListRolePending(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-[#a3b693] text-white hover:bg-[#8fa67d]"
+              onClick={(e) => {
+                e.preventDefault();
+                confirmListRoleUpgrade();
+              }}
+            >
+              Save role
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <div className="mb-4 max-w-md">
         <div className="relative">
@@ -321,12 +460,13 @@ function CustomersPage() {
         {loading ? (
           <div className="p-10 text-center text-sm text-muted-foreground">Loading…</div>
         ) : (
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[960px] text-sm">
             <thead className="bg-muted/40">
               <tr className="text-left text-xs uppercase tracking-wider text-muted-foreground">
                 <th className="px-5 py-3 font-medium">Name</th>
                 <th className="px-5 py-3 font-medium">Email</th>
                 <th className="px-5 py-3 font-medium">Phone</th>
+                <th className="px-5 py-3 font-medium">Role</th>
                 <th className="px-5 py-3 font-medium">Plan</th>
                 <th className="px-5 py-3 font-medium">Credits</th>
                 <th className="px-5 py-3 font-medium">Last visit</th>
@@ -336,34 +476,39 @@ function CustomersPage() {
             </thead>
             <tbody>
               {filtered.map((m) => (
-                <tr
-                  key={m.id}
-                  role="link"
-                  tabIndex={0}
-                  onClick={() =>
-                    navigate({
-                      to: "/admin/customers/$customerId",
-                      params: { customerId: m.id },
-                    })
-                  }
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      navigate({
-                        to: "/admin/customers/$customerId",
-                        params: { customerId: m.id },
-                      });
-                    }
-                  }}
-                  className="cursor-pointer border-t border-border hover:bg-muted/30"
-                >
-                  <td className="max-w-[160px] truncate px-5 py-3 font-semibold sm:max-w-xs md:max-w-md">
-                    {m.name}
+                <tr key={m.id} className="border-t border-border hover:bg-muted/20">
+                  <td className="max-w-[160px] px-5 py-3 sm:max-w-xs md:max-w-md">
+                    <button
+                      type="button"
+                      className="truncate text-left font-semibold text-primary underline-offset-2 hover:underline"
+                      onClick={() => openProfileSheet(m.id)}
+                    >
+                      {m.name}
+                    </button>
                   </td>
                   <td className="max-w-[200px] truncate px-5 py-3 text-muted-foreground sm:max-w-xs md:max-w-md">
                     {m.email}
                   </td>
                   <td className="px-5 py-3 text-muted-foreground">{m.phone}</td>
+                  <td className="px-5 py-3" onClick={(e) => e.stopPropagation()}>
+                    <Select
+                      key={`${m.id}-${m.role}`}
+                      value={m.role}
+                      onValueChange={(v) => onListRoleChange(m.id, m.role, v)}
+                      disabled={!canManageCustomers}
+                    >
+                      <SelectTrigger className="h-8 w-[140px] text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {ALL_ROLES.map((r) => (
+                          <SelectItem key={r} value={r}>
+                            {ROLE_LABEL[r]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </td>
                   <td className="px-5 py-3">{m.plan}</td>
                   <td className="px-5 py-3 tabular-nums">{m.credits >= 999 ? "∞" : m.credits}</td>
                   <td className="px-5 py-3 text-muted-foreground">{m.lastVisit}</td>
@@ -380,19 +525,19 @@ function CustomersPage() {
                       {m.status}
                     </span>
                   </td>
-                  <td className="px-5 py-3" onClick={(e) => e.stopPropagation()}>
+                  <td className="px-5 py-3">
                     <Button
                       type="button"
                       variant="outline"
                       size="sm"
                       className="gap-1.5"
-                      disabled={!canAssignPackages}
+                      disabled={!canManageCustomers}
                       onClick={() => {
-                        const email = m.email.trim() === "—" || !m.email.trim() ? null : m.email;
+                        const em = m.email.trim() === "—" || !m.email.trim() ? null : m.email;
                         setAssignTarget({
                           profileId: m.id,
                           displayName: m.name,
-                          email,
+                          email: em,
                           firstName: m.name.split(/\s+/)[0] ?? null,
                         });
                         setAssignOpen(true);
