@@ -31,6 +31,14 @@ type ClassRow = {
   description?: string;
 };
 
+/** Denormalized `classes.guide_name` from PostgREST (text); never guess a label when missing. */
+function guideNameFromRow(value: unknown): string | null {
+  if (value == null) return null;
+  const s = typeof value === "string" ? value : String(value);
+  const t = s.trim();
+  return t.length > 0 ? t : null;
+}
+
 function scheduleDayKey(day: Date): string {
   const x = new Date(day);
   x.setHours(0, 0, 0, 0);
@@ -114,7 +122,7 @@ export default function SchedulePage() {
       supabase
         .from("classes")
         .select(
-          "id, name, class_type, location, starts_at, ends_at, capacity, booked_count, is_cancelled, guide_name, description",
+          "id, name, guide_name, class_type, location, starts_at, ends_at, capacity, booked_count, is_cancelled, description",
         )
         .gte("starts_at", isoStart)
         .lte("starts_at", isoEnd)
@@ -136,11 +144,19 @@ export default function SchedulePage() {
     const now = new Date();
     const isToday = isSameDay(day, now);
     const rows = data ?? [];
-    const visible = rows.filter((c) => {
-      if (!isToday) return true;
-      const classStart = new Date(c.starts_at);
-      return classStart.getTime() > now.getTime() - 15 * 60 * 1000;
-    }) as unknown as ClassRow[];
+    const visible = rows
+      .filter((c) => {
+        if (!isToday) return true;
+        const classStart = new Date(c.starts_at);
+        return classStart.getTime() > now.getTime() - 15 * 60 * 1000;
+      })
+      .map((c) => {
+        const raw = c as Record<string, unknown>;
+        return {
+          ...(c as ClassRow),
+          guide_name: guideNameFromRow(raw.guide_name),
+        };
+      });
 
     classesCacheRef.current.set(key, visible);
     setClasses(visible);
@@ -307,7 +323,7 @@ function ScheduleRow({
   const [descExpanded, setDescExpanded] = useState(false);
   const desc = session.description?.trim() ?? "";
 
-  const guideName = session.guide_name?.trim() || null;
+  const guideName = guideNameFromRow(session.guide_name);
   const badgeType = displayClassType(session.class_type);
   const time = new Date(session.starts_at)
     .toLocaleTimeString("en-ZA", { hour: "numeric", minute: "2-digit", hour12: true })
@@ -338,15 +354,11 @@ function ScheduleRow({
         {session.name}
       </h3>
 
-      <p
-        className={cn(
-          "mt-1.5 text-sm font-medium leading-snug",
-          guideName ? "" : "text-muted-foreground",
-        )}
-        style={guideName ? { color: SAGE } : undefined}
-      >
-        {guideName ?? "Unguided"}
-      </p>
+      {guideName ? (
+        <p className="mt-1.5 text-sm font-medium leading-snug" style={{ color: SAGE }}>
+          {guideName}
+        </p>
+      ) : null}
 
       <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs leading-relaxed text-muted-foreground">
         <span className="inline-flex items-center gap-1 font-medium tabular-nums">
