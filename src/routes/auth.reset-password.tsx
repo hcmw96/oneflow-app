@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -20,19 +20,28 @@ export const Route = createFileRoute("/auth/reset-password")({
 
 type Gate = "loading" | "ready" | "invalid";
 
-async function resolveAfterReset(): Promise<"/" | "/admin"> {
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return "/";
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
-  const role = String(profile?.role ?? "").toLowerCase();
-  if (role === "director" || role === "management" || role === "guide") return "/admin";
-  return "/";
+function readAuthTypeFromUrl(): string | null {
+  const hashParams = new URLSearchParams(
+    window.location.hash.startsWith("#") ? window.location.hash.slice(1) : window.location.hash,
+  );
+  const queryParams = new URLSearchParams(window.location.search);
+  return hashParams.get("type") || queryParams.get("type");
+}
+
+/** When the hash is stripped after Supabase parses the URL, JWT `amr` still includes `recovery`. */
+function isRecoveryAccessToken(accessToken: string | undefined): boolean {
+  if (!accessToken) return false;
+  try {
+    const payload = JSON.parse(
+      atob(accessToken.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")),
+    ) as { amr?: unknown };
+    return (
+      Array.isArray(payload.amr) &&
+      payload.amr.some((x) => String(x).toLowerCase() === "recovery")
+    );
+  } catch {
+    return false;
+  }
 }
 
 export default function ResetPasswordPage() {
@@ -41,18 +50,24 @@ export default function ResetPasswordPage() {
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const sawPasswordRecovery = useRef(false);
 
   useEffect(() => {
     let alive = true;
+
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (alive && session) setGate("ready");
+    } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "PASSWORD_RECOVERY") {
+        sawPasswordRecovery.current = true;
+      }
     });
 
     (async () => {
-      const params = new URLSearchParams(window.location.search);
-      const code = params.get("code");
+      const hadRecoveryInUrl = (readAuthTypeFromUrl() ?? "").toLowerCase() === "recovery";
+
+      const queryParams = new URLSearchParams(window.location.search);
+      const code = queryParams.get("code");
       if (code) {
         const { error } = await supabase.auth.exchangeCodeForSession(code);
         if (!alive) return;
@@ -64,24 +79,40 @@ export default function ResetPasswordPage() {
         window.history.replaceState({}, "", "/auth/reset-password");
       }
 
-      const getSess = async () => (await supabase.auth.getSession()).data.session;
+      const fetchSession = async () => (await supabase.auth.getSession()).data.session;
 
-      if (await getSess()) {
-        if (alive) setGate("ready");
+      let session = await fetchSession();
+      if (!session && (hadRecoveryInUrl || sawPasswordRecovery.current)) {
+        await new Promise((r) => setTimeout(r, 150));
+        if (!alive) return;
+        session = await fetchSession();
+      }
+
+      if (!alive) return;
+
+      if (!session) {
+        navigate({ to: "/auth", replace: true });
         return;
       }
 
-      await new Promise((r) => setTimeout(r, 2000));
-      if (!alive) return;
-      if (await getSess()) setGate("ready");
-      else setGate("invalid");
+      const recoverySession =
+        hadRecoveryInUrl ||
+        sawPasswordRecovery.current ||
+        isRecoveryAccessToken(session.access_token);
+
+      if (!recoverySession) {
+        navigate({ to: "/auth", replace: true });
+        return;
+      }
+
+      setGate("ready");
     })();
 
     return () => {
       alive = false;
       subscription.unsubscribe();
     };
-  }, []);
+  }, [navigate]);
 
   const submit = async () => {
     if (!password.trim() || !confirm.trim()) {
@@ -103,9 +134,10 @@ export default function ResetPasswordPage() {
       toast.error(error.message);
       return;
     }
-    toast.success("Password updated.");
-    const dest = await resolveAfterReset();
-    navigate({ to: dest });
+    toast.success("Password updated!");
+    window.setTimeout(() => {
+      navigate({ to: "/", replace: true });
+    }, 2000);
   };
 
   return (

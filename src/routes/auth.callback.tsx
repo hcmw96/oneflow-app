@@ -14,21 +14,13 @@ type ProfileGate = {
   onboarding_complete?: boolean | null;
 };
 
-function hasRecoveryMarker(): boolean {
-  const search = new URLSearchParams(window.location.search);
-  const hashRaw = window.location.hash.startsWith("#")
-    ? window.location.hash.slice(1)
-    : window.location.hash;
-  const hash = new URLSearchParams(hashRaw);
-  const typeSearch = (search.get("type") ?? "").toLowerCase();
-  const typeHash = (hash.get("type") ?? "").toLowerCase();
-
-  return (
-    typeSearch === "recovery" ||
-    typeHash === "recovery" ||
-    search.has("recovery_token") ||
-    hash.has("recovery_token")
+/** Read Supabase auth `type` from hash and/or query (password reset links use type=recovery). */
+function getAuthCallbackType(): string | null {
+  const hashParams = new URLSearchParams(
+    window.location.hash.startsWith("#") ? window.location.hash.slice(1) : window.location.hash,
   );
+  const queryParams = new URLSearchParams(window.location.search);
+  return hashParams.get("type") || queryParams.get("type");
 }
 
 /** PKCE code, magic-link token, or implicit/hash tokens (Supabase uses access_token in fragment). */
@@ -67,14 +59,18 @@ export default function AuthCallback() {
 
   useEffect(() => {
     const run = async () => {
-      if (done.current) return;
-
-      // Recovery links must bypass onboarding/role routing.
-      if (hasRecoveryMarker()) {
-        done.current = true;
-        window.location.assign(`/auth/reset-password${window.location.search}${window.location.hash}`);
+      // Absolute first: password recovery — never run session/onboarding logic on this path.
+      const type = getAuthCallbackType();
+      if ((type ?? "").toLowerCase() === "recovery") {
+        if (!done.current) {
+          done.current = true;
+          const next = `/auth/reset-password${window.location.search}${window.location.hash}`;
+          window.location.replace(next);
+        }
         return;
       }
+
+      if (done.current) return;
 
       if (!hasOAuthOrMagicLinkCallback()) {
         done.current = true;
