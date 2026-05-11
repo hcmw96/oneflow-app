@@ -508,16 +508,22 @@ function CheckInPage() {
           </div>
 
           <div className="space-y-4">
-            <div className="rounded-2xl border border-border bg-card p-4 sm:p-5">
-              <div className="flex min-w-0 items-center gap-2 text-sm font-semibold">
-                <QrCode className="h-4 w-4 shrink-0 text-primary" aria-hidden /> Self check-in QR
+            <div
+              className={cn(
+                "rounded-2xl border border-border bg-card p-4 sm:p-5",
+                "flex flex-col items-center justify-center",
+                "min-h-[min(62dvh,520px)] max-lg:py-6",
+                "lg:min-h-0 lg:items-stretch lg:justify-start lg:py-5",
+              )}
+            >
+              <div className="mb-4 flex w-full min-w-0 items-center justify-center gap-2 text-sm font-semibold max-lg:text-center lg:mb-0 lg:justify-start">
+                <QrCode className="h-4 w-4 shrink-0 text-[#a3b693]" aria-hidden /> Self check-in QR
               </div>
-              <div className="mt-4">
+              <div className="flex w-full flex-1 flex-col items-center justify-center lg:mt-4 lg:flex-none">
                 <QRScanner onScan={(text: string) => void handleQrScan(text)} />
               </div>
-              <p className="mt-3 text-xs text-muted-foreground">
-                Members show their booking QR at the desk. The scanner uses the rear camera
-                (tablet).
+              <p className="mx-auto mt-4 max-w-[min(90vw,320px)] px-1 text-center text-sm text-muted-foreground">
+                Members show their booking QR at the desk.
               </p>
             </div>
 

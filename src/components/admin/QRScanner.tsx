@@ -27,7 +27,8 @@ export function QRScanner({ onScan, onError }: QRScannerProps) {
         { facingMode: cameraFacing },
         {
           fps: 10,
-          qrbox: { width: 220, height: 220 },
+          // ~75% of smallest frame (280px) so the scan region fits inside the sage border on mobile
+          qrbox: { width: 210, height: 210 },
           aspectRatio: 1.0,
         },
         (decodedText: string) => {
@@ -56,27 +57,31 @@ export function QRScanner({ onScan, onError }: QRScannerProps) {
 
   if (permissionDenied) {
     return (
-      <div className="flex aspect-square max-w-xs items-center justify-center rounded-xl border border-dashed border-border bg-muted/30 p-4 text-center text-sm text-muted-foreground">
+      <div className="mx-auto flex aspect-square w-[min(90vw,320px)] max-w-[320px] items-center justify-center rounded-2xl border-[3px] border-dashed border-[#a3b693] bg-muted/30 p-4 text-center text-sm text-muted-foreground">
         Camera access denied. Please allow camera access in your browser settings.
       </div>
     );
   }
 
   return (
-    <div className="relative overflow-hidden rounded-xl border border-border bg-black">
-      <div id={containerId} className="aspect-square w-full max-w-xs" />
-      <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-        <div className="relative h-48 w-48">
-          <span className="absolute left-0 top-0 h-8 w-8 rounded-tl border-l-4 border-t-4 border-primary" />
-          <span className="absolute right-0 top-0 h-8 w-8 rounded-tr border-r-4 border-t-4 border-primary" />
-          <span className="absolute bottom-0 left-0 h-8 w-8 rounded-bl border-b-4 border-l-4 border-primary" />
-          <span className="absolute bottom-0 right-0 h-8 w-8 rounded-br border-b-4 border-r-4 border-primary" />
+    <div className="relative mx-auto aspect-square w-[min(90vw,320px)] max-w-[320px] overflow-hidden rounded-2xl border-[3px] border-[#a3b693] bg-black shadow-md">
+      <div id={containerId} className="h-full w-full min-h-0" />
+      {/* Viewfinder corners — scan area guide */}
+      <div
+        className="pointer-events-none absolute inset-0 flex items-center justify-center p-[9%]"
+        aria-hidden
+      >
+        <div className="relative aspect-square w-[min(72%,210px)] max-w-full">
+          <span className="absolute left-0 top-0 h-9 w-9 rounded-tl-md border-l-[3px] border-t-[3px] border-[#a3b693]" />
+          <span className="absolute right-0 top-0 h-9 w-9 rounded-tr-md border-r-[3px] border-t-[3px] border-[#a3b693]" />
+          <span className="absolute bottom-0 left-0 h-9 w-9 rounded-bl-md border-b-[3px] border-l-[3px] border-[#a3b693]" />
+          <span className="absolute bottom-0 right-0 h-9 w-9 rounded-br-md border-b-[3px] border-r-[3px] border-[#a3b693]" />
         </div>
       </div>
       <button
         type="button"
         onClick={() => setCameraFacing((prev) => (prev === "environment" ? "user" : "environment"))}
-        className="absolute bottom-3 right-3 inline-flex items-center gap-1 rounded-full bg-black/70 px-3 py-1.5 text-xs font-semibold text-white"
+        className="absolute bottom-3 right-3 z-10 inline-flex items-center gap-1 rounded-full bg-black/70 px-3 py-1.5 text-xs font-semibold text-white"
       >
         <RefreshCw className="h-3.5 w-3.5" />
         {cameraFacing === "environment" ? "Use front" : "Use back"}
