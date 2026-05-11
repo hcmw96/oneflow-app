@@ -38,7 +38,22 @@ const SAGE_BORDER = "border-[#c5d4b8]/80";
 
 const UNLIMITED_CREDITS = 999;
 
-type ProductCategory = "yoga" | "wellzone" | "all_access";
+/** Matches DB `credit_category` / products.category enum (lowercase, underscores). */
+const CREDIT_CATEGORIES = [
+  "all_access",
+  "cafe",
+  "complimentary",
+  "power",
+  "staff",
+  "wellzone",
+  "yoga",
+] as const;
+
+type CreditCategory = (typeof CREDIT_CATEGORIES)[number];
+
+function isCreditCategory(value: string): value is CreditCategory {
+  return (CREDIT_CATEGORIES as readonly string[]).includes(value);
+}
 
 type ProductRow = {
   id: string;
@@ -55,16 +70,24 @@ type ProductRow = {
   sort_order: number | null;
 };
 
-const CATEGORY_OPTIONS: { value: ProductCategory; label: string }[] = [
-  { value: "yoga", label: "Yoga (class packs)" },
+const CATEGORY_OPTIONS: { value: CreditCategory; label: string }[] = [
+  { value: "all_access", label: "All Access" },
+  { value: "cafe", label: "Café" },
+  { value: "complimentary", label: "Complimentary" },
+  { value: "power", label: "Power" },
+  { value: "staff", label: "Staff" },
   { value: "wellzone", label: "Wellzone" },
-  { value: "all_access", label: "All access" },
+  { value: "yoga", label: "Yoga" },
 ];
 
 const CATEGORY_TABLE_LABEL: Record<string, string> = {
-  yoga: "CLASS PACKS",
-  wellzone: "WELLZONE",
-  all_access: "ALL ACCESS",
+  all_access: "All Access",
+  cafe: "Café",
+  complimentary: "Complimentary",
+  power: "Power",
+  staff: "Staff",
+  wellzone: "Wellzone",
+  yoga: "Yoga",
 };
 
 const CLASS_TYPE_OPTIONS = [
@@ -85,6 +108,23 @@ function tableCategoryLabel(category: string | null | undefined) {
   return CATEGORY_TABLE_LABEL[category] ?? category;
 }
 
+/** Parse PostgreSQL `text[]` text representation, e.g. `{yoga,sculpt}` or `{"yoga","sculpt"}`. */
+function parsePostgresTextArrayString(s: string): string[] {
+  const t = s.trim();
+  if (t === "" || t === "{}") return [];
+  if (!t.startsWith("{") || !t.endsWith("}")) return [];
+  const inner = t.slice(1, -1);
+  if (!inner) return [];
+  return inner
+    .split(",")
+    .map((part) => {
+      const p = part.trim();
+      if (p.startsWith('"') && p.endsWith('"')) return p.slice(1, -1).replace(/""/g, '"');
+      return p;
+    })
+    .filter(Boolean);
+}
+
 function normalizeClassTypes(raw: unknown): string[] {
   if (Array.isArray(raw)) return raw.map((x) => String(x)).filter(Boolean);
   if (typeof raw === "string") {
@@ -94,10 +134,16 @@ function normalizeClassTypes(raw: unknown): string[] {
       const parsed: unknown = JSON.parse(t);
       if (Array.isArray(parsed)) return parsed.map((x) => String(x)).filter(Boolean);
     } catch {
-      /* plain string, not JSON */
+      /* not JSON */
     }
+    if (t.startsWith("{") && t.endsWith("}")) return parsePostgresTextArrayString(t);
   }
   return [];
+}
+
+/** Postgres `text[]`: pass a real JS string[] to PostgREST (never a single JSON string). */
+function toPgTextArray(values: string[]): string[] {
+  return [...values].map((v) => String(v).trim()).filter(Boolean);
 }
 
 function creditsDisplay(count: number | null) {
@@ -117,7 +163,7 @@ function validityDisplay(days: number | null) {
 function emptyForm() {
   return {
     name: "",
-    category: "yoga" as ProductCategory,
+    category: "yoga" as CreditCategory,
     description: "",
     priceZar: "",
     credits: "10",
@@ -138,7 +184,7 @@ function ProductsPage() {
   const [togglingId, setTogglingId] = useState<string | null>(null);
 
   const [name, setName] = useState("");
-  const [category, setCategory] = useState<ProductCategory>("yoga");
+  const [category, setCategory] = useState<CreditCategory>("yoga");
   const [description, setDescription] = useState("");
   const [priceZar, setPriceZar] = useState("");
   const [credits, setCredits] = useState("10");
@@ -213,9 +259,7 @@ function ProductsPage() {
 
   const populateFromRow = useCallback((p: ProductRow) => {
     setName(p.name);
-    setCategory(
-      p.category === "wellzone" || p.category === "all_access" ? p.category : "yoga",
-    );
+    setCategory(isCreditCategory(p.category) ? p.category : "yoga");
     setDescription(p.description ?? "");
     setPriceZar(String(p.price_zar ?? ""));
     const unlimited = (p.credit_count ?? 0) >= UNLIMITED_CREDITS;
@@ -293,8 +337,10 @@ function ProductsPage() {
     }
 
     const existingRow = editingId ? rows.find((r) => r.id === editingId) : null;
-    // Match user_credits / payment flow: empty = unrestricted ([]), avoids NOT NULL jsonb/text[] rejects on null.
-    const allowedPayload = allowedClassTypes.length > 0 ? allowedClassTypes : [];
+    // Postgres `text[]`: native string[] for PostgREST (not JSON.stringify). Empty = unrestricted.
+    const allowedPayload: string[] = toPgTextArray(
+      allowedClassTypes.length > 0 ? allowedClassTypes : [],
+    );
 
     const commonPayload = {
       name: trimmed,
@@ -461,7 +507,10 @@ function ProductsPage() {
 
             <div>
               <Label>Category</Label>
-              <Select value={category} onValueChange={(v) => setCategory(v as ProductCategory)}>
+              <Select
+                value={category}
+                onValueChange={(v) => setCategory(isCreditCategory(v) ? v : "yoga")}
+              >
                 <SelectTrigger className="mt-1.5">
                   <SelectValue />
                 </SelectTrigger>
