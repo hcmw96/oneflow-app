@@ -10,6 +10,10 @@ import {
 } from "@/components/ui/sheet";
 import { getUser, supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
+import {
+  bookingConfirmationEmailData,
+  bookingConfirmationTemplateForClassType,
+} from "@/lib/bookingConfirmationEmail";
 
 interface ClassRow {
   id: string;
@@ -97,11 +101,7 @@ export function BookingSheet({ session, open, onOpenChange }: Props) {
           .gte("expires_at", new Date().toISOString())
           .neq("category", "cafe")
           .order("expires_at"),
-        supabase
-          .from("flow_points_balance")
-          .select("balance")
-          .eq("profile_id", user.id)
-          .maybeSingle(),
+        supabase.from("profiles").select("flow_points").eq("id", user.id).maybeSingle(),
         supabase
           .from("friendships")
           .select("requester_id, addressee_id")
@@ -116,7 +116,8 @@ export function BookingSheet({ session, open, onOpenChange }: Props) {
 
       setCredits(eligible as Credit[]);
       setSelectedCredit(eligible[0]?.id ?? null);
-      setFlowPoints(pointsData?.balance ?? 0);
+      const fp = (pointsData as { flow_points?: number | null } | null)?.flow_points;
+      setFlowPoints(typeof fp === "number" && Number.isFinite(fp) ? Math.max(0, fp) : 0);
 
       const shipRows = (ships ?? []) as { requester_id: string; addressee_id: string }[];
       const otherIds = shipRows.map((s) =>
@@ -202,20 +203,15 @@ export function BookingSheet({ session, open, onOpenChange }: Props) {
       await supabase.functions.invoke("send-email", {
         body: {
           to: userEmail,
-          template:
-            session.class_type === "sauna_journey"
-              ? "booking_confirmation_sauna"
-              : "booking_confirmation_class",
-          data: {
-            class_name: session.name,
-            starts_at: session.starts_at,
-            date: dateLine,
-            time: timeLine,
-            guide_name: session.guide_name ?? "Guide",
+          template: bookingConfirmationTemplateForClassType(session.class_type),
+          data: bookingConfirmationEmailData({
+            className: session.name,
+            startsAtIso: session.starts_at,
+            guideName: session.guide_name,
             location: session.location,
-            mat_addon: matAddon,
-            towel_addon: towelAddon,
-          },
+            matAddon,
+            towelAddon,
+          }),
         },
       });
     }

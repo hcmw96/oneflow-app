@@ -1,8 +1,12 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { Sparkles, Gift, Award, Zap } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { formatDayLabel } from "@/lib/format";
+import {
+  estimatedRandValueFromPoints,
+  parseFlowPointsConversionRate,
+} from "@/lib/flowPointsRedemption";
 import { getUser, supabase } from "@/lib/supabase";
 
 export const Route = createFileRoute("/rewards")({
@@ -18,11 +22,30 @@ const badges = [
   { name: "Yoga 100", earned: false, icon: "🧘" },
 ];
 
-type PointsRow = { id: string; points: number; reason: string | null; created_at: string };
+type HistKind = "earned" | "redeemed";
+
+type HistRow = {
+  id: string;
+  kind: HistKind;
+  at: string;
+  title: string;
+  points: number;
+};
+
+function classLabelFromBooking(raw: Record<string, unknown>): string {
+  const cls = raw.classes as
+    | { name: string; starts_at: string }
+    | { name: string; starts_at: string }[]
+    | null;
+  const c = Array.isArray(cls) ? cls[0] : cls;
+  return c?.name?.trim() || "Class";
+}
 
 function RewardsPage() {
   const [balance, setBalance] = useState(0);
-  const [activity, setActivity] = useState<PointsRow[]>([]);
+  const [conversionRate, setConversionRate] = useState(10);
+  const [estimatedZar, setEstimatedZar] = useState(0);
+  const [history, setHistory] = useState<HistRow[]>([]);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
@@ -30,23 +53,90 @@ function RewardsPage() {
     const user = await getUser();
     if (!user) {
       setBalance(0);
-      setActivity([]);
+      setHistory([]);
+      setEstimatedZar(0);
       setLoading(false);
       return;
     }
 
-    const [{ data: bal }, { data: log }] = await Promise.all([
-      supabase.from("flow_points_balance").select("balance").eq("profile_id", user.id).maybeSingle(),
+    const [
+      { data: prof },
+      { data: convRow },
+      { data: perClassRow },
+      { data: attended },
+      { data: redeemed },
+    ] = await Promise.all([
+      supabase.from("profiles").select("flow_points").eq("id", user.id).maybeSingle(),
+      supabase
+        .from("studio_settings")
+        .select("value")
+        .eq("key", "flow_points_conversion_rate")
+        .maybeSingle(),
+      supabase
+        .from("studio_settings")
+        .select("value")
+        .eq("key", "flow_points_per_class")
+        .maybeSingle(),
+      supabase
+        .from("bookings")
+        .select("id, created_at, checked_in_at, classes ( name, starts_at )")
+        .eq("profile_id", user.id)
+        .eq("status", "attended")
+        .order("created_at", { ascending: false })
+        .limit(40),
       supabase
         .from("flow_points")
         .select("id, points, reason, created_at")
         .eq("profile_id", user.id)
+        .lt("points", 0)
         .order("created_at", { ascending: false })
-        .limit(25),
+        .limit(40),
     ]);
 
-    setBalance(bal?.balance ?? 0);
-    setActivity((log ?? []) as PointsRow[]);
+    const conv = parseFlowPointsConversionRate(convRow?.value as string | null | undefined);
+    const perClass = Math.max(1, Math.floor(Number(perClassRow?.value) || 10));
+    const fp = (prof as { flow_points?: number | null } | null)?.flow_points;
+    const bal = typeof fp === "number" && Number.isFinite(fp) ? Math.max(0, fp) : 0;
+
+    setConversionRate(conv);
+    setBalance(bal);
+    setEstimatedZar(estimatedRandValueFromPoints(bal, conv));
+
+    const earned: HistRow[] = (attended ?? []).map((raw) => {
+      const r = raw as Record<string, unknown>;
+      const at =
+        (typeof r.checked_in_at === "string" && r.checked_in_at) ||
+        (typeof r.created_at === "string" && r.created_at) ||
+        new Date().toISOString();
+      return {
+        id: `b-${String(r.id)}`,
+        kind: "earned",
+        at,
+        title: `Class attended · ${classLabelFromBooking(r)}`,
+        points: perClass,
+      };
+    });
+
+    const redeemedRows: HistRow[] = (redeemed ?? []).map((row) => {
+      const r = row as { id: string; points: number; reason: string | null; created_at: string };
+      const label =
+        r.reason === "pack_redemption"
+          ? "Pack purchase (Flow Points)"
+          : (r.reason ?? "Redeemed").replace(/_/g, " ");
+      return {
+        id: r.id,
+        kind: "redeemed",
+        at: r.created_at,
+        title: label,
+        points: r.points,
+      };
+    });
+
+    const merged = [...earned, ...redeemedRows]
+      .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+      .slice(0, 50);
+
+    setHistory(merged);
     setLoading(false);
   }, []);
 
@@ -68,7 +158,20 @@ function RewardsPage() {
           <p className="mt-1 font-display text-5xl font-semibold leading-none">
             {loading ? "…" : balance.toLocaleString()}
           </p>
-          <p className="mt-2 text-sm opacity-80">100 pts = R10, redeemable at One Flow.</p>
+          <p className="mt-2 text-sm opacity-90">
+            100 points = R{conversionRate} off your next purchase.
+          </p>
+          {!loading ? (
+            <p className="mt-2 text-sm font-medium opacity-95">
+              Your points are worth R{estimatedZar.toFixed(2)} toward packs and memberships.
+            </p>
+          ) : null}
+          <Link
+            to="/pricing"
+            className="mt-4 inline-flex w-full items-center justify-center rounded-full bg-primary-foreground/15 px-4 py-2.5 text-sm font-semibold text-primary-foreground ring-1 ring-inset ring-primary-foreground/25 transition-opacity hover:opacity-95"
+          >
+            Use points on my next purchase
+          </Link>
         </section>
 
         <section className="rounded-3xl border border-border bg-card p-5">
@@ -110,27 +213,37 @@ function RewardsPage() {
 
         <section>
           <h3 className="mb-3 flex items-center gap-1.5 font-display text-base font-semibold">
-            <Gift className="h-4 w-4" /> Recent activity
+            <Gift className="h-4 w-4" /> Points history
           </h3>
-          {activity.length === 0 && !loading ? (
+          {history.length === 0 && !loading ? (
             <p className="rounded-2xl border border-dashed border-border bg-card/50 p-6 text-center text-sm text-muted-foreground">
-              No point activity yet.
+              No points history yet. Attend classes to earn Flow Points, or redeem on{" "}
+              <Link to="/pricing" className="font-medium text-primary underline-offset-2 hover:underline">
+                pricing
+              </Link>
+              .
             </p>
           ) : (
             <ul className="overflow-hidden rounded-2xl border border-border bg-card">
-              {activity.map((p, i) => (
+              {history.map((h, i) => (
                 <li
-                  key={p.id}
-                  className={"flex items-center justify-between px-4 py-3 " + (i > 0 ? "border-t border-border" : "")}
+                  key={h.id}
+                  className={
+                    "flex items-center justify-between px-4 py-3 " + (i > 0 ? "border-t border-border" : "")
+                  }
                 >
                   <div>
-                    <p className="text-sm font-medium">{p.reason?.replace(/_/g, " ") || "Points"}</p>
-                    <p className="text-[11px] text-muted-foreground">
-                      {formatDayLabel(new Date(p.created_at))}
-                    </p>
+                    <p className="text-sm font-medium">{h.title}</p>
+                    <p className="text-[11px] text-muted-foreground">{formatDayLabel(new Date(h.at))}</p>
                   </div>
-                  <span className="text-sm font-semibold tabular-nums text-primary">
-                    +{Number(p.points).toLocaleString()}
+                  <span
+                    className={
+                      "text-sm font-semibold tabular-nums " +
+                      (h.points >= 0 ? "text-primary" : "text-destructive")
+                    }
+                  >
+                    {h.points >= 0 ? "+" : ""}
+                    {Number(h.points).toLocaleString()}
                   </span>
                 </li>
               ))}

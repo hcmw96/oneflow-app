@@ -12,6 +12,7 @@ serve(async (req) => {
   const YOCO_SECRET = Deno.env.get("YOCO_SECRET_KEY")!;
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
   const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
   const raw = await req.json();
@@ -101,6 +102,31 @@ serve(async (req) => {
   const { pack_id, profile_id, success_url, cancel_url } = raw;
   console.log("pack_id:", pack_id, "profile_id:", profile_id);
 
+  const authHeader = req.headers.get("Authorization") ?? "";
+  let authedUserId: string | null = null;
+  if (authHeader.startsWith("Bearer ") && SUPABASE_ANON_KEY) {
+    const authClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const { data: authData } = await authClient.auth.getUser();
+    authedUserId = authData.user?.id ?? null;
+  }
+
+  const flowPointsUsedRaw = Number(raw?.flow_points_used ?? 0);
+  const flowPointsUsed = Number.isFinite(flowPointsUsedRaw)
+    ? Math.max(0, Math.floor(flowPointsUsedRaw))
+    : 0;
+  const flowPointsDiscountZar = Number(raw?.flow_points_discount_zar ?? 0);
+
+  if (flowPointsUsed > 0) {
+    if (!authedUserId || authedUserId !== String(profile_id)) {
+      return new Response(
+        JSON.stringify({ error: "Sign in to redeem Flow Points on your own account." }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+  }
+
   const { data: pack, error: packError } = await supabase
     .from("products")
     .select("*")
@@ -118,7 +144,7 @@ serve(async (req) => {
   const priceZar = Number((pack as { price_zar?: number }).price_zar);
   const { data: profile } = await supabase
     .from("profiles")
-    .select("late_cancel_fee_pending")
+    .select("late_cancel_fee_pending, flow_points")
     .eq("id", profile_id)
     .maybeSingle();
   const hasLateCancelFee = Boolean(
@@ -180,8 +206,54 @@ serve(async (req) => {
     }
   }
 
-  const amountCents = Number.isFinite(baseAmountCents)
-    ? Math.max(0, baseAmountCents - promoDiscountCents) + (hasLateCancelFee ? 10000 : 0)
+  const afterPromoCents = Number.isFinite(baseAmountCents)
+    ? Math.max(0, baseAmountCents - promoDiscountCents)
+    : NaN;
+
+  let flowDiscountCents = 0;
+  if (flowPointsUsed > 0 && Number.isFinite(afterPromoCents)) {
+    const { data: rateRow } = await supabase
+      .from("studio_settings")
+      .select("value")
+      .eq("key", "flow_points_conversion_rate")
+      .maybeSingle();
+    const rateRaw = Number((rateRow as { value?: string } | null)?.value);
+    const rate = Number.isFinite(rateRaw) && rateRaw > 0 ? rateRaw : 10;
+
+    const balance = Math.max(
+      0,
+      Math.floor(Number((profile as { flow_points?: number } | null)?.flow_points ?? 0)),
+    );
+    if (flowPointsUsed > balance) {
+      return new Response(JSON.stringify({ error: "Not enough Flow Points for this checkout." }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const expectedDiscountCents = Math.round(flowPointsUsed * rate);
+    const clientDiscountCents = Math.round(flowPointsDiscountZar * 100);
+    if (Math.abs(expectedDiscountCents - clientDiscountCents) > 2) {
+      return new Response(JSON.stringify({ error: "Flow Points discount does not match the conversion rate." }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    flowDiscountCents = Math.min(expectedDiscountCents, afterPromoCents);
+    if (flowDiscountCents <= 0) {
+      return new Response(
+        JSON.stringify({ error: "Flow Points cannot be applied to this checkout amount." }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+  }
+
+  const packPayableCents = Number.isFinite(afterPromoCents)
+    ? Math.max(100, afterPromoCents - flowDiscountCents)
+    : NaN;
+  const amountCents = Number.isFinite(packPayableCents)
+    ? packPayableCents + (hasLateCancelFee ? 10000 : 0)
     : NaN;
   if (!Number.isFinite(amountCents) || amountCents <= 0) {
     return new Response(JSON.stringify({ error: "Invalid price_zar on product" }), {
@@ -222,6 +294,9 @@ serve(async (req) => {
         description: hasLateCancelFee ? "+ R100 late cancellation fee" : "",
         promo_code_applied: promoApplied?.code ?? null,
         promo_discount_zar: promoDiscountCents > 0 ? Math.round(promoDiscountCents / 100) : 0,
+        flow_points_used: flowPointsUsed > 0 ? flowPointsUsed : 0,
+        flow_points_discount_zar:
+          flowDiscountCents > 0 ? Math.round((flowDiscountCents / 100) * 100) / 100 : 0,
       },
     }),
   });

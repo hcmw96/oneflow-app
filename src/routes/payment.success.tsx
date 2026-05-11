@@ -38,6 +38,32 @@ type PageState =
 const CREDIT_GRANT_KEY = "oneflow_credits_granted";
 const CLASS_INVITE_FINALIZE_KEY = "oneflow_class_invite_finalized";
 
+async function tryRedeemPackFlowPoints(args: {
+  checkoutId: string | null;
+  packId: string;
+  profileId: string;
+  used: number;
+}) {
+  const { checkoutId, packId, profileId, used } = args;
+  if (used <= 0) return;
+  const storageKey = checkoutId
+    ? `oneflow_fp_pack_redeem:${checkoutId}`
+    : `oneflow_fp_pack_redeem:${packId}:${profileId}`;
+  if (sessionStorage.getItem(storageKey)) return;
+  const { error } = await supabase.rpc("redeem_my_flow_points", { p_amount: used });
+  if (error) {
+    console.error("redeem_my_flow_points", error);
+    return;
+  }
+  sessionStorage.setItem(storageKey, "1");
+  const { error: logErr } = await supabase.from("flow_points").insert({
+    profile_id: profileId,
+    points: -used,
+    reason: "pack_redemption",
+  });
+  if (logErr) console.warn("flow_points ledger", logErr);
+}
+
 function PaymentSuccessPage() {
   const [state, setState] = useState<PageState>({ status: "loading" });
 
@@ -98,8 +124,16 @@ function PaymentSuccessPage() {
         return;
       }
 
+      const flowPointsUsed = Math.max(0, Math.floor(Number(params.get("flow_points_used") ?? "0") || 0));
+
       const dedupeKey = `${CREDIT_GRANT_KEY}:${packId}:${profileId}`;
       if (sessionStorage.getItem(dedupeKey)) {
+        await tryRedeemPackFlowPoints({
+          checkoutId,
+          packId,
+          profileId,
+          used: flowPointsUsed,
+        });
         const { data: product } = await supabase
           .from("products")
           .select("name, credit_count")
@@ -181,6 +215,12 @@ function PaymentSuccessPage() {
       }
 
       sessionStorage.setItem(dedupeKey, "1");
+      await tryRedeemPackFlowPoints({
+        checkoutId,
+        packId,
+        profileId,
+        used: flowPointsUsed,
+      });
       if (!cancelled) {
         setState({
           status: "success",

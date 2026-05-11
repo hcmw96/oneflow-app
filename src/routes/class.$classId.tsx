@@ -79,12 +79,13 @@ function ClassDetailPage() {
     setSession(data as unknown as ClassDetail);
 
     if (user) {
-      const { data: bal } = await supabase
-        .from("flow_points_balance")
-        .select("balance")
-        .eq("profile_id", user.id)
+      const { data: profPts } = await supabase
+        .from("profiles")
+        .select("flow_points")
+        .eq("id", user.id)
         .maybeSingle();
-      setPointsBalance(bal?.balance ?? 0);
+      const fp = (profPts as { flow_points?: number | null } | null)?.flow_points;
+      setPointsBalance(typeof fp === "number" && Number.isFinite(fp) ? Math.max(0, fp) : 0);
     } else {
       setPointsBalance(0);
     }

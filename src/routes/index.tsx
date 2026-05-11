@@ -71,9 +71,8 @@ function HomePage() {
         { data: creditRows },
         { count: attendedCount, error: attendedErr },
         { count: weeklyAttended, error: weeklyErr },
-        { data: pointsRow },
       ] = await Promise.all([
-        supabase.from("profiles").select("first_name, weekly_goal").eq("id", uid).maybeSingle(),
+        supabase.from("profiles").select("first_name, weekly_goal, flow_points").eq("id", uid).maybeSingle(),
         supabase
           .from("user_credits")
           .select("credits_remaining, is_unlimited")
@@ -91,7 +90,6 @@ function HomePage() {
           .not("checked_in_at", "is", null)
           .gte("checked_in_at", weekStart.toISOString())
           .lt("checked_in_at", weekEnd.toISOString()),
-        supabase.from("flow_points_balance").select("balance").eq("profile_id", uid).maybeSingle(),
       ]);
 
       if (cancelled) return;
@@ -115,7 +113,8 @@ function HomePage() {
           : 3;
       setWeeklyGoal(wg);
       setWeeklyDone(weeklyAttended ?? 0);
-      setPoints(pointsRow?.balance ?? 0);
+      const fpRaw = (profile as { flow_points?: number | null } | null)?.flow_points;
+      setPoints(typeof fpRaw === "number" && Number.isFinite(fpRaw) ? Math.max(0, fpRaw) : 0);
       setLoading(false);
     }
 

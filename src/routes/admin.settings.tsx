@@ -31,6 +31,7 @@ const SETTING_KEYS = [
   "booking_open_days_ahead",
   "checkin_open_minutes_before",
   "flow_points_per_class",
+  "flow_points_conversion_rate",
 ] as const;
 
 type SettingKey = (typeof SETTING_KEYS)[number];
@@ -43,6 +44,7 @@ const DEFAULT_VALUES: Record<SettingKey, string> = {
   booking_open_days_ahead: "14",
   checkin_open_minutes_before: "30",
   flow_points_per_class: "10",
+  flow_points_conversion_rate: "10",
 };
 
 function csvEscape(s: string): string {
@@ -250,6 +252,11 @@ function SettingsPage() {
           {
             key: "flow_points_per_class" as SettingKey,
             label: "Points earned per class attended",
+            type: "number",
+          },
+          {
+            key: "flow_points_conversion_rate" as SettingKey,
+            label: "Rand discount per 100 points at checkout (e.g. 10 = R10 off per 100 pts)",
             type: "number",
           },
         ],

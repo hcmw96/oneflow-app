@@ -3,7 +3,12 @@ import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, ChevronDown, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
+import { Switch } from "@/components/ui/switch";
 import { getUser, supabase } from "@/lib/supabase";
+import {
+  maxPackFlowPointsRedemption,
+  parseFlowPointsConversionRate,
+} from "@/lib/flowPointsRedemption";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/pricing")({
@@ -78,6 +83,9 @@ function PricingPage() {
     wellzone: false,
     all_access: false,
   });
+  const [flowPointsState, setFlowPointsState] = useState<"loading" | "guest" | number>("loading");
+  const [conversionRate, setConversionRate] = useState(10);
+  const [useFlowPointsFor, setUseFlowPointsFor] = useState<Record<string, boolean>>({});
 
   const itemsByCategory = useMemo(() => {
     const yoga: ProductRow[] = [];
@@ -136,6 +144,33 @@ function PricingPage() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const user = await getUser();
+      if (cancelled) return;
+      if (!user) {
+        setFlowPointsState("guest");
+        return;
+      }
+      const [{ data: prof }, { data: rateRow }] = await Promise.all([
+        supabase.from("profiles").select("flow_points").eq("id", user.id).maybeSingle(),
+        supabase
+          .from("studio_settings")
+          .select("value")
+          .eq("key", "flow_points_conversion_rate")
+          .maybeSingle(),
+      ]);
+      if (cancelled) return;
+      const fp = (prof as { flow_points?: number | null } | null)?.flow_points;
+      setFlowPointsState(typeof fp === "number" && Number.isFinite(fp) ? Math.max(0, fp) : 0);
+      setConversionRate(parseFlowPointsConversionRate(rateRow?.value as string | null | undefined));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!buyingId) {
       setCheckoutSlow(false);
       return;
@@ -158,17 +193,43 @@ function PricingPage() {
       return;
     }
 
+    const product = products.find((x) => x.id === packId);
+    const usePts =
+      typeof flowPointsState === "number" &&
+      flowPointsState > 0 &&
+      (useFlowPointsFor[packId] ?? false) &&
+      product;
+    const redemption = usePts
+      ? maxPackFlowPointsRedemption(
+          flowPointsState,
+          Number(product.price_zar) || 0,
+          conversionRate,
+        )
+      : { flow_points_used: 0, flow_points_discount_zar: 0 };
+
     setBuyingId(packId);
     setCheckoutSlow(false);
     const origin = window.location.origin;
+    const successQs = new URLSearchParams({
+      pack_id: packId,
+      profile_id: user.id,
+      flow_points_used: String(redemption.flow_points_used),
+      flow_points_discount_zar: String(redemption.flow_points_discount_zar),
+    });
+    const body: Record<string, unknown> = {
+      pack_id: packId,
+      profile_id: user.id,
+      success_url: `${origin}/payment/success?${successQs.toString()}`,
+      cancel_url: `${origin}/pricing`,
+      promo_code: promoCode || undefined,
+    };
+    if (redemption.flow_points_used > 0) {
+      body.flow_points_used = redemption.flow_points_used;
+      body.flow_points_discount_zar = redemption.flow_points_discount_zar;
+    }
+
     const { data, error } = await supabase.functions.invoke("yoco-checkout", {
-      body: {
-        pack_id: packId,
-        profile_id: user.id,
-        success_url: `${origin}/payment/success?pack_id=${packId}&profile_id=${user.id}`,
-        cancel_url: `${origin}/pricing`,
-        promo_code: promoCode || undefined,
-      },
+      body,
     });
     setBuyingId(null);
 
@@ -209,6 +270,31 @@ function PricingPage() {
           <h1 className="font-display text-2xl font-bold tracking-tight text-[#a3b693] dark:text-foreground">
             Buy A Pass
           </h1>
+
+          {flowPointsState === "loading" ? (
+            <p className="text-sm text-muted-foreground">Loading Flow Points…</p>
+          ) : flowPointsState === "guest" ? (
+            <div className="rounded-2xl border border-[#c5d4b8]/70 bg-[#fafbf8] px-4 py-3 text-sm dark:border-border dark:bg-card/60">
+              <span className="font-semibold text-[#3d4f36] dark:text-foreground">Flow Points</span>{" "}
+              —{" "}
+              <Link
+                to="/auth"
+                className="font-medium text-[#a3b693] underline-offset-2 hover:underline dark:text-primary"
+              >
+                Sign in
+              </Link>{" "}
+              to earn and redeem points on packs and memberships.
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-[#c5d4b8]/80 bg-gradient-to-r from-[#e8efe3] to-card px-4 py-3 shadow-sm dark:border-border dark:from-card dark:to-card">
+              <p className="font-display text-lg font-bold tracking-tight text-[#3d4f36] dark:text-foreground">
+                You have {flowPointsState.toLocaleString()} Flow Points
+              </p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                100 points = R{conversionRate} off at checkout (studio rate).
+              </p>
+            </div>
+          )}
 
           <div className="rounded-2xl border border-[#c5d4b8]/70 bg-card p-3 shadow-sm dark:border-border">
             <label
@@ -362,6 +448,20 @@ function PricingPage() {
                           <ul className="flex flex-col gap-3">
                             {items.map((p) => {
                               const credits = creditsLine(p);
+                              const priceN = Number(p.price_zar) || 0;
+                              const pointsForFull =
+                                priceN > 0 ? Math.ceil((priceN * 100) / conversionRate) : 0;
+                              const usePts =
+                                typeof flowPointsState === "number" &&
+                                flowPointsState > 0 &&
+                                (useFlowPointsFor[p.id] ?? false);
+                              const redemption = usePts
+                                ? maxPackFlowPointsRedemption(
+                                    flowPointsState,
+                                    priceN,
+                                    conversionRate,
+                                  )
+                                : { flow_points_used: 0, flow_points_discount_zar: 0 };
                               return (
                                 <li
                                   key={p.id}
@@ -383,10 +483,47 @@ function PricingPage() {
                                       {credits}
                                     </p>
                                   ) : null}
+                                  {pointsForFull > 0 ? (
+                                    <p className="mt-1 text-xs text-muted-foreground">
+                                      ≈{" "}
+                                      <span className="font-semibold tabular-nums text-foreground">
+                                        {pointsForFull.toLocaleString()}
+                                      </span>{" "}
+                                      Flow Points covers this pack at the current rate (100 pts = R
+                                      {conversionRate}).
+                                    </p>
+                                  ) : null}
                                   {p.description ? (
                                     <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
                                       {p.description}
                                     </p>
+                                  ) : null}
+                                  {typeof flowPointsState === "number" && flowPointsState > 0 ? (
+                                    <div className="mt-3 flex flex-col gap-2 rounded-lg border border-[#c5d4b8]/50 bg-[#fafbf8]/90 px-3 py-2.5 dark:border-border dark:bg-muted/30">
+                                      <div className="flex items-center justify-between gap-3">
+                                        <span className="text-sm font-medium text-foreground">
+                                          Use Flow Points
+                                        </span>
+                                        <Switch
+                                          checked={useFlowPointsFor[p.id] ?? false}
+                                          onCheckedChange={(v) =>
+                                            setUseFlowPointsFor((prev) => ({ ...prev, [p.id]: v }))
+                                          }
+                                          aria-label={`Use Flow Points for ${p.name}`}
+                                        />
+                                      </div>
+                                      {usePts && redemption.flow_points_used > 0 ? (
+                                        <p className="text-sm font-semibold text-[#3d4f36] dark:text-primary">
+                                          R{redemption.flow_points_discount_zar.toFixed(2)} discount
+                                          applied ({redemption.flow_points_used.toLocaleString()}{" "}
+                                          points)
+                                        </p>
+                                      ) : usePts ? (
+                                        <p className="text-xs text-muted-foreground">
+                                          Not enough points for a discount on this price.
+                                        </p>
+                                      ) : null}
+                                    </div>
                                   ) : null}
                                   <div className="mt-4 space-y-2">
                                     <button
