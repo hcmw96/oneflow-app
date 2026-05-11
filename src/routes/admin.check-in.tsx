@@ -23,6 +23,14 @@ import {
 import { cn } from "@/lib/utils";
 import { deleteMayChallengeCheckInForBooking } from "@/lib/mayChallengeCheckIn";
 import { awardClassesAttendedBadges } from "@/lib/badges";
+import {
+  fetchTheSageCreditProfileIds,
+  RosterAddonPills,
+} from "@/components/admin/RosterAddonPills";
+import {
+  bookingConfirmationEmailData,
+  bookingConfirmationTemplateForClassType,
+} from "@/lib/bookingConfirmationEmail";
 
 export const Route = createFileRoute("/admin/check-in")({
   component: CheckInPage,
@@ -33,9 +41,11 @@ type BookingStatus = "attended" | "confirmed" | "cancelled" | "no-show";
 type TodayClass = {
   id: string;
   name: string;
+  class_type: string;
   starts_at: string;
   capacity: number;
   booked_count: number;
+  location: string | null;
   guide_name: string | null;
 };
 
@@ -50,6 +60,8 @@ type BookingRow = {
   qr_used?: boolean | null;
   checked_in?: boolean | null;
   payment_method: string | null;
+  mat_addon?: boolean | null;
+  towel_addon?: boolean | null;
   profiles: ProfileJoin | ProfileJoin[] | null;
   classes:
     | { id: string; name: string; starts_at: string; guide_name: string | null }
@@ -67,6 +79,9 @@ type RosterRow = {
   classStartsAt: string;
   startsAtLabel: string;
   creditLabel: string;
+  matAddon: boolean;
+  towelAddon: boolean;
+  hasSageCredit: boolean;
 };
 
 function oneProfile(p: BookingRow["profiles"]): ProfileJoin {
@@ -95,7 +110,7 @@ function formatClassTime(iso: string) {
     .toUpperCase();
 }
 
-function normalizeBooking(raw: BookingRow): RosterRow | null {
+function normalizeBooking(raw: BookingRow, sageProfileIds: Set<string>): RosterRow | null {
   const prof = oneProfile(raw.profiles);
   const member =
     prof && `${prof.first_name} ${prof.last_name}`.trim()
@@ -115,6 +130,9 @@ function normalizeBooking(raw: BookingRow): RosterRow | null {
     classStartsAt: cls.starts_at,
     startsAtLabel: `Today · ${formatClassTime(cls.starts_at)}`,
     creditLabel: raw.payment_method?.replace(/_/g, " ") ?? "—",
+    matAddon: Boolean(raw.mat_addon),
+    towelAddon: Boolean(raw.towel_addon),
+    hasSageCredit: sageProfileIds.has(raw.profile_id),
   };
 }
 
@@ -138,7 +156,7 @@ function CheckInPage() {
 
     const { data: classesData, error: classesError } = await supabase
       .from("classes")
-      .select("id, name, starts_at, capacity, booked_count, guide_name")
+      .select("id, name, class_type, starts_at, capacity, booked_count, location, guide_name")
       .gte("starts_at", start.toISOString())
       .lte("starts_at", end.toISOString())
       .eq("is_cancelled", false)
@@ -163,21 +181,26 @@ function CheckInPage() {
       return;
     }
 
-    const { data: bookingsData, error: bookingsError } = await supabase
-      .from("bookings")
-      .select(
-        `
+    const [{ data: bookingsData, error: bookingsError }, sageProfileIds] = await Promise.all([
+      supabase
+        .from("bookings")
+        .select(
+          `
         id,
         status,
         profile_id,
         class_id,
         qr_token,
         payment_method,
+        mat_addon,
+        towel_addon,
         profiles ( first_name, last_name ),
         classes ( id, name, starts_at, guide_name )
       `,
-      )
-      .in("class_id", classIds);
+        )
+        .in("class_id", classIds),
+      fetchTheSageCreditProfileIds(supabase),
+    ]);
 
     if (bookingsError) {
       console.error(bookingsError);
@@ -188,7 +211,9 @@ function CheckInPage() {
     }
 
     const rows = (bookingsData ?? []) as unknown as BookingRow[];
-    const normalized = rows.map(normalizeBooking).filter((r): r is RosterRow => r !== null);
+    const normalized = rows
+      .map((row) => normalizeBooking(row, sageProfileIds))
+      .filter((r): r is RosterRow => r !== null);
     setRoster(normalized);
     setLoading(false);
   }, []);
@@ -436,7 +461,14 @@ function CheckInPage() {
                       {initials(b.member)}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold">{b.member}</p>
+                      <p className="flex min-w-0 flex-wrap items-center gap-1.5 text-sm font-semibold">
+                        <span className="min-w-0 truncate">{b.member}</span>
+                        <RosterAddonPills
+                          mat={b.matAddon}
+                          towel={b.towelAddon}
+                          cafe={b.hasSageCredit}
+                        />
+                      </p>
                       <p className="truncate text-xs text-muted-foreground">
                         {b.className} · {b.startsAtLabel.split("·")[1]?.trim()} · {b.creditLabel}
                       </p>
@@ -675,6 +707,22 @@ function WalkInSheet({
         booking_id: newBooking.id as string,
       });
       void awardClassesAttendedBadges(profileId);
+    }
+    if (session?.starts_at) {
+      await supabase.functions.invoke("send-email", {
+        body: {
+          to: em,
+          template: bookingConfirmationTemplateForClassType(session.class_type),
+          data: bookingConfirmationEmailData({
+            className: session.name,
+            startsAtIso: session.starts_at,
+            guideName: session.guide_name,
+            location: session.location,
+            matAddon: false,
+            towelAddon: false,
+          }),
+        },
+      });
     }
     toast.success(`${displayName} checked in`);
     onOpenChange(false);

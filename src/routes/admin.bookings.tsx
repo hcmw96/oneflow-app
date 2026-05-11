@@ -33,6 +33,14 @@ import {
 import { cn } from "@/lib/utils";
 import { cancelBookingWithPolicy } from "@/lib/bookingCancellation";
 import { deleteMayChallengeCheckInForBooking } from "@/lib/mayChallengeCheckIn";
+import {
+  bookingConfirmationEmailData,
+  bookingConfirmationTemplateForClassType,
+} from "@/lib/bookingConfirmationEmail";
+import {
+  fetchTheSageCreditProfileIds,
+  RosterAddonPills,
+} from "@/components/admin/RosterAddonPills";
 
 export const Route = createFileRoute("/admin/bookings")({
   component: BookingsPage,
@@ -45,6 +53,7 @@ type BookingStatus = "confirmed" | "attended" | "cancelled" | "no-show";
 type WeekClassRow = {
   id: string;
   name: string;
+  class_type: string;
   starts_at: string;
   ends_at: string;
   capacity: number;
@@ -82,6 +91,7 @@ type AdminBookingRow = {
   creditLabel: string;
   matAddon: boolean;
   towelAddon: boolean;
+  hasSageCredit: boolean;
 };
 
 function startOfCalendarWeekSunday(d: Date) {
@@ -109,7 +119,10 @@ function shortMemberName(first: string, last: string) {
   return L ? `${f} ${L}.` : f;
 }
 
-function normalizeBooking(raw: BookingRowRaw): AdminBookingRow | null {
+function normalizeBooking(
+  raw: BookingRowRaw,
+  sageProfileIds: Set<string>,
+): AdminBookingRow | null {
   const prof = one(raw.profiles);
   const fn = prof?.first_name?.trim() ?? "";
   const ln = prof?.last_name?.trim() ?? "";
@@ -120,6 +133,7 @@ function normalizeBooking(raw: BookingRowRaw): AdminBookingRow | null {
   const status = (
     ["confirmed", "attended", "cancelled", "no-show"].includes(st) ? st : "confirmed"
   ) as BookingStatus;
+  const pid = raw.profile_id;
   return {
     id: raw.id,
     profile_id: raw.profile_id,
@@ -131,6 +145,7 @@ function normalizeBooking(raw: BookingRowRaw): AdminBookingRow | null {
     creditLabel: raw.payment_method?.replace(/_/g, " ") ?? "—",
     matAddon: Boolean(raw.mat_addon),
     towelAddon: Boolean(raw.towel_addon),
+    hasSageCredit: Boolean(pid && sageProfileIds.has(pid)),
   };
 }
 
@@ -239,7 +254,7 @@ function BookingsPage() {
     const { data: classesData, error: classesError } = await supabase
       .from("classes")
       .select(
-        "id, name, starts_at, ends_at, capacity, booked_count, location, guide_name, is_cancelled",
+        "id, name, class_type, starts_at, ends_at, capacity, booked_count, location, guide_name, is_cancelled",
       )
       .gte("starts_at", ws.toISOString())
       .lt("starts_at", we.toISOString())
@@ -265,10 +280,11 @@ function BookingsPage() {
       return;
     }
 
-    const { data: bookingsData, error: bookingsError } = await supabase
-      .from("bookings")
-      .select(
-        `
+    const [{ data: bookingsData, error: bookingsError }, sageProfileIds] = await Promise.all([
+      supabase
+        .from("bookings")
+        .select(
+          `
         id,
         status,
         profile_id,
@@ -279,8 +295,10 @@ function BookingsPage() {
         profiles ( first_name, last_name ),
         classes ( id, name, starts_at, ends_at )
       `,
-      )
-      .in("class_id", classIds);
+        )
+        .in("class_id", classIds),
+      fetchTheSageCreditProfileIds(supabase),
+    ]);
 
     if (bookingsError) {
       console.error(bookingsError);
@@ -291,7 +309,9 @@ function BookingsPage() {
     }
 
     const rawRows = (bookingsData ?? []) as unknown as BookingRowRaw[];
-    const mapped = rawRows.map(normalizeBooking).filter((r): r is AdminBookingRow => r !== null);
+    const mapped = rawRows
+      .map((row) => normalizeBooking(row, sageProfileIds))
+      .filter((r): r is AdminBookingRow => r !== null);
     setBookings(mapped);
     setLoading(false);
   }, [viewWeekStart]);
@@ -607,23 +627,14 @@ function BookingsPage() {
                               className="flex flex-wrap items-center gap-2 py-3 first:pt-0 last:pb-0 sm:flex-nowrap sm:gap-3"
                             >
                               <div className="min-w-0 flex-1">
-                                <p className="truncate font-medium text-foreground">
-                                  {b.memberShort}
+                                <p className="flex min-w-0 flex-wrap items-center gap-1.5 font-medium text-foreground">
+                                  <span className="min-w-0 truncate">{b.memberShort}</span>
+                                  <RosterAddonPills
+                                    mat={b.matAddon}
+                                    towel={b.towelAddon}
+                                    cafe={b.hasSageCredit}
+                                  />
                                 </p>
-                                {(b.matAddon || b.towelAddon) && (
-                                  <div className="mt-1 flex flex-wrap gap-1">
-                                    {b.matAddon && (
-                                      <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-semibold text-primary">
-                                        Mat
-                                      </span>
-                                    )}
-                                    {b.towelAddon && (
-                                      <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-semibold text-primary">
-                                        Towel
-                                      </span>
-                                    )}
-                                  </div>
-                                )}
                               </div>
                               <span className={rosterStatusClass(b.status)}>
                                 {rosterStatusLabel(b.status)}
@@ -850,6 +861,22 @@ function WalkInSheet({
         profile_id: profileId,
         class_date: new Date(session.starts_at).toISOString().split("T")[0],
         booking_id: newBooking.id as string,
+      });
+    }
+    if (session?.starts_at) {
+      await supabase.functions.invoke("send-email", {
+        body: {
+          to: em,
+          template: bookingConfirmationTemplateForClassType(session.class_type),
+          data: bookingConfirmationEmailData({
+            className: session.name,
+            startsAtIso: session.starts_at,
+            guideName: session.guide_name,
+            location: session.location,
+            matAddon: false,
+            towelAddon: false,
+          }),
+        },
       });
     }
     toast.success(`${displayName} checked in`);
