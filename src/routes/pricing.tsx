@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 import { Switch } from "@/components/ui/switch";
 import { getUser, supabase } from "@/lib/supabase";
+import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import {
   maxPackFlowPointsRedemption,
   parseFlowPointsConversionRate,
@@ -21,7 +22,32 @@ export const Route = createFileRoute("/pricing")({
   component: PricingPage,
 });
 
-type ProductCategory = "yoga" | "wellzone" | "all_access";
+/** Categories shown on customer pricing (excludes `staff`, which is never listed here). */
+const CUSTOMER_PRICING_CATEGORY_ORDER = [
+  "yoga",
+  "wellzone",
+  "all_access",
+  "power",
+  "cafe",
+  "complimentary",
+] as const;
+
+type CustomerPricingCategory = (typeof CUSTOMER_PRICING_CATEGORY_ORDER)[number];
+
+const SECTION_TITLES: Record<CustomerPricingCategory, string> = {
+  yoga: "Class Packs (Yoga, Sculpt & Pilates)",
+  wellzone: "Wellzone & Sauna",
+  all_access: "All Access Memberships",
+  power: "Power Memberships",
+  cafe: "Café Credits",
+  complimentary: "Complimentary",
+};
+
+const ACCORDION_SECTIONS: { category: CustomerPricingCategory; title: string }[] =
+  CUSTOMER_PRICING_CATEGORY_ORDER.map((category) => ({
+    category,
+    title: SECTION_TITLES[category],
+  }));
 
 type ProductRow = {
   id: string;
@@ -34,12 +60,6 @@ type ProductRow = {
   category: string | null;
   allowed_class_types: string[] | null;
 };
-
-const ACCORDION_SECTIONS: { category: ProductCategory; title: string }[] = [
-  { category: "yoga", title: "CLASS PACKS (YOGA, SCULPT & PILATES)" },
-  { category: "wellzone", title: "WELLZONE (SAUNA, PLUNGE & SAUNA JOURNEY)" },
-  { category: "all_access", title: "ALL ACCESS (YOGA, SCULPT & WELLZONE)" },
-];
 
 function formatPriceZar(zar: number) {
   const n = Number(zar);
@@ -65,6 +85,20 @@ function dedupeProductsById(rows: ProductRow[]): ProductRow[] {
   return [...byId.values()];
 }
 
+function isCustomerPricingCategory(cat: string | null | undefined): cat is CustomerPricingCategory {
+  const c = String(cat ?? "").toLowerCase();
+  return (CUSTOMER_PRICING_CATEGORY_ORDER as readonly string[]).includes(c);
+}
+
+/** Never surface staff-category packs on the public pricing page. */
+function filterCustomerPricingProducts(rows: ProductRow[]): ProductRow[] {
+  return rows.filter((p) => {
+    const cat = String(p.category ?? "").toLowerCase();
+    if (cat === "staff") return false;
+    return isCustomerPricingCategory(cat);
+  });
+}
+
 function PricingPage() {
   const router = useRouter();
   const [products, setProducts] = useState<ProductRow[]>([]);
@@ -78,36 +112,58 @@ function PricingPage() {
     | { kind: "valid"; label: string }
     | { kind: "invalid"; message: string }
   >({ kind: "idle" });
-  const [openSections, setOpenSections] = useState<Record<ProductCategory, boolean>>({
-    yoga: true,
-    wellzone: false,
-    all_access: false,
-  });
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
   const [flowPointsState, setFlowPointsState] = useState<"loading" | "guest" | number>("loading");
   const [conversionRate, setConversionRate] = useState(10);
   const [useFlowPointsFor, setUseFlowPointsFor] = useState<Record<string, boolean>>({});
 
   const itemsByCategory = useMemo(() => {
-    const yoga: ProductRow[] = [];
-    const wellzone: ProductRow[] = [];
-    const all_access: ProductRow[] = [];
+    const buckets: Record<CustomerPricingCategory, ProductRow[]> = {
+      yoga: [],
+      wellzone: [],
+      all_access: [],
+      power: [],
+      cafe: [],
+      complimentary: [],
+    };
 
     for (const p of products) {
-      if (p.category === "yoga") yoga.push(p);
-      else if (p.category === "wellzone") wellzone.push(p);
-      else if (p.category === "all_access") all_access.push(p);
+      const cat = String(p.category ?? "").toLowerCase();
+      if (!isCustomerPricingCategory(cat)) continue;
+      buckets[cat].push(p);
     }
 
     const bySortOrder = (a: ProductRow, b: ProductRow) =>
       Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0) ||
       Number(a.price_zar) - Number(b.price_zar);
 
-    yoga.sort(bySortOrder);
-    wellzone.sort(bySortOrder);
-    all_access.sort(bySortOrder);
+    for (const c of CUSTOMER_PRICING_CATEGORY_ORDER) {
+      buckets[c].sort(bySortOrder);
+    }
 
-    return { yoga, wellzone, all_access };
+    return buckets;
   }, [products]);
+
+  const sectionsToRender = useMemo(
+    () =>
+      ACCORDION_SECTIONS.filter(
+        ({ category }) => (itemsByCategory[category] ?? []).length > 0,
+      ),
+    [itemsByCategory],
+  );
+
+  useEffect(() => {
+    if (loading || sectionsToRender.length === 0) return;
+    setOpenSections((prev) => {
+      const next: Record<string, boolean> = {};
+      for (const { category } of sectionsToRender) {
+        next[category] = prev[category] ?? false;
+      }
+      const anyOpen = sectionsToRender.some(({ category }) => next[category]);
+      if (!anyOpen) next[sectionsToRender[0].category] = true;
+      return next;
+    });
+  }, [loading, sectionsToRender]);
 
   useEffect(() => {
     let cancelled = false;
@@ -125,14 +181,14 @@ function PricingPage() {
 
       if (error) {
         console.error(error);
-        toast.error("Could not load products");
+        toast.error(supabaseErrorMessage(error, "Could not load products"));
         setProducts([]);
         setLoading(false);
         return;
       }
 
-      const rows = (data ?? []) as ProductRow[];
-      setProducts(dedupeProductsById(rows));
+      const rows = filterCustomerPricingProducts(dedupeProductsById((data ?? []) as ProductRow[]));
+      setProducts(rows);
       setLoading(false);
     }
 
@@ -180,7 +236,7 @@ function PricingPage() {
     return () => window.clearTimeout(t);
   }, [buyingId]);
 
-  const toggleSection = (category: ProductCategory) => {
+  const toggleSection = (category: string) => {
     setOpenSections((prev) => ({ ...prev, [category]: !prev[category] }));
   };
 
@@ -397,14 +453,14 @@ function PricingPage() {
                 aria-label="Loading products"
               />
             </div>
-          ) : products.length === 0 ? (
+          ) : sectionsToRender.length === 0 ? (
             <p className="py-12 text-center text-sm text-muted-foreground">
               No packs available yet.
             </p>
           ) : (
             <div className="space-y-3">
-              {ACCORDION_SECTIONS.map(({ category, title }) => {
-                const open = openSections[category];
+              {sectionsToRender.map(({ category, title }) => {
+                const open = openSections[category] ?? false;
                 const items = itemsByCategory[category];
                 const panelId = `pricing-panel-${category}`;
                 const headerId = `pricing-header-${category}`;
@@ -422,7 +478,7 @@ function PricingPage() {
                       onClick={() => toggleSection(category)}
                       className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left transition-colors hover:bg-[#e8efe3]/60 dark:hover:bg-muted/40"
                     >
-                      <span className="min-w-0 flex-1 truncate font-display text-[11px] font-bold uppercase leading-snug tracking-[0.12em] text-[#a3b693] dark:text-foreground sm:text-xs">
+                      <span className="min-w-0 flex-1 font-display text-sm font-bold leading-snug text-[#a3b693] dark:text-foreground sm:text-base">
                         {title}
                       </span>
                       <ChevronDown
@@ -440,13 +496,8 @@ function PricingPage() {
                         aria-labelledby={headerId}
                         className="border-t border-[#c5d4b8]/50 bg-[#fafbf8]/80 px-3 py-4 dark:border-border dark:bg-card/50"
                       >
-                        {items.length === 0 ? (
-                          <p className="px-1 py-4 text-center text-sm text-muted-foreground">
-                            No packs in this category.
-                          </p>
-                        ) : (
-                          <ul className="flex flex-col gap-3">
-                            {items.map((p) => {
+                        <ul className="flex flex-col gap-3">
+                          {items.map((p) => {
                               const credits = creditsLine(p);
                               const priceN = Number(p.price_zar) || 0;
                               const pointsForFull =
@@ -557,9 +608,8 @@ function PricingPage() {
                                   </div>
                                 </li>
                               );
-                            })}
-                          </ul>
-                        )}
+                          })}
+                        </ul>
                       </div>
                     ) : null}
                   </div>
