@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
+import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -135,7 +136,7 @@ export function AssignPackageDialog({ open, onOpenChange, target, canAssign, onA
 
       if (error) {
         console.error(error);
-        toast.error(error.message || "Could not load products");
+        toast.error(supabaseErrorMessage(error, "Could not load products"));
         setProducts([]);
       } else {
         const rows = (data ?? []) as Record<string, unknown>[];
@@ -186,7 +187,9 @@ export function AssignPackageDialog({ open, onOpenChange, target, canAssign, onA
     });
     if (error) {
       console.error(error);
-      toast.error(error.message || "Package saved but email could not be sent.");
+      toast.error(
+        supabaseErrorMessage(error, "Package saved but email could not be sent — please try again"),
+      );
     }
   };
 
@@ -229,7 +232,7 @@ export function AssignPackageDialog({ open, onOpenChange, target, canAssign, onA
 
     if (error) {
       console.error(error);
-      toast.error(error.message || "Could not assign package");
+      toast.error(supabaseErrorMessage(error, "Could not assign package"));
       return;
     }
 
@@ -295,7 +298,7 @@ export function AssignPackageDialog({ open, onOpenChange, target, canAssign, onA
 
     if (error) {
       console.error(error);
-      toast.error(error.message || "Could not assign package");
+      toast.error(supabaseErrorMessage(error, "Could not assign package"));
       return;
     }
 

@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { PageHeader } from "@/components/admin/PageHeader";
 import { QRScanner } from "@/components/admin/QRScanner";
 import { supabase } from "@/lib/supabase";
+import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import {
   Sheet,
   SheetContent,
@@ -163,8 +164,8 @@ function CheckInPage() {
       .order("starts_at");
 
     if (classesError) {
-      console.error(classesError);
-      toast.error("Could not load today’s classes");
+      console.error("check-in: classes load failed", classesError);
+      toast.error(supabaseErrorMessage(classesError, "Could not load today’s classes"));
       setTodayClasses([]);
       setRoster([]);
       setLoading(false);
@@ -203,8 +204,8 @@ function CheckInPage() {
     ]);
 
     if (bookingsError) {
-      console.error(bookingsError);
-      toast.error("Could not load bookings");
+      console.error("check-in: bookings load failed", bookingsError);
+      toast.error(supabaseErrorMessage(bookingsError, "Could not load bookings"));
       setRoster([]);
       setLoading(false);
       return;
@@ -277,7 +278,8 @@ function CheckInPage() {
           };
     const { error } = await supabase.from("bookings").update(patch).eq("id", id);
     if (error) {
-      toast.error(error.message);
+      console.error("check-in: booking status update failed", error);
+      toast.error(supabaseErrorMessage(error, "Could not update booking"));
       return;
     }
     if (status === "attended") {
@@ -325,8 +327,8 @@ function CheckInPage() {
       .maybeSingle();
 
     if (findError) {
-      console.error(findError);
-      toast.error(findError.message);
+      console.error("check-in: QR booking lookup failed", findError);
+      toast.error(supabaseErrorMessage(findError, "Could not look up booking"));
       return;
     }
 
@@ -372,7 +374,8 @@ function CheckInPage() {
       .eq("id", booking.id);
 
     if (upError) {
-      toast.error(upError.message);
+      console.error("check-in: QR check-in update failed", upError);
+      toast.error(supabaseErrorMessage(upError, "Could not check in"));
       return;
     }
 
@@ -657,8 +660,8 @@ function WalkInSheet({
       .maybeSingle();
 
     if (findErr) {
-      console.error(findErr);
-      toast.error(findErr.message);
+      console.error("walk-in profile lookup failed", findErr);
+      toast.error(supabaseErrorMessage(findErr, "Could not look up profile"));
       setSaving(false);
       return;
     }
@@ -678,8 +681,10 @@ function WalkInSheet({
         .single();
 
       if (createErr || !created?.id) {
-        console.error(createErr);
-        toast.error(createErr?.message ?? "Could not create profile.");
+        console.error("walk-in profile create failed", createErr);
+        toast.error(
+          supabaseErrorMessage(createErr, "Could not create profile — please try again"),
+        );
         setSaving(false);
         return;
       }
@@ -703,7 +708,8 @@ function WalkInSheet({
       .maybeSingle();
     setSaving(false);
     if (bookErr) {
-      toast.error(bookErr.message);
+      console.error("walk-in booking insert failed", bookErr);
+      toast.error(supabaseErrorMessage(bookErr, "Could not create booking"));
       return;
     }
     if (newBooking?.id && profileId && session?.starts_at) {

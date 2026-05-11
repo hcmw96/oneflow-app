@@ -43,6 +43,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { getUser, supabase } from "@/lib/supabase";
+import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 
 export const Route = createFileRoute("/admin/email")({
   head: () => ({ meta: [{ title: "Email Marketing — One Flow Admin" }] }),
@@ -128,7 +129,7 @@ function EmailPage() {
       .limit(500);
     if (error) {
       console.error(error);
-      toast.error(error.message || "Could not load campaigns");
+      toast.error(supabaseErrorMessage(error, "Could not load campaigns"));
       setLoading(false);
       return;
     }
@@ -249,7 +250,7 @@ function EmailPage() {
       const { error } = await supabase.from("email_campaigns").update(payload).eq("id", draftId);
       setSavingDraft(false);
       if (error) {
-        toast.error(error.message);
+        toast.error(supabaseErrorMessage(error, "Could not save campaign"));
         return;
       }
     } else {
@@ -260,7 +261,7 @@ function EmailPage() {
         .maybeSingle();
       setSavingDraft(false);
       if (error) {
-        toast.error(error.message);
+        toast.error(supabaseErrorMessage(error, "Could not save campaign"));
         return;
       }
       setDraftId((data as { id?: string } | null)?.id ?? null);
@@ -276,7 +277,8 @@ function EmailPage() {
       recipients = await queryRecipients();
     } catch (e: unknown) {
       setSending(false);
-      toast.error(e instanceof Error ? e.message : "Could not load recipients");
+      console.error("email recipients load failed", e);
+      toast.error(supabaseErrorMessage(e, "Could not load recipients"));
       return;
     }
     if (recipients.length === 0) {

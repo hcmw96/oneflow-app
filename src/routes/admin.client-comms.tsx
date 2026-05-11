@@ -18,6 +18,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { getUser, supabase } from "@/lib/supabase";
+import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/admin/client-comms")({
@@ -124,7 +125,7 @@ function ClientCommsPage() {
 
     if (msgsRes.error) {
       console.error(msgsRes.error);
-      toast.error(msgsRes.error.message || "Could not load messages");
+      toast.error(supabaseErrorMessage(msgsRes.error, "Could not load messages"));
       setMessages([]);
     } else {
       const rows: MessageRow[] = (msgsRes.data ?? []).map((raw: Record<string, unknown>) => ({
@@ -221,7 +222,7 @@ function ClientCommsPage() {
     });
     if (msgErr) {
       setSending(false);
-      toast.error(msgErr.message || "Could not send");
+      toast.error(supabaseErrorMessage(msgErr, "Could not send"));
       return;
     }
     await supabase.from("notifications").insert({
@@ -252,7 +253,7 @@ function ClientCommsPage() {
       .eq("role", "customer");
     if (tErr) {
       setAnnSending(false);
-      toast.error(tErr.message || "Could not load recipients");
+      toast.error(supabaseErrorMessage(tErr, "Could not load recipients"));
       return;
     }
     const ids = (targets ?? []).map((p: { id: string }) => p.id);
@@ -280,7 +281,7 @@ function ClientCommsPage() {
     ]);
     setAnnSending(false);
     if (mRes.error) {
-      toast.error(mRes.error.message || "Could not send announcement");
+      toast.error(supabaseErrorMessage(mRes.error, "Could not send announcement"));
       return;
     }
     if (nRes.error) console.warn("notifications insert", nRes.error);

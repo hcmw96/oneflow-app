@@ -33,6 +33,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { getUser, supabase } from "@/lib/supabase";
+import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/admin/promotions")({
@@ -138,7 +139,7 @@ function PromotionsPage() {
 
     if (error) {
       console.error(error);
-      toast.error(error.message || "Could not load promotions");
+      toast.error(supabaseErrorMessage(error, "Could not load promotions"));
       setRows([]);
       setLoading(false);
       return;
@@ -272,8 +273,8 @@ function PromotionsPage() {
       closeSheet();
       await load();
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "Save failed";
-      toast.error(msg);
+      console.error("promotion save failed", e);
+      toast.error(`Save failed: ${supabaseErrorMessage(e, "Save failed — please try again")}`);
     } finally {
       setSaving(false);
     }
@@ -285,7 +286,8 @@ function PromotionsPage() {
       .update({ is_active: next })
       .eq("id", p.id);
     if (error) {
-      toast.error(error.message);
+      console.error("promotion toggle failed", error);
+      toast.error(supabaseErrorMessage(error, "Could not update promotion"));
       return;
     }
     setRows((prev) => prev.map((r) => (r.id === p.id ? { ...r, is_active: next } : r)));

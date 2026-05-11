@@ -4,6 +4,7 @@ import { Loader2, Pencil, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/admin/PageHeader";
 import { supabase } from "@/lib/supabase";
+import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -86,6 +87,16 @@ function tableCategoryLabel(category: string | null | undefined) {
 
 function normalizeClassTypes(raw: unknown): string[] {
   if (Array.isArray(raw)) return raw.map((x) => String(x)).filter(Boolean);
+  if (typeof raw === "string") {
+    const t = raw.trim();
+    if (!t) return [];
+    try {
+      const parsed: unknown = JSON.parse(t);
+      if (Array.isArray(parsed)) return parsed.map((x) => String(x)).filter(Boolean);
+    } catch {
+      /* plain string, not JSON */
+    }
+  }
   return [];
 }
 
@@ -148,8 +159,8 @@ function ProductsPage() {
       .order("price_zar", { ascending: true });
 
     if (error) {
-      console.error(error);
-      toast.error(error.message || "Could not load products");
+      console.error("products load failed", error);
+      toast.error(supabaseErrorMessage(error, "Could not load products"));
       setRows([]);
       setLoading(false);
       return;
@@ -245,7 +256,8 @@ function ProductsPage() {
     const { error } = await supabase.from("products").update({ is_active: next }).eq("id", id);
     setTogglingId(null);
     if (error) {
-      toast.error(error.message);
+      console.error("products persistActive failed", error);
+      toast.error(supabaseErrorMessage(error, "Could not update product"));
       return;
     }
     setRows((prev) => prev.map((r) => (r.id === id ? { ...r, is_active: next } : r)));
@@ -280,41 +292,55 @@ function ProductsPage() {
       creditCount = c;
     }
 
-    const payload = {
+    const existingRow = editingId ? rows.find((r) => r.id === editingId) : null;
+    // Match user_credits / payment flow: empty = unrestricted ([]), avoids NOT NULL jsonb/text[] rejects on null.
+    const allowedPayload = allowedClassTypes.length > 0 ? allowedClassTypes : [];
+
+    const commonPayload = {
       name: trimmed,
       category,
       description: description.trim() ? description.trim() : null,
       price_zar: price,
       credit_count: creditCount,
       validity_days: vd,
-      allowed_class_types: allowedClassTypes.length ? allowedClassTypes : null,
+      allowed_class_types: allowedPayload,
       is_addon: isAddon,
       is_active: isActive,
     };
 
     setSaving(true);
-    try {
-      if (editingId) {
-        const { error } = await supabase.from("products").update(payload).eq("id", editingId);
-        if (error) throw error;
-        toast.success("Product updated");
-      } else {
-        const { error } = await supabase.from("products").insert({
-          ...payload,
-          is_staff_only: false,
-          sort_order: 0,
-        });
-        if (error) throw error;
-        toast.success("Product created");
+    if (editingId) {
+      const { error } = await supabase
+        .from("products")
+        .update({
+          ...commonPayload,
+          is_staff_only: existingRow?.is_staff_only ?? false,
+        })
+        .eq("id", editingId);
+      if (error) {
+        console.error("products update failed", error);
+        toast.error(`Save failed: ${supabaseErrorMessage(error, "Save failed — please try again")}`);
+        setSaving(false);
+        return;
       }
-      closeSheet();
-      await load();
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "Save failed";
-      toast.error(msg);
-    } finally {
-      setSaving(false);
+      toast.success("Product updated");
+    } else {
+      const { error } = await supabase.from("products").insert({
+        ...commonPayload,
+        is_staff_only: false,
+        sort_order: 0,
+      });
+      if (error) {
+        console.error("products insert failed", error);
+        toast.error(`Save failed: ${supabaseErrorMessage(error, "Save failed — please try again")}`);
+        setSaving(false);
+        return;
+      }
+      toast.success("Product created");
     }
+    closeSheet();
+    await load();
+    setSaving(false);
   };
 
   return (

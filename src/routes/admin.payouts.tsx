@@ -42,6 +42,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { getUser, supabase } from "@/lib/supabase";
+import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/admin/payouts")({
@@ -182,7 +183,7 @@ function PayoutsPage() {
     const { data, error } = await query;
     if (error) {
       console.error(error);
-      toast.error(error.message || "Could not load invoices");
+      toast.error(supabaseErrorMessage(error, "Could not load invoices"));
       setInvoices([]);
       setLoadingInvoices(false);
       return;
@@ -237,7 +238,7 @@ function PayoutsPage() {
     setLoadingClasses(false);
     if (error) {
       console.error(error);
-      toast.error(error.message || "Could not load classes");
+      toast.error(supabaseErrorMessage(error, "Could not load classes"));
       return;
     }
     const items: LineItem[] = (classRows ?? []).map((c: Record<string, unknown>) => ({
@@ -339,7 +340,8 @@ function PayoutsPage() {
       await loadInvoices();
       await loadGuideClasses();
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "Submit failed");
+      console.error("payout submit failed", e);
+      toast.error(supabaseErrorMessage(e, "Submit failed — please try again"));
     } finally {
       setSubmitting(false);
     }
@@ -401,7 +403,8 @@ function PayoutsPage() {
       .update(patch)
       .eq("id", inv.id);
     if (error) {
-      toast.error(error.message);
+      console.error("payout operation failed", error);
+      toast.error(supabaseErrorMessage(error, "Operation failed — please try again"));
       return;
     }
     toast.success(`Invoice marked ${next}`);

@@ -50,6 +50,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { getUser, supabase } from "@/lib/supabase";
+import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 
 export const Route = createFileRoute("/admin/badges")({
   head: () => ({ meta: [{ title: "Badges — One Flow Admin" }] }),
@@ -161,7 +162,7 @@ function BadgesPage() {
 
     if (badgesRes.error) {
       console.error(badgesRes.error);
-      toast.error(badgesRes.error.message || "Could not load badges");
+      toast.error(supabaseErrorMessage(badgesRes.error, "Could not load badges"));
       setBadges([]);
     } else {
       setBadges((badgesRes.data ?? []) as BadgeRow[]);
@@ -264,7 +265,8 @@ function BadgesPage() {
       setEditingId(null);
       await loadAll();
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "Save failed");
+      console.error("badge save failed", e);
+      toast.error(`Save failed: ${supabaseErrorMessage(e, "Save failed — please try again")}`);
     } finally {
       setSaving(false);
     }
@@ -274,7 +276,8 @@ function BadgesPage() {
     if (!deleteTarget) return;
     const { error } = await supabase.from("badges").delete().eq("id", deleteTarget.id);
     if (error) {
-      toast.error(error.message);
+      console.error("badge award failed", error);
+      toast.error(supabaseErrorMessage(error, "Could not award badge"));
       return;
     }
     toast.success("Badge deleted");
@@ -297,7 +300,8 @@ function BadgesPage() {
     });
     setAwarding(false);
     if (error) {
-      toast.error(error.message);
+      console.error("badge award failed", error);
+      toast.error(supabaseErrorMessage(error, "Could not award badge"));
       return;
     }
     toast.success("Badge awarded");

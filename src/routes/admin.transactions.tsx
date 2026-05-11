@@ -22,6 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { supabase } from "@/lib/supabase";
+import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 
 export const Route = createFileRoute("/admin/transactions")({
   head: () => ({ meta: [{ title: "Transactions — One Flow Admin" }] }),
@@ -115,8 +116,8 @@ function TransactionsPage() {
       .limit(2000);
 
     if (error) {
-      console.error(error);
-      toast.error(error.message || "Could not load transactions");
+      console.error("transactions load failed", error);
+      toast.error(supabaseErrorMessage(error, "Could not load transactions"));
       setRows([]);
       setLoading(false);
       return;

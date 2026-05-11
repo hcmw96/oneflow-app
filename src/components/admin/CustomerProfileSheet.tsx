@@ -33,6 +33,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/lib/supabase";
+import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { cn } from "@/lib/utils";
 
 const ALL_ROLES = [
@@ -158,8 +159,12 @@ export function CustomerProfileSheet({
       .maybeSingle();
 
     if (pErr || !p) {
-      console.error(pErr);
-      toast.error("Could not load profile");
+      console.error("customer profile load failed", pErr);
+      toast.error(
+        pErr
+          ? supabaseErrorMessage(pErr, "Could not load profile")
+          : "Profile not found.",
+      );
       setProfile(null);
       setCredits([]);
       setBookings([]);
@@ -235,7 +240,8 @@ export function CustomerProfileSheet({
       .eq("id", profile.id);
     setSavingNotes(false);
     if (error) {
-      toast.error(error.message);
+      console.error("customer notes save failed", error);
+      toast.error(supabaseErrorMessage(error, "Could not save notes"));
       return;
     }
     toast.success("Notes saved");
@@ -249,7 +255,8 @@ export function CustomerProfileSheet({
     const { error } = await supabase.from("profiles").update({ is_active: next }).eq("id", profile.id);
     setTogglingActive(false);
     if (error) {
-      toast.error(error.message);
+      console.error("customer active toggle failed", error);
+      toast.error(supabaseErrorMessage(error, "Could not update member status"));
       return;
     }
     toast.success(next ? "Member marked active" : "Member marked inactive");
@@ -271,7 +278,8 @@ export function CustomerProfileSheet({
     setPendingRole(null);
     if (error || !data) {
       if (profile) setRoleDraft((profile.role ?? "customer").toLowerCase());
-      toast.error(error?.message ?? "Role was not updated");
+      console.error("customer role update failed", error);
+      toast.error(supabaseErrorMessage(error, "Role was not updated — please try again"));
       return;
     }
     const saved = String((data as { role?: string }).role ?? next).toLowerCase();
@@ -304,7 +312,8 @@ export function CustomerProfileSheet({
     setRemovingCredit(false);
     setRemoveCreditId(null);
     if (error) {
-      toast.error(error.message);
+      console.error("remove credit failed", error);
+      toast.error(supabaseErrorMessage(error, "Could not remove credit"));
       return;
     }
     toast.success("Credit removed");

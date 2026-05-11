@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/admin/PageHeader";
 import { StatCard } from "@/components/admin/StatCard";
 import { Skeleton } from "@/components/ui/skeleton";
 import { supabase } from "@/lib/supabase";
+import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/admin/")({
@@ -97,7 +98,7 @@ function AdminDashboard() {
 
       if (classesRes.error || memberRes.error || signInsRes.error) {
         const firstErr = classesRes.error ?? memberRes.error ?? signInsRes.error;
-        setErrorMsg(firstErr?.message ?? "Could not load dashboard data.");
+        setErrorMsg(supabaseErrorMessage(firstErr, "Could not load dashboard data."));
       }
 
       setClasses((classesRes.data ?? []) as TodayClassRow[]);
@@ -108,7 +109,7 @@ function AdminDashboard() {
       setClasses([]);
       setMemberCount(0);
       setSignInsToday(0);
-      setErrorMsg(error instanceof Error ? error.message : "Could not load dashboard data.");
+      setErrorMsg(supabaseErrorMessage(error, "Could not load dashboard data."));
     } finally {
       setLoading(false);
     }

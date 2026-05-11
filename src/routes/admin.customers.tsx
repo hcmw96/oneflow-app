@@ -26,6 +26,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { getUser, supabase } from "@/lib/supabase";
+import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 
 export const Route = createFileRoute("/admin/customers")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -236,13 +237,17 @@ function CustomersPage() {
     });
 
     if (error) {
-      toast.error(error.message || "Could not create member");
+      toast.error(supabaseErrorMessage(error, "Could not create member"));
       setSaving(false);
       return;
     }
 
     if (data?.error) {
-      toast.error(data.error);
+      toast.error(
+        typeof data?.error === "string" && data.error.trim()
+          ? data.error
+          : "Could not create member — please try again",
+      );
       setSaving(false);
       return;
     }
@@ -261,7 +266,8 @@ function CustomersPage() {
     setMembers((prev) => prev.map((m) => (m.id === memberId ? { ...m, role: next } : m)));
     const { error } = await supabase.from("profiles").update({ role: next }).eq("id", memberId);
     if (error) {
-      toast.error(error.message);
+      console.error("customer role update failed", error);
+      toast.error(supabaseErrorMessage(error, "Could not update role"));
       setMembers((prev) => prev.map((m) => (m.id === memberId ? { ...m, role: previous } : m)));
       return;
     }

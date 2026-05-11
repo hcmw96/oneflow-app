@@ -38,6 +38,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { supabase } from "@/lib/supabase";
+import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/admin/waivers")({
@@ -92,8 +93,8 @@ function WaiversPage() {
       .order("first_name", { ascending: true });
 
     if (error) {
-      console.error(error);
-      toast.error(error.message || "Could not load waivers");
+      console.error("waivers load failed", error);
+      toast.error(supabaseErrorMessage(error, "Could not load waivers"));
       setRows([]);
       setLoading(false);
       return;

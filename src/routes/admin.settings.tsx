@@ -17,6 +17,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { getUser, supabase } from "@/lib/supabase";
+import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 
 export const Route = createFileRoute("/admin/settings")({
   head: () => ({ meta: [{ title: "Settings — One Flow Admin" }] }),
@@ -82,7 +83,7 @@ function SettingsPage() {
       .select("key, value");
     if (error) {
       console.error(error);
-      toast.error(error.message || "Could not load settings");
+      toast.error(supabaseErrorMessage(error, "Could not load settings"));
       setLoading(false);
       return;
     }
@@ -120,7 +121,7 @@ function SettingsPage() {
     setSaving(false);
     if (error) {
       console.error(error);
-      toast.error(error.message || "Could not save settings");
+      toast.error(supabaseErrorMessage(error, "Could not save settings"));
       return;
     }
     toast.success("Settings saved");
@@ -139,11 +140,11 @@ function SettingsPage() {
     setExporting(false);
 
     if (profilesRes.error) {
-      toast.error(profilesRes.error.message || "Could not export profiles");
+      toast.error(supabaseErrorMessage(profilesRes.error, "Could not export profiles"));
       return;
     }
     if (bookingsRes.error) {
-      toast.error(bookingsRes.error.message || "Could not export bookings");
+      toast.error(supabaseErrorMessage(bookingsRes.error, "Could not export bookings"));
       return;
     }
 
@@ -193,7 +194,7 @@ function SettingsPage() {
       .select("id", { count: "exact", head: true });
     setClearChecking(false);
     if (error) {
-      toast.error(error.message || "Could not check booking count");
+      toast.error(supabaseErrorMessage(error, "Could not check booking count"));
       return;
     }
     if ((count ?? 0) >= 10) {
@@ -210,7 +211,7 @@ function SettingsPage() {
       .delete()
       .gte("created_at", "1970-01-01");
     if (bErr) {
-      toast.error(bErr.message || "Could not clear bookings");
+      toast.error(supabaseErrorMessage(bErr, "Could not clear bookings"));
       return;
     }
     toast.success("Test bookings cleared");

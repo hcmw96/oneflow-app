@@ -46,6 +46,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { getUser, supabase } from "@/lib/supabase";
+import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 
 export const Route = createFileRoute("/admin/timesheets")({
   head: () => ({ meta: [{ title: "Timesheets — One Flow Admin" }] }),
@@ -246,7 +247,7 @@ function TimesheetsPage() {
 
     if (shiftsRes.error) {
       console.error(shiftsRes.error);
-      toast.error(shiftsRes.error.message || "Could not load shifts");
+      toast.error(supabaseErrorMessage(shiftsRes.error, "Could not load shifts"));
       setShifts([]);
     } else {
       setShifts(
@@ -270,7 +271,7 @@ function TimesheetsPage() {
 
     if (tsRes.error) {
       console.error(tsRes.error);
-      toast.error(tsRes.error.message || "Could not load timesheets");
+      toast.error(supabaseErrorMessage(tsRes.error, "Could not load timesheets"));
       setTimesheets([]);
     } else {
       setTimesheets(
@@ -433,7 +434,8 @@ function TimesheetsPage() {
       setEditingShiftId(null);
       await loadAll();
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "Save failed");
+      console.error("timesheet save failed", e);
+      toast.error(`Save failed: ${supabaseErrorMessage(e, "Save failed — please try again")}`);
     } finally {
       setShiftSaving(false);
     }
@@ -443,7 +445,8 @@ function TimesheetsPage() {
     if (!shiftToDelete) return;
     const { error } = await supabase.from("shifts").delete().eq("id", shiftToDelete.id);
     if (error) {
-      toast.error(error.message);
+      console.error("timesheet operation failed", error);
+      toast.error(supabaseErrorMessage(error, "Operation failed — please try again"));
       return;
     }
     toast.success("Shift deleted");
@@ -463,7 +466,8 @@ function TimesheetsPage() {
     });
     setClocking(false);
     if (error) {
-      toast.error(error.message);
+      console.error("timesheet operation failed", error);
+      toast.error(supabaseErrorMessage(error, "Operation failed — please try again"));
       return;
     }
     toast.success("Clocked in");
@@ -479,7 +483,8 @@ function TimesheetsPage() {
       .eq("id", myActiveTimesheet.id);
     setClocking(false);
     if (error) {
-      toast.error(error.message);
+      console.error("timesheet operation failed", error);
+      toast.error(supabaseErrorMessage(error, "Operation failed — please try again"));
       return;
     }
     toast.success("Clocked out");

@@ -56,6 +56,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { getUser, supabase } from "@/lib/supabase";
+import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/admin/staff")({
@@ -195,7 +196,7 @@ function StaffPage() {
 
     if (error) {
       console.error(error);
-      toast.error(error.message || "Could not load staff");
+      toast.error(supabaseErrorMessage(error, "Could not load staff"));
       setRows([]);
       setLoading(false);
       return;
@@ -309,7 +310,7 @@ function StaffPage() {
         .eq("id", id);
 
       if (fieldsError) {
-        toast.error(fieldsError.message);
+        toast.error(supabaseErrorMessage(fieldsError, "Could not update staff"));
         return;
       }
 
@@ -321,7 +322,7 @@ function StaffPage() {
         .single();
 
       if (roleError) {
-        toast.error(roleError.message);
+        toast.error(supabaseErrorMessage(roleError, "Could not update role"));
         await load();
         return;
       }
@@ -388,11 +389,15 @@ function StaffPage() {
     });
     setInviting(false);
     if (error) {
-      toast.error(error.message || "Could not send invite");
+      toast.error(supabaseErrorMessage(error, "Could not send invite"));
       return;
     }
     if (data?.error) {
-      toast.error(data.error);
+      toast.error(
+        typeof data?.error === "string" && data.error.trim()
+          ? data.error
+          : "Could not send invite — please try again",
+      );
       return;
     }
     toast.success(`${iFirst} ${iLast} invited as ${ROLE_LABEL[iRole]}`);
@@ -412,7 +417,7 @@ function StaffPage() {
       .update({ role: "customer" })
       .eq("id", deactivateTarget.id);
     if (error) {
-      toast.error(error.message);
+      toast.error(supabaseErrorMessage(error, "Could not deactivate staff"));
       return;
     }
     if (deactivateTarget.role === "guide") {

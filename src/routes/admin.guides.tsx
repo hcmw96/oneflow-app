@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
 import { getUser, supabase } from "@/lib/supabase";
+import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 
 export const Route = createFileRoute("/admin/guides")({
   head: () => ({
@@ -169,7 +170,7 @@ function GuidesPage() {
 
     if (profilesRes.error) {
       console.error(profilesRes.error);
-      toast.error(profilesRes.error.message || "Could not load guides");
+      toast.error(supabaseErrorMessage(profilesRes.error, "Could not load guides"));
       setRows([]);
       setLoading(false);
       return;
@@ -177,12 +178,14 @@ function GuidesPage() {
 
     if (classesRes.error) {
       console.error(classesRes.error);
-      toast.error(classesRes.error.message || "Could not load weekly classes");
+      toast.error(supabaseErrorMessage(classesRes.error, "Could not load weekly classes"));
     }
 
     if (guidesRes.error) {
       console.error(guidesRes.error);
-      toast.error("Could not load guide disciplines; showing profile data only.");
+      toast.error(
+        `${supabaseErrorMessage(guidesRes.error, "Could not load guide disciplines")} — showing profile data only.`,
+      );
     }
 
     const guideMetaByProfile = new Map<string, { disciplines: string[]; active: boolean }>();
@@ -285,7 +288,7 @@ function GuidesPage() {
 
       if (error) {
         console.error(error);
-        toast.error(error.message || "Could not send invite");
+        toast.error(supabaseErrorMessage(error, "Could not send invite"));
         setSaving(false);
         return;
       }
@@ -321,14 +324,19 @@ function GuidesPage() {
 
     if (profileRes.error) {
       console.error(profileRes.error);
-      toast.error(profileRes.error.message || "Could not update guide");
+      toast.error(supabaseErrorMessage(profileRes.error, "Could not update guide"));
       setSaving(false);
       return;
     }
 
     if (guidesRes.error) {
       console.error(guidesRes.error);
-      toast.error(guidesRes.error.message || "Guide profile updated, but disciplines failed");
+      toast.error(
+        supabaseErrorMessage(
+          guidesRes.error,
+          "Guide profile updated, but disciplines failed — please try again",
+        ),
+      );
       setSaving(false);
       return;
     }
@@ -359,8 +367,9 @@ function GuidesPage() {
     ]);
 
     if (profileRes.error || guidesRes.error) {
-      console.error(profileRes.error || guidesRes.error);
-      toast.error("Could not update guide status");
+      const err = profileRes.error ?? guidesRes.error;
+      console.error("guide status toggle failed", profileRes.error, guidesRes.error);
+      toast.error(supabaseErrorMessage(err, "Could not update guide status"));
       return;
     }
 

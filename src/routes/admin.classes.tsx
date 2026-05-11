@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import { PageHeader } from "@/components/admin/PageHeader";
 import { StatCard } from "@/components/admin/StatCard";
 import { getUser, supabase } from "@/lib/supabase";
+import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { displayClassType } from "@/types/studio";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -252,8 +253,8 @@ function ClassesPage() {
       .limit(2000);
 
     if (error) {
-      console.error(error);
-      toast.error("Could not load classes");
+      console.error("classes load failed", error);
+      toast.error(supabaseErrorMessage(error, "Could not load classes"));
       setRows([]);
       setLoading(false);
       return;
@@ -489,7 +490,8 @@ function ClassesPage() {
       setEditingId(null);
       await load();
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "Save failed");
+      console.error("class save failed", e);
+      toast.error(`Save failed: ${supabaseErrorMessage(e, "Save failed — please try again")}`);
     } finally {
       setSaving(false);
     }
@@ -502,7 +504,8 @@ function ClassesPage() {
       .update({ is_cancelled: true })
       .eq("id", deleteFromDialog.id);
     if (error) {
-      toast.error(error.message);
+      console.error("class cancel failed", error);
+      toast.error(supabaseErrorMessage(error, "Could not cancel class"));
       return;
     }
     toast.success("Class cancelled");
@@ -533,7 +536,8 @@ function ClassesPage() {
       .in("id", ids);
     setBulkBusy(false);
     if (error) {
-      toast.error(error.message);
+      console.error("bulk cancel failed", error);
+      toast.error(supabaseErrorMessage(error, "Could not cancel classes"));
       return;
     }
     toast.success(`Cancelled ${ids.length} class${ids.length === 1 ? "" : "es"}`);
@@ -554,7 +558,8 @@ function ClassesPage() {
       .in("id", ids);
     setBulkBusy(false);
     if (error) {
-      toast.error(error.message);
+      console.error("bulk reassign failed", error);
+      toast.error(supabaseErrorMessage(error, "Could not reassign classes"));
       return;
     }
     toast.success(`Reassigned ${ids.length} class${ids.length === 1 ? "" : "es"}`);

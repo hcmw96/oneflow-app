@@ -14,6 +14,7 @@ import {
 import { toast } from "sonner";
 import { PageHeader } from "@/components/admin/PageHeader";
 import { getUser, supabase } from "@/lib/supabase";
+import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { addDays, isSameDay, startOfDay } from "@/lib/format";
 import {
   Sheet,
@@ -262,8 +263,8 @@ function BookingsPage() {
       .order("starts_at");
 
     if (classesError) {
-      console.error(classesError);
-      toast.error("Could not load classes");
+      console.error("bookings week: classes load failed", classesError);
+      toast.error(supabaseErrorMessage(classesError, "Could not load classes"));
       setWeekClasses([]);
       setBookings([]);
       setLoading(false);
@@ -301,8 +302,8 @@ function BookingsPage() {
     ]);
 
     if (bookingsError) {
-      console.error(bookingsError);
-      toast.error("Could not load bookings");
+      console.error("bookings week: bookings load failed", bookingsError);
+      toast.error(supabaseErrorMessage(bookingsError, "Could not load bookings"));
       setBookings([]);
       setLoading(false);
       return;
@@ -399,7 +400,8 @@ function BookingsPage() {
           };
     const { error } = await supabase.from("bookings").update(patch).eq("id", id);
     if (error) {
-      toast.error(error.message);
+      console.error("booking status update failed", error);
+      toast.error(supabaseErrorMessage(error, "Could not update booking"));
       return;
     }
     if (status === "attended") {
@@ -436,7 +438,8 @@ function BookingsPage() {
       setWaiveLateFee(false);
       await loadWeek();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not remove booking");
+      console.error("remove booking failed", error);
+      toast.error(supabaseErrorMessage(error, "Could not remove booking"));
     } finally {
       setRemoving(false);
     }
@@ -807,8 +810,8 @@ function WalkInSheet({
       .maybeSingle();
 
     if (findErr) {
-      console.error(findErr);
-      toast.error(findErr.message);
+      console.error("walk-in profile lookup failed", findErr);
+      toast.error(supabaseErrorMessage(findErr, "Could not look up profile"));
       setSaving(false);
       return;
     }
@@ -828,8 +831,10 @@ function WalkInSheet({
         .single();
 
       if (createErr || !created?.id) {
-        console.error(createErr);
-        toast.error(createErr?.message ?? "Could not create profile.");
+        console.error("walk-in profile create failed", createErr);
+        toast.error(
+          supabaseErrorMessage(createErr, "Could not create profile — please try again"),
+        );
         setSaving(false);
         return;
       }
@@ -853,7 +858,8 @@ function WalkInSheet({
       .maybeSingle();
     setSaving(false);
     if (bookErr) {
-      toast.error(bookErr.message);
+      console.error("walk-in booking insert failed", bookErr);
+      toast.error(supabaseErrorMessage(bookErr, "Could not create booking"));
       return;
     }
     if (newBooking?.id && profileId && session?.starts_at) {
