@@ -63,39 +63,55 @@ function AdminDashboard() {
   const [memberCount, setMemberCount] = useState<number | null>(null);
   const [signInsToday, setSignInsToday] = useState<number>(0);
   const [loading, setLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { startUtcIso, endUtcIso } = jhbDayBounds();
+    setErrorMsg(null);
+    try {
+      const { startUtcIso, endUtcIso } = jhbDayBounds();
 
-    const [classesRes, memberRes, signInsRes] = await Promise.all([
-      supabase
-        .from("classes")
-        .select("id, name, starts_at, booked_count, capacity, guide_name")
-        .gte("starts_at", startUtcIso)
-        .lte("starts_at", endUtcIso)
-        .eq("is_cancelled", false)
-        .order("starts_at"),
-      supabase
-        .from("profiles")
-        .select("id", { count: "exact", head: true })
-        .eq("role", "customer"),
-      supabase
-        .from("bookings")
-        .select("id", { count: "exact", head: true })
-        .eq("checked_in", true)
-        .gte("checked_in_at", startUtcIso)
-        .lte("checked_in_at", endUtcIso),
-    ]);
+      const [classesRes, memberRes, signInsRes] = await Promise.all([
+        supabase
+          .from("classes")
+          .select("id, name, starts_at, booked_count, capacity, guide_name")
+          .gte("starts_at", startUtcIso)
+          .lte("starts_at", endUtcIso)
+          .eq("is_cancelled", false)
+          .order("starts_at"),
+        supabase
+          .from("profiles")
+          .select("id", { count: "exact", head: true })
+          .eq("role", "customer"),
+        supabase
+          .from("bookings")
+          .select("id", { count: "exact", head: true })
+          .eq("checked_in", true)
+          .gte("checked_in_at", startUtcIso)
+          .lte("checked_in_at", endUtcIso),
+      ]);
 
-    if (classesRes.error) console.error("admin dashboard classes", classesRes.error);
-    if (memberRes.error) console.error("admin dashboard member count", memberRes.error);
-    if (signInsRes.error) console.error("admin dashboard sign-ins", signInsRes.error);
+      if (classesRes.error) console.error("admin dashboard classes", classesRes.error);
+      if (memberRes.error) console.error("admin dashboard member count", memberRes.error);
+      if (signInsRes.error) console.error("admin dashboard sign-ins", signInsRes.error);
 
-    setClasses((classesRes.data ?? []) as TodayClassRow[]);
-    setMemberCount(memberRes.count ?? 0);
-    setSignInsToday(signInsRes.count ?? 0);
-    setLoading(false);
+      if (classesRes.error || memberRes.error || signInsRes.error) {
+        const firstErr = classesRes.error ?? memberRes.error ?? signInsRes.error;
+        setErrorMsg(firstErr?.message ?? "Could not load dashboard data.");
+      }
+
+      setClasses((classesRes.data ?? []) as TodayClassRow[]);
+      setMemberCount(memberRes.count ?? 0);
+      setSignInsToday(signInsRes.count ?? 0);
+    } catch (error) {
+      console.error("admin dashboard load failed", error);
+      setClasses([]);
+      setMemberCount(0);
+      setSignInsToday(0);
+      setErrorMsg(error instanceof Error ? error.message : "Could not load dashboard data.");
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -125,6 +141,11 @@ function AdminDashboard() {
         <AdminDashboardSkeleton />
       ) : (
         <>
+          {errorMsg ? (
+            <div className="mb-4 rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+              Could not load all dashboard data: {errorMsg}
+            </div>
+          ) : null}
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
             <StatCard
               label="Total Sign-ins Today"

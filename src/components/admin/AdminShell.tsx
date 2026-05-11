@@ -20,18 +20,27 @@ export function AdminShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const user = await getUser();
-      if (!user || cancelled) return;
-      const { data } = await supabase
-        .from("profiles")
-        .select("email, role")
-        .eq("id", user.id)
-        .maybeSingle();
-      if (cancelled) return;
-      setProfile({
-        email: data?.email ?? user.email ?? null,
-        role: data?.role ?? null,
-      });
+      try {
+        const user = await getUser();
+        if (!user || cancelled) return;
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("email, role")
+          .eq("id", user.id)
+          .maybeSingle();
+        if (error) {
+          console.error("admin shell profile load", error);
+        }
+        if (cancelled) return;
+        setProfile({
+          email: data?.email ?? user.email ?? null,
+          role: data?.role ?? null,
+        });
+      } catch (error) {
+        console.error("admin shell init failed", error);
+        if (cancelled) return;
+        setProfile((prev) => prev ?? { email: null, role: null });
+      }
     })();
     return () => {
       cancelled = true;

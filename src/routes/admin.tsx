@@ -1,5 +1,7 @@
 import { createFileRoute, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
+import * as React from "react";
 import { useEffect } from "react";
+import { Button } from "@/components/ui/button";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { isLimitedAdminRole, isPathAllowedForLimitedRole } from "@/components/admin/AdminNav";
 import { useAuth } from "@/contexts/auth";
@@ -12,6 +14,17 @@ export const Route = createFileRoute("/admin")({
     ],
   }),
   component: AdminLayout,
+  errorComponent: ({ error, reset }) => (
+    <div className="mx-auto flex min-h-[40vh] max-w-xl flex-col items-center justify-center gap-3 px-4 text-center">
+      <h2 className="font-display text-2xl font-semibold">Admin failed to load</h2>
+      <p className="text-sm text-muted-foreground">
+        {error instanceof Error ? error.message : "An unexpected error occurred."}
+      </p>
+      <Button type="button" onClick={() => reset()}>
+        Try again
+      </Button>
+    </div>
+  ),
 });
 
 function isAdminRole(role: string | null | undefined) {
@@ -45,12 +58,55 @@ function AdminLayout() {
   }
 
   if (!canAccess) {
-    return null;
+    return (
+      <div className="flex min-h-[40vh] items-center justify-center px-4 text-center text-sm text-muted-foreground">
+        You do not have access to the admin area.
+      </div>
+    );
   }
 
   return (
     <AdminShell>
-      <Outlet />
+      <AdminErrorBoundary>
+        <Outlet />
+      </AdminErrorBoundary>
     </AdminShell>
   );
+}
+
+class AdminErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean; message: string }
+> {
+  state = { hasError: false, message: "" };
+
+  static getDerivedStateFromError(error: unknown) {
+    return {
+      hasError: true,
+      message: error instanceof Error ? error.message : "An unexpected admin error occurred.",
+    };
+  }
+
+  componentDidCatch(error: unknown) {
+    console.error("admin layout render error", error);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="mx-auto flex min-h-[40vh] max-w-xl flex-col items-center justify-center gap-3 px-4 text-center">
+          <h2 className="font-display text-2xl font-semibold">Something went wrong</h2>
+          <p className="text-sm text-muted-foreground">{this.state.message}</p>
+          <Button
+            type="button"
+            onClick={() => this.setState({ hasError: false, message: "" })}
+            variant="outline"
+          >
+            Retry section
+          </Button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }
