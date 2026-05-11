@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "@tanstack/react-router";
 import { Clock, MapPin, Users, Sparkles, UserPlus, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -355,9 +356,9 @@ export function BookingSheet({ session, open, onOpenChange }: Props) {
           {credits.length === 0 ? (
             <div className="mt-6 rounded-2xl border border-dashed border-border bg-card p-4 text-center text-sm text-muted-foreground">
               No eligible credits for this class.{" "}
-              <a href="/pricing" className="text-primary underline">
+              <Link to="/pricing" className="text-primary underline">
                 Buy a pass
-              </a>
+              </Link>
             </div>
           ) : (
             <>

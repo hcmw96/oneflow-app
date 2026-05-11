@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { Flame, Pencil } from "lucide-react";
 import { toast } from "sonner";
@@ -14,6 +14,7 @@ const DEFAULT_WEEKLY_GOAL = 4;
 const clampGoal = (n: number) => Math.min(14, Math.max(1, Math.round(n)));
 
 function GoalsPage() {
+  const navigate = useNavigate();
   const [weeklyGoal, setWeeklyGoal] = useState(DEFAULT_WEEKLY_GOAL);
   const [thisWeekCount, setThisWeekCount] = useState(0);
   const [streakWeeks, setStreakWeeks] = useState(0);
@@ -168,12 +169,13 @@ function GoalsPage() {
             <p className="mt-2 text-sm text-muted-foreground">Start your streak this week!</p>
           )}
         </section>
-        <Link
-          to="/schedule"
-          className="block rounded-2xl bg-primary px-5 py-3 text-center text-sm font-semibold text-primary-foreground"
+        <button
+          type="button"
+          onClick={() => navigate({ to: "/schedule" })}
+          className="block w-full rounded-2xl bg-primary px-5 py-3 text-center text-sm font-semibold text-primary-foreground"
         >
           Book a class
-        </Link>
+        </button>
       </main>
     </AppShell>
   );
