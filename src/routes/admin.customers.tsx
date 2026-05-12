@@ -2,11 +2,14 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Filter, Loader2, Package, Plus, Search, X } from "lucide-react";
 import { toast } from "sonner";
+import { AdminEmptyState } from "@/components/admin/AdminEmptyState";
+import { AdminTableWrap } from "@/components/admin/AdminTableWrap";
 import { PageHeader } from "@/components/admin/PageHeader";
 import { CustomerProfileSheet } from "@/components/admin/CustomerProfileSheet";
 import {
   AssignPackageDialog,
   type AssignPackageTarget,
+  type AssignedCreditRow,
 } from "@/components/admin/AssignPackageDialog";
 import {
   Dialog,
@@ -16,8 +19,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -27,6 +33,7 @@ import {
 } from "@/components/ui/select";
 import { getUser, supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/admin/customers")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -59,6 +66,17 @@ type AllRole = (typeof ALL_ROLES)[number];
 
 function isAllRole(r: string): r is AllRole {
   return (ALL_ROLES as readonly string[]).includes(r);
+}
+
+function isValidEmail(v: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
+}
+
+function mergeCreditsAfterAssign(prev: number, row: AssignedCreditRow): number {
+  if (row.is_unlimited) return 999;
+  const add = row.credits_remaining ?? 0;
+  if (prev >= 999) return 999;
+  return prev + add;
 }
 
 const ROLE_LABEL: Record<string, string> = {
@@ -102,6 +120,17 @@ function CustomersPage() {
   const [viewerRole, setViewerRole] = useState<string | null>(null);
   const [assignOpen, setAssignOpen] = useState(false);
   const [assignTarget, setAssignTarget] = useState<AssignPackageTarget | null>(null);
+  const [bulkAssignTargets, setBulkAssignTargets] = useState<AssignPackageTarget[] | null>(null);
+  const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
+  const [messageOpen, setMessageOpen] = useState(false);
+  const [messageSubject, setMessageSubject] = useState("");
+  const [messageBody, setMessageBody] = useState("");
+  const [messageSending, setMessageSending] = useState(false);
+  const [addFieldErrors, setAddFieldErrors] = useState<{
+    firstName?: string;
+    lastName?: string;
+    email?: string;
+  }>({});
   const [addOpen, setAddOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [firstName, setFirstName] = useState("");
@@ -217,6 +246,7 @@ function CustomersPage() {
     });
 
     setMembers(rows);
+    setSelectedMemberIds([]);
     setLoading(false);
   }, []);
 
@@ -268,6 +298,8 @@ function CustomersPage() {
     chipJoinedMonth,
   ]);
 
+  const selectedSet = useMemo(() => new Set(selectedMemberIds), [selectedMemberIds]);
+
   const resetAddForm = () => {
     setFirstName("");
     setLastName("");
@@ -275,13 +307,139 @@ function CustomersPage() {
     setPhone("");
     setDob("");
     setRole("customer");
+    setAddFieldErrors({});
+  };
+
+  const toggleMemberSelected = (id: string) => {
+    setSelectedMemberIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  };
+
+  const allFilteredSelected =
+    filtered.length > 0 && filtered.every((m) => selectedSet.has(m.id));
+  const someFilteredSelected = filtered.some((m) => selectedSet.has(m.id));
+
+  const toggleSelectAllFiltered = () => {
+    if (allFilteredSelected) {
+      const drop = new Set(filtered.map((m) => m.id));
+      setSelectedMemberIds((prev) => prev.filter((id) => !drop.has(id)));
+    } else {
+      setSelectedMemberIds((prev) => {
+        const next = new Set(prev);
+        for (const m of filtered) next.add(m.id);
+        return Array.from(next);
+      });
+    }
+  };
+
+  const clearMemberSelection = () => setSelectedMemberIds([]);
+
+  const selectedMemberRows = useMemo(
+    () => members.filter((m) => selectedSet.has(m.id)),
+    [members, selectedSet],
+  );
+
+  const openBulkAssignPackage = () => {
+    const targets: AssignPackageTarget[] = selectedMemberRows.map((m) => {
+      const em = m.email.trim() === "—" || !m.email.trim() ? null : m.email;
+      return {
+        profileId: m.id,
+        displayName: m.name,
+        email: em,
+        firstName: m.name.split(/\s+/)[0] ?? null,
+      };
+    });
+    if (targets.length === 0) return;
+    setAssignTarget(null);
+    setBulkAssignTargets(targets);
+    setAssignOpen(true);
+  };
+
+  const exportSelectedMembersCsv = () => {
+    const rows = selectedMemberRows;
+    const esc = (s: string) => `"${String(s).replace(/"/g, '""')}"`;
+    const header = ["Name", "Email", "Phone", "Role", "Credits"].join(",");
+    const body = rows
+      .map((m) =>
+        [esc(m.name), esc(m.email), esc(m.phone), esc(m.role), String(m.credits >= 999 ? "Unlimited" : m.credits)].join(
+          ",",
+        ),
+      )
+      .join("\n");
+    const csv = `${header}\n${body}`;
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `one-flow-members-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success(`Exported ${rows.length} member${rows.length === 1 ? "" : "s"} to CSV`);
+  };
+
+  const sendBulkStudioMessages = async () => {
+    if (!messageSubject.trim() && !messageBody.trim()) {
+      toast.error("Add a subject or message body.");
+      return;
+    }
+    const user = await getUser();
+    setMessageSending(true);
+    let ok = 0;
+    let failed = 0;
+    for (const id of selectedMemberIds) {
+      const { error: msgErr } = await supabase.from("studio_messages").insert({
+        from_profile_id: user?.id ?? null,
+        to_profile_id: id,
+        subject: messageSubject.trim() || null,
+        body: messageBody.trim(),
+        message_type: "direct",
+      });
+      if (msgErr) {
+        failed += 1;
+        console.error(msgErr);
+        continue;
+      }
+      await supabase.from("notifications").insert({
+        profile_id: id,
+        type: "message",
+        title: messageSubject.trim() || "New message",
+        body: messageBody.trim().slice(0, 200) || null,
+      });
+      ok += 1;
+    }
+    setMessageSending(false);
+    setMessageOpen(false);
+    setMessageSubject("");
+    setMessageBody("");
+    if (failed === 0) {
+      toast.success(
+        ok === 1
+          ? `Message sent to ${selectedMemberRows.find((m) => m.id === selectedMemberIds[0])?.name ?? "1 member"}`
+          : `Message sent to ${ok} members`,
+      );
+    } else {
+      toast.error(`${ok} sent, ${failed} failed — check permissions or try again.`);
+    }
+  };
+
+  const bumpMemberCreditsAfterAssign = (profileId: string, row: AssignedCreditRow) => {
+    setMembers((prev) =>
+      prev.map((m) =>
+        m.id === profileId ? { ...m, credits: mergeCreditsAfterAssign(m.credits, row) } : m,
+      ),
+    );
   };
 
   const submitAddMember = async () => {
-    if (!firstName.trim() || !lastName.trim() || !email.trim()) {
-      toast.error("First name, last name, and email are required.");
-      return;
-    }
+    const err: typeof addFieldErrors = {};
+    if (!firstName.trim()) err.firstName = "First name is required.";
+    if (!lastName.trim()) err.lastName = "Last name is required.";
+    if (!email.trim()) err.email = "Email is required.";
+    else if (!isValidEmail(email)) err.email = "Enter a valid email address.";
+    setAddFieldErrors(err);
+    if (Object.keys(err).length > 0) return;
+
     setSaving(true);
     const { data, error } = await supabase.functions.invoke<{
       success?: boolean;
@@ -315,9 +473,7 @@ function CustomersPage() {
     }
 
     const displayName = data?.full_name ?? `${firstName.trim()} ${lastName.trim()}`.trim();
-    toast.success("Member invited", {
-      description: `${displayName} will receive an email to set their password.`,
-    });
+    toast.success(`${displayName} invited — they will receive an email to set their password.`);
     setAddOpen(false);
     resetAddForm();
     await load();
@@ -325,6 +481,7 @@ function CustomersPage() {
   };
 
   const saveListMemberRole = async (memberId: string, previous: AllRole, next: AllRole) => {
+    const memberName = members.find((m) => m.id === memberId)?.name ?? "Member";
     setMembers((prev) => prev.map((m) => (m.id === memberId ? { ...m, role: next } : m)));
     const { error } = await supabase.from("profiles").update({ role: next }).eq("id", memberId);
     if (error) {
@@ -333,7 +490,7 @@ function CustomersPage() {
       setMembers((prev) => prev.map((m) => (m.id === memberId ? { ...m, role: previous } : m)));
       return;
     }
-    toast.success("Role updated");
+    toast.success(`${ROLE_LABEL[next] ?? next} role saved for ${memberName}`);
   };
 
   const onListRoleChange = (memberId: string, currentRole: string, value: string) => {
@@ -345,14 +502,14 @@ function CustomersPage() {
   };
 
   return (
-    <div>
+    <div className={cn(selectedMemberIds.length > 0 && "pb-28")}>
       <PageHeader
         title="Customers"
         description={loading ? "Loading…" : `${members.length} members`}
         actions={
           <Button
             type="button"
-            className="gap-2"
+            className="w-full gap-2 bg-[#a3b693] text-white hover:bg-[#8fa67d] sm:w-auto"
             onClick={() => {
               resetAddForm();
               setAddOpen(true);
@@ -383,18 +540,32 @@ function CustomersPage() {
                 <Input
                   id="am-first"
                   value={firstName}
-                  onChange={(e) => setFirstName(e.target.value)}
+                  onChange={(e) => {
+                    setFirstName(e.target.value);
+                    if (addFieldErrors.firstName) setAddFieldErrors((e) => ({ ...e, firstName: undefined }));
+                  }}
                   autoComplete="given-name"
+                  aria-invalid={Boolean(addFieldErrors.firstName)}
                 />
+                {addFieldErrors.firstName ? (
+                  <p className="mt-1 text-xs text-destructive">{addFieldErrors.firstName}</p>
+                ) : null}
               </div>
               <div>
                 <Label htmlFor="am-last">Last name</Label>
                 <Input
                   id="am-last"
                   value={lastName}
-                  onChange={(e) => setLastName(e.target.value)}
+                  onChange={(e) => {
+                    setLastName(e.target.value);
+                    if (addFieldErrors.lastName) setAddFieldErrors((e) => ({ ...e, lastName: undefined }));
+                  }}
                   autoComplete="family-name"
+                  aria-invalid={Boolean(addFieldErrors.lastName)}
                 />
+                {addFieldErrors.lastName ? (
+                  <p className="mt-1 text-xs text-destructive">{addFieldErrors.lastName}</p>
+                ) : null}
               </div>
             </div>
             <div>
@@ -403,9 +574,16 @@ function CustomersPage() {
                 id="am-email"
                 type="email"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  if (addFieldErrors.email) setAddFieldErrors((e) => ({ ...e, email: undefined }));
+                }}
                 autoComplete="email"
+                aria-invalid={Boolean(addFieldErrors.email)}
               />
+              {addFieldErrors.email ? (
+                <p className="mt-1 text-xs text-destructive">{addFieldErrors.email}</p>
+              ) : null}
             </div>
             <div>
               <Label htmlFor="am-phone">Phone</Label>
@@ -438,7 +616,12 @@ function CustomersPage() {
             <Button type="button" variant="outline" onClick={() => setAddOpen(false)}>
               Cancel
             </Button>
-            <Button type="button" disabled={saving} onClick={() => void submitAddMember()}>
+            <Button
+              type="button"
+              disabled={saving}
+              className="w-full bg-[#a3b693] text-white hover:bg-[#8fa67d] sm:w-auto"
+              onClick={() => void submitAddMember()}
+            >
               {saving ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -454,14 +637,74 @@ function CustomersPage() {
 
       <AssignPackageDialog
         open={assignOpen}
-        onOpenChange={setAssignOpen}
+        onOpenChange={(o) => {
+          setAssignOpen(o);
+          if (!o) {
+            setBulkAssignTargets(null);
+            setAssignTarget(null);
+          }
+        }}
         target={assignTarget}
+        bulkTargets={bulkAssignTargets}
         canAssign={canManageCustomers}
+        onCreditInserted={(row, profileId) => bumpMemberCreditsAfterAssign(profileId, row)}
         onAssigned={() => void load()}
       />
 
-      <div className="mb-4 space-y-3">
-        <div className="relative max-w-md">
+      <Dialog open={messageOpen} onOpenChange={setMessageOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Send message</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Sending to {selectedMemberIds.length} member{selectedMemberIds.length === 1 ? "" : "s"}.
+          </p>
+          <div className="grid gap-3 py-2">
+            <div>
+              <Label htmlFor="bulk-msg-subject">Subject</Label>
+              <Input
+                id="bulk-msg-subject"
+                value={messageSubject}
+                onChange={(e) => setMessageSubject(e.target.value)}
+                placeholder="Optional subject line"
+              />
+            </div>
+            <div>
+              <Label htmlFor="bulk-msg-body">Message</Label>
+              <Textarea
+                id="bulk-msg-body"
+                value={messageBody}
+                onChange={(e) => setMessageBody(e.target.value)}
+                rows={5}
+                placeholder="Write your message…"
+              />
+            </div>
+          </div>
+          <DialogFooter className="flex-col gap-2 sm:flex-row">
+            <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => setMessageOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={messageSending}
+              className="w-full bg-[#a3b693] text-white hover:bg-[#8fa67d] sm:w-auto"
+              onClick={() => void sendBulkStudioMessages()}
+            >
+              {messageSending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Sending…
+                </>
+              ) : (
+                "Send to all"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <div className="mb-4 flex flex-col gap-3 space-y-3 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between sm:space-y-0">
+        <div className="relative w-full max-w-md">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input
             value={q}
@@ -470,8 +713,8 @@ function CustomersPage() {
             className="w-full rounded-lg border border-border bg-card py-2.5 pl-9 pr-3 text-sm outline-none focus:border-primary"
           />
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/40 px-2 py-1 text-xs font-semibold text-muted-foreground">
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
+          <span className="inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-border bg-muted/40 px-2 py-1 text-xs font-semibold text-muted-foreground sm:w-auto sm:justify-start">
             <Filter className="h-3.5 w-3.5" aria-hidden />
             Filters
             {chipFilterCount > 0 ? (
@@ -485,7 +728,7 @@ function CustomersPage() {
               type="button"
               variant="ghost"
               size="sm"
-              className="h-8 gap-1 text-xs text-muted-foreground"
+              className="h-8 w-full gap-1 text-xs text-muted-foreground sm:w-auto"
               onClick={clearChipFilters}
             >
               <X className="h-3.5 w-3.5" aria-hidden />
@@ -493,7 +736,7 @@ function CustomersPage() {
             </Button>
           ) : null}
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex w-full flex-wrap gap-2">
           {(
             [
               ["Has credits", chipHasCredits, () => setChipHasCredits((v) => !v)] as const,
@@ -520,103 +763,232 @@ function CustomersPage() {
         </div>
       </div>
 
-      <div className="min-w-0 overflow-x-auto rounded-2xl border border-border bg-card">
-        {loading ? (
-          <div className="p-10 text-center text-sm text-muted-foreground">Loading…</div>
-        ) : (
-          <table className="w-full min-w-[960px] text-sm">
-            <thead className="bg-muted/40">
-              <tr className="text-left text-xs uppercase tracking-wider text-muted-foreground">
-                <th className="px-5 py-3 font-medium">Name</th>
-                <th className="px-5 py-3 font-medium">Email</th>
-                <th className="px-5 py-3 font-medium">Phone</th>
-                <th className="px-5 py-3 font-medium">Role</th>
-                <th className="px-5 py-3 font-medium">Plan</th>
-                <th className="px-5 py-3 font-medium">Credits</th>
-                <th className="px-5 py-3 font-medium">Last visit</th>
-                <th className="px-5 py-3 font-medium">Status</th>
-                <th className="px-5 py-3 font-medium">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((m) => (
-                <tr key={m.id} className="border-t border-border hover:bg-muted/20">
-                  <td className="max-w-[160px] px-5 py-3 sm:max-w-xs md:max-w-md">
-                    <button
-                      type="button"
-                      className="truncate text-left font-semibold text-primary underline-offset-2 hover:underline"
-                      onClick={() => openProfileSheet(m.id)}
-                    >
-                      {m.name}
-                    </button>
-                  </td>
-                  <td className="max-w-[200px] truncate px-5 py-3 text-muted-foreground sm:max-w-xs md:max-w-md">
-                    {m.email}
-                  </td>
-                  <td className="px-5 py-3 text-muted-foreground">{m.phone}</td>
-                  <td className="px-5 py-3" onClick={(e) => e.stopPropagation()}>
-                    <Select
-                      key={`${m.id}-${m.role}`}
-                      value={m.role}
-                      onValueChange={(v) => onListRoleChange(m.id, m.role, v)}
-                      disabled={!canManageCustomers}
-                    >
-                      <SelectTrigger className="h-8 w-[140px] text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {ALL_ROLES.map((r) => (
-                          <SelectItem key={r} value={r}>
-                            {ROLE_LABEL[r]}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </td>
-                  <td className="px-5 py-3">{m.plan}</td>
-                  <td className="px-5 py-3 tabular-nums">{m.credits >= 999 ? "∞" : m.credits}</td>
-                  <td className="px-5 py-3 text-muted-foreground">{m.lastVisit}</td>
-                  <td className="px-5 py-3">
-                    <span
-                      className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
-                        m.status === "active"
-                          ? "bg-success/20 text-success-foreground"
-                          : m.status === "trial"
-                            ? "bg-warning/30 text-warning-foreground"
-                            : "bg-muted text-muted-foreground"
-                      }`}
-                    >
-                      {m.status}
-                    </span>
-                  </td>
-                  <td className="px-5 py-3">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="gap-1.5"
-                      disabled={!canManageCustomers}
-                      onClick={() => {
-                        const em = m.email.trim() === "—" || !m.email.trim() ? null : m.email;
-                        setAssignTarget({
-                          profileId: m.id,
-                          displayName: m.name,
-                          email: em,
-                          firstName: m.name.split(/\s+/)[0] ?? null,
-                        });
-                        setAssignOpen(true);
-                      }}
-                    >
-                      <Package className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                      Assign package
-                    </Button>
-                  </td>
+      <AdminTableWrap className="mb-4">
+        <div className="rounded-2xl border border-border bg-card">
+          {loading ? (
+            <table className="w-full min-w-[960px] text-sm">
+              <thead className="bg-muted/40">
+                <tr>
+                  <th className="w-12 px-3 py-3" />
+                  <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                    Name
+                  </th>
+                  <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                    Email
+                  </th>
+                  <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                    Phone
+                  </th>
+                  <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                    Role
+                  </th>
+                  <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                    Credits
+                  </th>
+                  <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                    Actions
+                  </th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+              </thead>
+              <tbody>
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <tr key={i} className="border-t border-border">
+                    <td className="px-3 py-3">
+                      <Skeleton className="h-4 w-4" />
+                    </td>
+                    <td className="px-5 py-3">
+                      <Skeleton className="h-4 w-32" />
+                    </td>
+                    <td className="px-5 py-3">
+                      <Skeleton className="h-4 w-40" />
+                    </td>
+                    <td className="px-5 py-3">
+                      <Skeleton className="h-4 w-24" />
+                    </td>
+                    <td className="px-5 py-3">
+                      <Skeleton className="h-8 w-[140px]" />
+                    </td>
+                    <td className="px-5 py-3">
+                      <Skeleton className="h-4 w-8" />
+                    </td>
+                    <td className="px-5 py-3">
+                      <Skeleton className="h-9 w-full max-w-[140px]" />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : members.length === 0 ? (
+            <AdminEmptyState
+              title="No members yet"
+              actionLabel="Add member"
+              onAction={() => {
+                resetAddForm();
+                setAddOpen(true);
+              }}
+            />
+          ) : filtered.length === 0 ? (
+            <div className="flex flex-col items-center gap-4 px-6 py-14 text-center">
+              <p className="text-sm text-muted-foreground">No members match your filters.</p>
+              <Button type="button" variant="outline" onClick={clearChipFilters}>
+                Clear filters
+              </Button>
+            </div>
+          ) : (
+            <table className="w-full min-w-[960px] text-sm">
+              <thead className="bg-muted/40">
+                <tr className="text-left text-xs uppercase tracking-wider text-muted-foreground">
+                  <th className="w-12 px-3 py-3">
+                    <Checkbox
+                      checked={
+                        allFilteredSelected ? true : someFilteredSelected ? "indeterminate" : false
+                      }
+                      onCheckedChange={() => toggleSelectAllFiltered()}
+                      aria-label="Select all members in this list"
+                    />
+                  </th>
+                  <th className="px-5 py-3 font-medium">Name</th>
+                  <th className="px-5 py-3 font-medium">Email</th>
+                  <th className="px-5 py-3 font-medium">Phone</th>
+                  <th className="px-5 py-3 font-medium">Role</th>
+                  <th className="px-5 py-3 font-medium">Plan</th>
+                  <th className="px-5 py-3 font-medium">Credits</th>
+                  <th className="px-5 py-3 font-medium">Last visit</th>
+                  <th className="px-5 py-3 font-medium">Status</th>
+                  <th className="px-5 py-3 font-medium">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((m) => (
+                  <tr key={m.id} className="border-t border-border hover:bg-muted/20">
+                    <td className="px-3 py-3 align-middle">
+                      <Checkbox
+                        checked={selectedSet.has(m.id)}
+                        onCheckedChange={(v) => {
+                          setSelectedMemberIds((prev) => {
+                            if (v === true) return prev.includes(m.id) ? prev : [...prev, m.id];
+                            return prev.filter((x) => x !== m.id);
+                          });
+                        }}
+                        aria-label={`Select ${m.name}`}
+                      />
+                    </td>
+                    <td className="max-w-[160px] px-5 py-3 sm:max-w-xs md:max-w-md">
+                      <button
+                        type="button"
+                        className="truncate text-left font-semibold text-primary underline-offset-2 hover:underline"
+                        onClick={() => openProfileSheet(m.id)}
+                      >
+                        {m.name}
+                      </button>
+                    </td>
+                    <td className="max-w-[200px] truncate px-5 py-3 text-muted-foreground sm:max-w-xs md:max-w-md">
+                      {m.email}
+                    </td>
+                    <td className="px-5 py-3 text-muted-foreground">{m.phone}</td>
+                    <td className="px-5 py-3" onClick={(e) => e.stopPropagation()}>
+                      <Select
+                        key={`${m.id}-${m.role}`}
+                        value={m.role}
+                        onValueChange={(v) => onListRoleChange(m.id, m.role, v)}
+                        disabled={!canManageCustomers}
+                      >
+                        <SelectTrigger className="h-8 w-full max-w-[140px] text-xs sm:w-[140px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {ALL_ROLES.map((r) => (
+                            <SelectItem key={r} value={r}>
+                              {ROLE_LABEL[r]}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </td>
+                    <td className="px-5 py-3">{m.plan}</td>
+                    <td className="px-5 py-3 tabular-nums">{m.credits >= 999 ? "∞" : m.credits}</td>
+                    <td className="px-5 py-3 text-muted-foreground">{m.lastVisit}</td>
+                    <td className="px-5 py-3">
+                      <span
+                        className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                          m.status === "active"
+                            ? "bg-success/20 text-success-foreground"
+                            : m.status === "trial"
+                              ? "bg-warning/30 text-warning-foreground"
+                              : "bg-muted text-muted-foreground"
+                        }`}
+                      >
+                        {m.status}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="w-full gap-1.5 sm:w-auto"
+                        disabled={!canManageCustomers}
+                        onClick={() => {
+                          const em = m.email.trim() === "—" || !m.email.trim() ? null : m.email;
+                          setBulkAssignTargets(null);
+                          setAssignTarget({
+                            profileId: m.id,
+                            displayName: m.name,
+                            email: em,
+                            firstName: m.name.split(/\s+/)[0] ?? null,
+                          });
+                          setAssignOpen(true);
+                        }}
+                      >
+                        <Package className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                        Assign package
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </AdminTableWrap>
+
+      {selectedMemberIds.length > 0 ? (
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 px-4 py-3 shadow-[0_-4px_24px_rgba(0,0,0,0.08)] backdrop-blur supports-[padding:max(0px)]:pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+          <div className="mx-auto flex max-w-6xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-center text-sm font-medium text-foreground sm:text-left">
+              {selectedMemberIds.length} member{selectedMemberIds.length === 1 ? "" : "s"} selected
+            </p>
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full sm:w-auto"
+                disabled={!canManageCustomers}
+                onClick={() => {
+                  if (!canManageCustomers) return;
+                  openBulkAssignPackage();
+                }}
+              >
+                Assign package
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full sm:w-auto"
+                onClick={() => setMessageOpen(true)}
+              >
+                Send message
+              </Button>
+              <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={exportSelectedMembersCsv}>
+                Export selected
+              </Button>
+              <Button type="button" variant="ghost" className="w-full sm:w-auto" onClick={clearMemberSelection}>
+                Clear selection
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

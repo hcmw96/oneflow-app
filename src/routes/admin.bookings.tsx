@@ -431,10 +431,13 @@ function BookingsPage() {
     return [...filtered].sort((s1, s2) => {
       const r1 = bookingsByClass.get(s1.id) ?? [];
       const r2 = bookingsByClass.get(s2.id) ?? [];
-      const minName = (rows: AdminBookingRow[]) =>
+      const minName = (rows: AdminBookingRow[]): string =>
         rows.length === 0
           ? "\uffff"
-          : Math.min(...rows.map((b) => b.memberFull.toLowerCase()));
+          : rows.reduce((best, b) => {
+              const n = b.memberFull.toLowerCase();
+              return n < best ? n : best;
+            }, rows[0]!.memberFull.toLowerCase());
       return minName(r1).localeCompare(minName(r2));
     });
   }, [daySessionsFiltered, bookingsByClass, qNorm, bookingsSort]);

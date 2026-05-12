@@ -6,6 +6,7 @@ import { getUser, supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import logo from "@/assets/oneflow-logo.webp";
+import { AdminGlobalSearch } from "@/components/admin/AdminGlobalSearch";
 
 type AdminProfile = {
   email: string | null;
@@ -89,6 +90,16 @@ export function AdminShell({ children }: { children: ReactNode }) {
           </Link>
         </div>
 
+        {!collapsed ? (
+          <div className="border-b border-sidebar-border px-2 py-2">
+            <AdminGlobalSearch />
+          </div>
+        ) : (
+          <div className="flex justify-center border-b border-sidebar-border py-2">
+            <AdminGlobalSearch className="h-9 w-9 min-w-9 max-w-none justify-center px-0 [&_span]:sr-only [&_kbd]:hidden" />
+          </div>
+        )}
+
         <AdminNav collapsed={collapsed} role={profile?.role} />
 
         <div className="mt-auto flex flex-col border-t border-sidebar-border">
@@ -159,6 +170,9 @@ export function AdminShell({ children }: { children: ReactNode }) {
                   <span className="font-display text-base font-semibold">One.flow</span>
                 </SheetTitle>
               </SheetHeader>
+              <div className="border-b border-sidebar-border px-3 py-2">
+                <AdminGlobalSearch className="max-w-none border-border bg-background text-foreground hover:bg-muted" />
+              </div>
               <div className="flex h-[calc(100vh-65px)] flex-col">
                 <AdminNav
                   collapsed={false}

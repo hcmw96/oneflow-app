@@ -270,6 +270,7 @@ function StaffPage() {
       director: 0,
       management: 0,
       guide: 0,
+      front_desk: 0,
       boh: 0,
       marketing: 0,
       team: 0,

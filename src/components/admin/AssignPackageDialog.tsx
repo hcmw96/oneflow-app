@@ -13,6 +13,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -73,15 +83,36 @@ function productCreditsLine(count: number, unlimited: boolean): string {
   return `${count} credits are now available and ready to use.`;
 }
 
+export type AssignedCreditRow = {
+  id: string;
+  product_name: string | null;
+  credits_remaining: number | null;
+  credits_total: number | null;
+  is_unlimited: boolean | null;
+  expires_at: string | null;
+};
+
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   target: AssignPackageTarget | null;
+  /** When set, assigns the same package to every target (target is ignored). */
+  bulkTargets?: AssignPackageTarget[] | null;
   canAssign: boolean;
   onAssigned?: () => void;
+  /** Called after each successful insert (for live profile sheet credits). */
+  onCreditInserted?: (row: AssignedCreditRow, profileId: string) => void;
 };
 
-export function AssignPackageDialog({ open, onOpenChange, target, canAssign, onAssigned }: Props) {
+export function AssignPackageDialog({
+  open,
+  onOpenChange,
+  target,
+  bulkTargets,
+  canAssign,
+  onAssigned,
+  onCreditInserted,
+}: Props) {
   const [tab, setTab] = useState<"existing" | "custom">("existing");
   const [products, setProducts] = useState<ProductPick[]>([]);
   const [productsLoading, setProductsLoading] = useState(false);
@@ -97,7 +128,20 @@ export function AssignPackageDialog({ open, onOpenChange, target, canAssign, onA
   const [customNote, setCustomNote] = useState("");
 
   const [submitting, setSubmitting] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmTab, setConfirmTab] = useState<"existing" | "custom">("existing");
   const prevOpenRef = useRef(false);
+
+  const assignees = useMemo(() => {
+    if (bulkTargets && bulkTargets.length > 0) return bulkTargets;
+    if (target) return [target];
+    return [];
+  }, [bulkTargets, target]);
+
+  const assigneeKey = useMemo(
+    () => assignees.map((a) => a.profileId).slice().sort().join("|"),
+    [assignees],
+  );
 
   const resetForms = useCallback(() => {
     setTab("existing");
@@ -110,6 +154,7 @@ export function AssignPackageDialog({ open, onOpenChange, target, canAssign, onA
     setCustomValidityDays("");
     setCustomClassTypes([]);
     setCustomNote("");
+    setConfirmOpen(false);
   }, []);
 
   useEffect(() => {
@@ -124,7 +169,7 @@ export function AssignPackageDialog({ open, onOpenChange, target, canAssign, onA
   }, [open, resetForms]);
 
   useEffect(() => {
-    if (!open || !target) return;
+    if (!open || assignees.length === 0) return;
 
     void (async () => {
       setProducts([]);
@@ -156,7 +201,7 @@ export function AssignPackageDialog({ open, onOpenChange, target, canAssign, onA
       }
       setProductsLoading(false);
     })();
-  }, [open, target?.profileId]);
+  }, [open, assigneeKey]);
 
   const productsByGroup = useMemo(
     () =>
@@ -205,7 +250,7 @@ export function AssignPackageDialog({ open, onOpenChange, target, canAssign, onA
   };
 
   const assignExisting = async () => {
-    if (!target || !canAssign) return;
+    if (!canAssign || assignees.length === 0) return;
     const product = products.find((p) => p.id === selectedProductId);
     if (!product) {
       toast.error("Select a product.");
@@ -223,49 +268,69 @@ export function AssignPackageDialog({ open, onOpenChange, target, canAssign, onA
     const total = isUnlimited ? rawCount : Math.trunc(rawCount);
 
     setSubmitting(true);
-    const { error } = await supabase.from("user_credits").insert({
-      profile_id: target.profileId,
-      product_id: product.id,
-      product_name: product.name,
-      category: product.category ?? "yoga",
-      allowed_class_types: product.allowed_class_types?.length
-        ? product.allowed_class_types
-        : [],
-      credits_total: total,
-      credits_remaining: total,
-      is_unlimited: isUnlimited,
-      expires_at: product.validity_days
-        ? new Date(Date.now() + Math.trunc(product.validity_days) * 86400000).toISOString()
-        : null,
-      yoco_payment_id: "manual_assignment",
-    });
-    setSubmitting(false);
+    let failed = 0;
+    for (const t of assignees) {
+      const { data: inserted, error } = await supabase
+        .from("user_credits")
+        .insert({
+          profile_id: t.profileId,
+          product_id: product.id,
+          product_name: product.name,
+          category: product.category ?? "yoga",
+          allowed_class_types: product.allowed_class_types?.length
+            ? product.allowed_class_types
+            : [],
+          credits_total: total,
+          credits_remaining: total,
+          is_unlimited: isUnlimited,
+          expires_at: product.validity_days
+            ? new Date(Date.now() + Math.trunc(product.validity_days) * 86400000).toISOString()
+            : null,
+          yoco_payment_id: "manual_assignment",
+        })
+        .select("id, product_name, credits_remaining, credits_total, is_unlimited, expires_at")
+        .maybeSingle();
 
-    if (error) {
-      console.error(error);
-      toast.error(supabaseErrorMessage(error, "Could not assign package"));
-      return;
+      if (error) {
+        console.error(error);
+        failed += 1;
+        continue;
+      }
+      if (inserted) {
+        const row = inserted as AssignedCreditRow;
+        onCreditInserted?.(row, t.profileId);
+      }
+
+      const first =
+        (t.firstName?.trim() || t.displayName.split(/\s+/)[0] || "there") as string;
+      await sendPackageEmail(
+        t.email,
+        first,
+        product.name,
+        productCreditsLine(total, isUnlimited),
+        existingNote,
+      );
     }
+    setSubmitting(false);
+    setConfirmOpen(false);
 
-    const first =
-      (target.firstName?.trim() ||
-        target.displayName.split(/\s+/)[0] ||
-        "there") as string;
-    await sendPackageEmail(
-      target.email,
-      first,
-      product.name,
-      productCreditsLine(total, isUnlimited),
-      existingNote,
-    );
-
-    toast.success("Package assigned");
+    if (failed > 0) {
+      toast.error(`Could not assign to ${failed} member(s). Others were saved.`);
+    } else {
+      const names = assignees.map((a) => a.displayName).join(", ");
+      toast.success(
+        assignees.length === 1
+          ? `${product.name} assigned to ${assignees[0]!.displayName}`
+          : `${product.name} assigned to ${assignees.length} members`,
+        { description: assignees.length === 1 ? undefined : names.slice(0, 120) },
+      );
+    }
     onOpenChange(false);
     onAssigned?.();
   };
 
   const assignCustom = async () => {
-    if (!target || !canAssign) return;
+    if (!canAssign || assignees.length === 0) return;
     const name = customName.trim();
     if (!name) {
       toast.error("Package name is required.");
@@ -293,51 +358,129 @@ export function AssignPackageDialog({ open, onOpenChange, target, canAssign, onA
     const total = isUnlimited ? UNLIMITED_MANUAL_TOTAL : Math.trunc(Number(customCredits));
 
     setSubmitting(true);
-    const { error } = await supabase.from("user_credits").insert({
-      profile_id: target.profileId,
-      product_id: null,
-      product_name: name,
-      category: customCategory,
-      allowed_class_types: customClassTypes,
-      credits_total: total,
-      credits_remaining: total,
-      is_unlimited: isUnlimited,
-      expires_at: expiresAt,
-      yoco_payment_id: "manual_assignment",
-    });
-    setSubmitting(false);
+    let failed = 0;
+    for (const t of assignees) {
+      const { data: inserted, error } = await supabase
+        .from("user_credits")
+        .insert({
+          profile_id: t.profileId,
+          product_id: null,
+          product_name: name,
+          category: customCategory,
+          allowed_class_types: customClassTypes,
+          credits_total: total,
+          credits_remaining: total,
+          is_unlimited: isUnlimited,
+          expires_at: expiresAt,
+          yoco_payment_id: "manual_assignment",
+        })
+        .select("id, product_name, credits_remaining, credits_total, is_unlimited, expires_at")
+        .maybeSingle();
 
-    if (error) {
-      console.error(error);
-      toast.error(supabaseErrorMessage(error, "Could not assign package"));
-      return;
+      if (error) {
+        console.error(error);
+        failed += 1;
+        continue;
+      }
+      if (inserted) {
+        onCreditInserted?.(inserted as AssignedCreditRow, t.profileId);
+      }
+
+      const first = (t.firstName?.trim() || t.displayName.split(/\s+/)[0] || "there") as string;
+      await sendPackageEmail(
+        t.email,
+        first,
+        name,
+        isUnlimited
+          ? "Unlimited credits are now available and ready to use."
+          : productCreditsLine(total, false),
+        customNote,
+      );
     }
+    setSubmitting(false);
+    setConfirmOpen(false);
 
-    const first =
-      (target.firstName?.trim() ||
-        target.displayName.split(/\s+/)[0] ||
-        "there") as string;
-    await sendPackageEmail(
-      target.email,
-      first,
-      name,
-      isUnlimited
-        ? "Unlimited credits are now available and ready to use."
-        : productCreditsLine(total, false),
-      customNote,
-    );
-
-    toast.success("Package assigned");
+    if (failed > 0) {
+      toast.error(`Could not assign to ${failed} member(s). Others were saved.`);
+    } else {
+      toast.success(
+        assignees.length === 1
+          ? `${name} assigned to ${assignees[0]!.displayName}`
+          : `${name} assigned to ${assignees.length} members`,
+      );
+    }
     onOpenChange(false);
     onAssigned?.();
   };
 
-  if (!target) return null;
+  const primaryAssignee = assignees[0];
+
+  const existingConfirmCopy = useMemo(() => {
+    const product = products.find((p) => p.id === selectedProductId);
+    if (!product || !primaryAssignee) return "";
+    const raw =
+      typeof product.credit_count === "number"
+        ? product.credit_count
+        : Number(product.credit_count ?? 0);
+    const unlimited = raw >= UNLIMITED_PRODUCT_THRESHOLD;
+    const creditsPart = unlimited ? "Unlimited credits" : `${Math.trunc(raw)} credits`;
+    const who =
+      assignees.length === 1
+        ? primaryAssignee.displayName
+        : `${primaryAssignee.displayName} and ${assignees.length - 1} other ${assignees.length === 2 ? "member" : "members"}`;
+    return `This will add ${product.name} (${creditsPart}) to ${who} at no charge.`;
+  }, [products, selectedProductId, assignees, primaryAssignee]);
+
+  const customConfirmCopy = useMemo(() => {
+    const name = customName.trim();
+    if (!name || !primaryAssignee) return "";
+    const totalLabel = customUnlimited ? "Unlimited" : `${Math.trunc(Number(customCredits) || 0)} credits`;
+    const who =
+      assignees.length === 1
+        ? primaryAssignee.displayName
+        : `${primaryAssignee.displayName} and ${assignees.length - 1} other ${assignees.length === 2 ? "member" : "members"}`;
+    return `This will add ${name} (${totalLabel}) to ${who} at no charge.`;
+  }, [customName, customUnlimited, customCredits, assignees, primaryAssignee]);
+
+  const openAssignConfirm = (kind: "existing" | "custom") => {
+    if (kind === "existing") {
+      if (!selectedProductId) {
+        toast.error("Select a product.");
+        return;
+      }
+    } else {
+      const name = customName.trim();
+      if (!name) {
+        toast.error("Package name is required.");
+        return;
+      }
+      if (!customUnlimited) {
+        const n = Math.trunc(Number(customCredits));
+        if (!Number.isFinite(n) || n < 1) {
+          toast.error("Enter a valid number of credits (at least 1).");
+          return;
+        }
+      }
+      const vd = customValidityDays.trim();
+      if (vd) {
+        const days = Math.trunc(Number(vd));
+        if (!Number.isFinite(days) || days < 1) {
+          toast.error("Validity days must be a positive number or blank.");
+          return;
+        }
+      }
+    }
+    setConfirmTab(kind);
+    setConfirmOpen(true);
+  };
+
+  if (assignees.length === 0 || !primaryAssignee) return null;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        className="max-h-[90vh] max-w-lg overflow-y-auto"
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent
+          className="max-h-[90vh] max-w-lg overflow-y-auto"
         onPointerDownOutside={(e) => {
           const t = e.target as HTMLElement;
           if (t.closest("[data-radix-select-content]") || t.closest('[role="listbox"]')) {
@@ -354,7 +497,20 @@ export function AssignPackageDialog({ open, onOpenChange, target, canAssign, onA
         <DialogHeader>
           <DialogTitle>Assign package</DialogTitle>
           <p className="text-left text-sm text-muted-foreground">
-            {target.displayName}
+            {assignees.length > 1 ? (
+              <>
+                <span className="font-medium text-foreground">{assignees.length} members selected</span>
+                <span className="mt-1 block text-xs font-normal text-muted-foreground">
+                  {assignees
+                    .map((a) => a.displayName)
+                    .join(", ")
+                    .slice(0, 140)}
+                  {assignees.map((a) => a.displayName).join(", ").length > 140 ? "…" : ""}
+                </span>
+              </>
+            ) : (
+              primaryAssignee.displayName
+            )}
             <span className="block text-xs">No payment — manual credit grant</span>
           </p>
         </DialogHeader>
@@ -427,7 +583,7 @@ export function AssignPackageDialog({ open, onOpenChange, target, canAssign, onA
                   type="button"
                   disabled={submitting || productsLoading || !selectedProductId}
                   className="bg-[#a3b693] text-white hover:bg-[#8fa67d]"
-                  onClick={() => void assignExisting()}
+                  onClick={() => openAssignConfirm("existing")}
                 >
                   {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                   Assign
@@ -534,7 +690,7 @@ export function AssignPackageDialog({ open, onOpenChange, target, canAssign, onA
                   type="button"
                   disabled={submitting}
                   className="bg-[#a3b693] text-white hover:bg-[#8fa67d]"
-                  onClick={() => void assignCustom()}
+                  onClick={() => openAssignConfirm("custom")}
                 >
                   {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                   Assign
@@ -545,5 +701,40 @@ export function AssignPackageDialog({ open, onOpenChange, target, canAssign, onA
         )}
       </DialogContent>
     </Dialog>
+
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirm assignment</AlertDialogTitle>
+            <AlertDialogDescription className="text-left text-sm text-muted-foreground">
+              {confirmTab === "existing" ? existingConfirmCopy : customConfirmCopy}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel type="button" disabled={submitting}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              type="button"
+              disabled={submitting}
+              className="bg-[#a3b693] text-white hover:bg-[#8fa67d] focus:ring-[#a3b693]"
+              onClick={(e) => {
+                e.preventDefault();
+                void (confirmTab === "existing" ? assignExisting() : assignCustom());
+              }}
+            >
+              {submitting ? (
+                <span className="inline-flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Assigning…
+                </span>
+              ) : (
+                "Confirm"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }

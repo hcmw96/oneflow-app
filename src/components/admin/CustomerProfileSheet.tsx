@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import {
   AssignPackageDialog,
   type AssignPackageTarget,
+  type AssignedCreditRow,
 } from "@/components/admin/AssignPackageDialog";
 import {
   AlertDialog,
@@ -30,6 +31,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/lib/supabase";
@@ -244,7 +246,7 @@ export function CustomerProfileSheet({
       toast.error(supabaseErrorMessage(error, "Could not save notes"));
       return;
     }
-    toast.success("Notes saved");
+    toast.success(`Notes saved for ${fullName}`);
     setProfile((prev) => (prev ? { ...prev, notes: notesDraft.trim() || null } : null));
     onProfileUpdated?.();
   };
@@ -285,7 +287,9 @@ export function CustomerProfileSheet({
     const saved = String((data as { role?: string }).role ?? next).toLowerCase();
     setRoleDraft(saved);
     setProfile((prev) => (prev ? { ...prev, role: saved } : null));
-    toast.success("Role updated");
+    toast.success(
+      `${fullName} is now ${ROLE_LABEL[saved] ?? saved}`,
+    );
     onProfileUpdated?.();
   };
 
@@ -307,17 +311,24 @@ export function CustomerProfileSheet({
 
   const removeCredit = async () => {
     if (!removeCreditId || !canManage) return;
+    const removedId = removeCreditId;
+    const row = credits.find((c) => c.id === removedId);
     setRemovingCredit(true);
-    const { error } = await supabase.from("user_credits").delete().eq("id", removeCreditId);
-    setRemovingCredit(false);
     setRemoveCreditId(null);
+    setCredits((prev) => prev.filter((c) => c.id !== removedId));
+    const { error } = await supabase.from("user_credits").delete().eq("id", removedId);
+    setRemovingCredit(false);
     if (error) {
       console.error("remove credit failed", error);
       toast.error(supabaseErrorMessage(error, "Could not remove credit"));
+      await load();
       return;
     }
-    toast.success("Credit removed");
-    await load();
+    toast.success(
+      row?.product_name
+        ? `Removed ${row.product_name} from ${fullName}'s account`
+        : `Credit removed from ${fullName}'s account`,
+    );
     onProfileUpdated?.();
   };
 
@@ -326,7 +337,7 @@ export function CustomerProfileSheet({
       <Sheet open={open} onOpenChange={onOpenChange}>
         <SheetContent
           side="right"
-          className="flex w-full max-w-2xl flex-col gap-0 overflow-y-auto p-0 sm:max-w-2xl"
+          className="flex h-full w-full max-w-full flex-col gap-0 overflow-y-auto rounded-none border-0 p-0 sm:max-w-2xl sm:rounded-l-2xl"
           onPointerDownOutside={(e) => {
             const t = e.target as HTMLElement;
             if (t.closest("[data-radix-select-content]") || t.closest('[role="listbox"]')) {
@@ -345,8 +356,31 @@ export function CustomerProfileSheet({
           </SheetHeader>
 
           {loading || !profile ? (
-            <div className="flex flex-1 items-center justify-center p-12">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" aria-hidden />
+            <div className="flex flex-1 flex-col gap-8 px-6 py-6">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+                <Skeleton className="mx-auto h-20 w-20 shrink-0 rounded-full sm:mx-0" />
+                <div className="min-w-0 flex-1 space-y-3">
+                  <Skeleton className="h-8 w-48" />
+                  <div className="flex gap-2">
+                    <Skeleton className="h-6 w-24 rounded-full" />
+                    <Skeleton className="h-6 w-20 rounded-full" />
+                  </div>
+                  <div className="space-y-2 pt-2">
+                    <Skeleton className="h-4 w-full max-w-md" />
+                    <Skeleton className="h-4 w-full max-w-sm" />
+                    <Skeleton className="h-4 w-full max-w-xs" />
+                  </div>
+                </div>
+              </div>
+              <section className="space-y-3">
+                <Skeleton className="h-6 w-32" />
+                <Skeleton className="h-24 w-full rounded-lg" />
+                <Skeleton className="h-24 w-full rounded-lg" />
+              </section>
+              <section className="space-y-3 border-t border-border pt-6">
+                <Skeleton className="h-6 w-40" />
+                <Skeleton className="h-32 w-full rounded-lg" />
+              </section>
             </div>
           ) : (
             <div className="flex flex-1 flex-col gap-8 px-6 py-6">
@@ -651,8 +685,21 @@ export function CustomerProfileSheet({
         onOpenChange={setAssignOpen}
         target={assignTarget}
         canAssign={canManage}
+        onCreditInserted={(row: AssignedCreditRow, profileId) => {
+          if (profileId !== customerId) return;
+          const now = Date.now();
+          const nextRow: CreditRow = {
+            id: row.id,
+            product_name: row.product_name,
+            credits_remaining: row.credits_remaining,
+            credits_total: row.credits_total,
+            is_unlimited: row.is_unlimited,
+            expires_at: row.expires_at,
+          };
+          if (!isCreditActive(nextRow, now)) return;
+          setCredits((prev) => [...prev, nextRow]);
+        }}
         onAssigned={() => {
-          void load();
           onProfileUpdated?.();
         }}
       />
