@@ -1,7 +1,6 @@
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { ArrowLeft, Clock, MapPin, Users, CreditCard, Sparkles, Package } from "lucide-react";
-import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 import { TypeBadge } from "@/components/TypeBadge";
 import { formatTime, formatRand } from "@/lib/format";
@@ -138,10 +137,7 @@ function ClassDetailPage() {
     : null;
 
   const confirm = () => {
-    toast.success("Book from Schedule", {
-      description: "Use the schedule tab to confirm with your credits or card.",
-    });
-    setTimeout(() => router.navigate({ to: "/schedule" }), 400);
+    void router.navigate({ to: "/schedule", search: { class: classId } });
   };
 
   return (
@@ -248,7 +244,7 @@ function ClassDetailPage() {
           disabled={full}
           className="mt-2 w-full rounded-2xl bg-primary py-4 font-display text-base font-semibold text-primary-foreground transition-opacity disabled:opacity-50"
         >
-          {full ? "Class is full — join waitlist" : "Continue to schedule"}
+          {full ? "Class full" : "Book on schedule"}
         </button>
 
         <Link to="/schedule" className="block py-2 text-center text-xs text-muted-foreground">

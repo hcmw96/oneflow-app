@@ -5,6 +5,7 @@ import { AppShell } from "@/components/AppShell";
 import { Skeleton } from "@/components/ui/skeleton";
 import challengeBg from "@/assets/challenge-bg.jpg";
 import { useAuth } from "@/contexts/auth";
+import { countMayChallengeStampedDays } from "@/lib/mayChallengeCheckIn";
 import { supabase } from "@/lib/supabase";
 import { addDays, startOfWeekSunday } from "@/lib/format";
 
@@ -37,7 +38,7 @@ function HomePage() {
   const [points, setPoints] = useState(0);
   const [weeklyGoal, setWeeklyGoal] = useState(3);
   const [weeklyDone, setWeeklyDone] = useState(0);
-  const stampedCount = 0;
+  const [challengeStamped, setChallengeStamped] = useState(0);
   const challengeTotalDays = 31;
   const SAGE = "#a3b693";
   const goalPct = weeklyGoal > 0 ? Math.min(100, (weeklyDone / weeklyGoal) * 100) : 0;
@@ -56,6 +57,7 @@ function HomePage() {
       setFirstName(null);
       setWeeklyGoal(3);
       setWeeklyDone(0);
+      setChallengeStamped(0);
 
       if (!user || cancelled) {
         if (!cancelled) setLoading(false);
@@ -71,6 +73,7 @@ function HomePage() {
         { data: creditRows },
         { count: attendedCount, error: attendedErr },
         { count: weeklyAttended, error: weeklyErr },
+        stampedDays,
       ] = await Promise.all([
         supabase.from("profiles").select("first_name, weekly_goal, flow_points").eq("id", uid).maybeSingle(),
         supabase
@@ -90,6 +93,7 @@ function HomePage() {
           .not("checked_in_at", "is", null)
           .gte("checked_in_at", weekStart.toISOString())
           .lt("checked_in_at", weekEnd.toISOString()),
+        countMayChallengeStampedDays(uid),
       ]);
 
       if (cancelled) return;
@@ -115,6 +119,7 @@ function HomePage() {
       setWeeklyDone(weeklyAttended ?? 0);
       const fpRaw = (profile as { flow_points?: number | null } | null)?.flow_points;
       setPoints(typeof fpRaw === "number" && Number.isFinite(fpRaw) ? Math.max(0, fpRaw) : 0);
+      setChallengeStamped(stampedDays);
       setLoading(false);
     }
 
@@ -157,7 +162,7 @@ function HomePage() {
             </span>
             <h3 className="mt-2 font-display text-2xl font-bold text-white">31 Days of Movement</h3>
             <p className="mt-1 text-xs text-white/80">
-              {stampedCount}/{challengeTotalDays} days · Tap to view →
+              {challengeStamped}/{challengeTotalDays} days · Tap to view →
             </p>
           </div>
         </Link>

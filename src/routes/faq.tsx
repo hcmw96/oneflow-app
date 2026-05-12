@@ -22,11 +22,11 @@ const ITEMS: { q: string; a: string }[] = [
   },
   {
     q: "What happens if I arrive late?",
-    a: "Classes start punctually and late entry is not permitted once doors close. Please arrive 10–15 minutes early. Late arrivals may result in your spot being given to a waitlisted Seeker.",
+    a: "Classes start punctually and late entry is not permitted once doors close. Please arrive 10–15 minutes early. If a class is full, your spot may be offered to another member who is present and ready to check in.",
   },
   {
-    q: "How does the waitlist work?",
-    a: "If a class is full, join the waitlist. You must have an available credit to do so. If added from the waitlist, you'll be notified and are responsible for attending or cancelling.",
+    q: "What if a class I want is full?",
+    a: "The app does not offer an in-app waitlist yet. If a class is full, pick another time on the schedule or check back in case someone cancels. Our cancellation policy still applies once you have a confirmed booking.",
   },
   {
     q: "What is the cancellation policy?",

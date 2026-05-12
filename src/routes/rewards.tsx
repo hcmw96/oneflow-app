@@ -13,14 +13,21 @@ export const Route = createFileRoute("/rewards")({
   component: RewardsPage,
 });
 
-const badges = [
-  { name: "Yoga 50", earned: true, icon: "🧘" },
-  { name: "Sculpt 50", earned: true, icon: "💪" },
-  { name: "Sauna 50", earned: false, icon: "🔥" },
-  { name: "First Beginner", earned: true, icon: "🌱" },
-  { name: "Member of Month", earned: false, icon: "⭐" },
-  { name: "Yoga 100", earned: false, icon: "🧘" },
-];
+type AwardedBadgeRow = {
+  id: string;
+  awarded_at: string;
+  badges:
+    | { name: string; icon: string | null; description: string | null }
+    | { name: string; icon: string | null; description: string | null }[]
+    | null;
+};
+
+function oneBadgeJoin(
+  badges: AwardedBadgeRow["badges"],
+): { name: string; icon: string | null; description: string | null } | null {
+  if (!badges) return null;
+  return Array.isArray(badges) ? (badges[0] ?? null) : badges;
+}
 
 type HistKind = "earned" | "redeemed";
 
@@ -46,6 +53,7 @@ function RewardsPage() {
   const [conversionRate, setConversionRate] = useState(10);
   const [estimatedZar, setEstimatedZar] = useState(0);
   const [history, setHistory] = useState<HistRow[]>([]);
+  const [awardedBadges, setAwardedBadges] = useState<{ id: string; name: string; icon: string }[]>([]);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
@@ -54,6 +62,7 @@ function RewardsPage() {
     if (!user) {
       setBalance(0);
       setHistory([]);
+      setAwardedBadges([]);
       setEstimatedZar(0);
       setLoading(false);
       return;
@@ -65,6 +74,7 @@ function RewardsPage() {
       { data: perClassRow },
       { data: attended },
       { data: redeemed },
+      { data: badgeRows },
     ] = await Promise.all([
       supabase.from("profiles").select("flow_points").eq("id", user.id).maybeSingle(),
       supabase
@@ -91,6 +101,12 @@ function RewardsPage() {
         .lt("points", 0)
         .order("created_at", { ascending: false })
         .limit(40),
+      supabase
+        .from("member_badges")
+        .select("id, awarded_at, badges ( name, icon )")
+        .eq("profile_id", user.id)
+        .order("awarded_at", { ascending: false })
+        .limit(24),
     ]);
 
     const conv = parseFlowPointsConversionRate(convRow?.value as string | null | undefined);
@@ -101,6 +117,18 @@ function RewardsPage() {
     setConversionRate(conv);
     setBalance(bal);
     setEstimatedZar(estimatedRandValueFromPoints(bal, conv));
+
+    const badgeList = (badgeRows ?? []).map((raw) => {
+      const row = raw as AwardedBadgeRow;
+      const b = oneBadgeJoin(row.badges);
+      const icon = (b?.icon?.trim() || "🏅").slice(0, 8);
+      return {
+        id: row.id,
+        name: b?.name?.trim() || "Badge",
+        icon,
+      };
+    });
+    setAwardedBadges(badgeList);
 
     const earned: HistRow[] = (attended ?? []).map((raw) => {
       const r = raw as Record<string, unknown>;
@@ -180,8 +208,10 @@ function RewardsPage() {
               <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-widest text-muted-foreground">
                 <Zap className="h-3.5 w-3.5" /> Spin & Win
               </div>
-              <h3 className="mt-1 font-display text-lg font-semibold">Unlocks at week 4</h3>
-              <p className="mt-1 text-xs text-muted-foreground">Stay consistent — 2 weeks to go.</p>
+              <h3 className="mt-1 font-display text-lg font-semibold">Coming soon</h3>
+              <p className="mt-1 text-xs text-muted-foreground">
+                We may add rewards spins for consistent attendance — nothing to do here yet.
+              </p>
             </div>
             <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary-soft text-2xl">
               🎡
@@ -193,22 +223,23 @@ function RewardsPage() {
           <h3 className="mb-3 flex items-center gap-1.5 font-display text-base font-semibold">
             <Award className="h-4 w-4" /> Your badges
           </h3>
-          <div className="grid grid-cols-3 gap-3">
-            {badges.map((b) => (
-              <div
-                key={b.name}
-                className={
-                  "flex flex-col items-center gap-1 rounded-2xl border p-3 text-center " +
-                  (b.earned
-                    ? "border-primary bg-primary-soft"
-                    : "border-border bg-card opacity-50")
-                }
-              >
-                <div className="text-2xl">{b.icon}</div>
-                <p className="text-[11px] font-medium leading-tight">{b.name}</p>
-              </div>
-            ))}
-          </div>
+          {awardedBadges.length === 0 && !loading ? (
+            <p className="rounded-2xl border border-dashed border-border bg-card/50 p-6 text-center text-sm text-muted-foreground">
+              Badges awarded by the studio will appear here.
+            </p>
+          ) : (
+            <div className="grid grid-cols-3 gap-3">
+              {awardedBadges.map((b) => (
+                <div
+                  key={b.id}
+                  className="flex flex-col items-center gap-1 rounded-2xl border border-primary bg-primary-soft p-3 text-center"
+                >
+                  <div className="text-2xl">{b.icon}</div>
+                  <p className="text-[11px] font-medium leading-tight">{b.name}</p>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
 
         <section>

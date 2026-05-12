@@ -1,6 +1,7 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MapPin, Clock } from "lucide-react";
+import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 import { BookingSheet } from "@/components/BookingSheet";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -11,7 +12,21 @@ import { cn } from "@/lib/utils";
 import { TypeBadge } from "@/components/TypeBadge";
 import { displayClassType } from "@/types/studio";
 
+function uuidOrUndefined(v: unknown): string | undefined {
+  if (typeof v !== "string") return undefined;
+  const s = v.trim();
+  if (
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s)
+  ) {
+    return undefined;
+  }
+  return s;
+}
+
 export const Route = createFileRoute("/schedule")({
+  validateSearch: (raw: Record<string, unknown>) => ({
+    class: uuidOrUndefined(raw.class),
+  }),
   component: SchedulePage,
 });
 
@@ -82,12 +97,15 @@ function useHorizontalDaySwipe(onPrev: () => void, onNext: () => void) {
 
 export default function SchedulePage() {
   const { user, authReady } = useAuth();
+  const navigate = useNavigate();
+  const search = Route.useSearch();
   const [selectedDay, setSelectedDay] = useState(() => startOfDay(new Date()));
   const [classes, setClasses] = useState<ClassRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [revalidating, setRevalidating] = useState(false);
   const [bookingFor, setBookingFor] = useState<ClassRow | null>(null);
   const [userBookings, setUserBookings] = useState<string[]>([]);
+  const [pendingOpenClassId, setPendingOpenClassId] = useState<string | null>(null);
   const classesCacheRef = useRef(new Map<string, ClassRow[]>());
 
   const goPrevDay = useCallback(() => {
@@ -169,6 +187,63 @@ export default function SchedulePage() {
     if (!authReady || !user?.id) return;
     void loadDayData(selectedDay, user.id);
   }, [authReady, user?.id, selectedDay, loadDayData]);
+
+  useEffect(() => {
+    const classId = search.class;
+    if (!authReady || !user?.id || !classId) {
+      if (!classId) setPendingOpenClassId(null);
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      const { data, error } = await supabase
+        .from("classes")
+        .select("id, starts_at, is_cancelled")
+        .eq("id", classId)
+        .maybeSingle();
+
+      if (cancelled) return;
+
+      if (error || !data) {
+        toast.error("Class not found.");
+        void navigate({ to: "/schedule", search: { class: undefined }, replace: true });
+        return;
+      }
+
+      if (data.is_cancelled) {
+        toast.error("This class has been cancelled.");
+        void navigate({ to: "/schedule", search: { class: undefined }, replace: true });
+        return;
+      }
+
+      const ts = String(data.starts_at);
+      setSelectedDay(startOfDay(new Date(ts)));
+      setPendingOpenClassId(classId);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authReady, user?.id, search.class, navigate]);
+
+  useEffect(() => {
+    if (!pendingOpenClassId || loading || revalidating || !user?.id) return;
+
+    const row = classes.find((c) => c.id === pendingOpenClassId);
+    if (row) {
+      setBookingFor(row);
+      setPendingOpenClassId(null);
+      void navigate({ to: "/schedule", search: { class: undefined }, replace: true });
+      return;
+    }
+
+    setPendingOpenClassId(null);
+    void navigate({ to: "/schedule", search: { class: undefined }, replace: true });
+    toast.info("That class isn’t on this day’s list — find it on the day it runs or pick another.", {
+      duration: 6000,
+    });
+  }, [pendingOpenClassId, loading, revalidating, classes, navigate, user?.id]);
 
   const weekStartSunday = useMemo(() => startOfWeekSunday(selectedDay), [selectedDay]);
 

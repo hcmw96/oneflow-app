@@ -47,3 +47,27 @@ export async function deleteMayChallengeCheckInForBooking(bookingId: string): Pr
     console.error("challenge_checkins delete", error);
   }
 }
+
+/** Distinct May calendar days (1–31) the member has at least one challenge stamp for. */
+export async function countMayChallengeStampedDays(profileId: string): Promise<number> {
+  const { data, error } = await supabase
+    .from("challenge_checkins")
+    .select("class_date")
+    .eq("profile_id", profileId)
+    .gte("class_date", MAY_START)
+    .lte("class_date", MAY_END);
+
+  if (error) {
+    console.error("challenge_checkins count", error);
+    return 0;
+  }
+
+  const days = new Set<number>();
+  for (const row of data ?? []) {
+    const raw = (row as { class_date?: string }).class_date;
+    if (typeof raw !== "string" || raw.length < 10) continue;
+    const d = Number(raw.slice(8, 10));
+    if (Number.isFinite(d) && d >= 1 && d <= 31) days.add(d);
+  }
+  return days.size;
+}

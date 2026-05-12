@@ -480,27 +480,113 @@ function ProfileTab({
   );
 }
 
+function formatZarFromWholeRand(n: number): string {
+  if (!Number.isFinite(n) || n <= 0) return "—";
+  return `R${n.toLocaleString("en-ZA", { maximumFractionDigits: 0, minimumFractionDigits: 0 })}`;
+}
+
 function BillingPanel() {
-  const invoices = [{ id: "sample-1", name: "Studio pass (sample)", date: "—", amount: 0 }];
+  const [rows, setRows] = useState<
+    { id: string; name: string; date: string; amountZar: number; source: string }[]
+  >([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      const user = await getUser();
+      if (!user) {
+        if (!cancelled) {
+          setRows([]);
+          setLoading(false);
+        }
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("user_credits")
+        .select("id, created_at, product_name, yoco_payment_id, product:product_id ( name, price_zar )")
+        .eq("profile_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(40);
+
+      if (cancelled) return;
+
+      if (error) {
+        console.error(error);
+        setRows([]);
+        setLoading(false);
+        return;
+      }
+
+      const mapped = (data ?? []).map((raw: Record<string, unknown>) => {
+        const prod = (Array.isArray(raw.product) ? raw.product[0] : raw.product) as
+          | { name?: string; price_zar?: number }
+          | null;
+        const name =
+          String(raw.product_name ?? "").trim() || prod?.name?.trim() || "Pass / credits";
+        const amountZar = Number(prod?.price_zar ?? 0) || 0;
+        const dt = typeof raw.created_at === "string" ? raw.created_at : "";
+        const dateLabel = dt
+          ? new Date(dt).toLocaleDateString("en-ZA", {
+              weekday: "short",
+              day: "numeric",
+              month: "short",
+              year: "numeric",
+            })
+          : "—";
+        const yoco = raw.yoco_payment_id;
+        const source = yoco ? "Card (Yoco)" : "Studio / staff";
+        return {
+          id: String(raw.id),
+          name,
+          date: dateLabel,
+          amountZar,
+          source,
+        };
+      });
+
+      setRows(mapped);
+      setLoading(false);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <Panel title="Billing history">
       <p className="text-sm text-muted-foreground">
-        Purchases via Yoco and in-studio payments will appear here once linked.
+        Passes and credit grants linked to your account (checkout and in-studio).
       </p>
-      <ul className="divide-y divide-border">
-        {invoices.map((inv) => (
-          <li key={inv.id} className="flex items-center justify-between gap-2 py-3 first:pt-0">
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold">{inv.name}</p>
-              <p className="text-xs text-muted-foreground">{inv.date}</p>
-            </div>
-            <span className="shrink-0 text-sm font-semibold tabular-nums">
-              {inv.amount > 0 ? formatRand(inv.amount) : "—"}
-            </span>
-          </li>
-        ))}
-      </ul>
+      {loading ? (
+        <p className="mt-4 text-sm text-muted-foreground">Loading…</p>
+      ) : rows.length === 0 ? (
+        <p className="mt-4 text-sm text-muted-foreground">
+          No purchases yet.{" "}
+          <Link to="/pricing" className="font-medium text-primary underline-offset-2 hover:underline">
+            Buy a pass
+          </Link>
+          .
+        </p>
+      ) : (
+        <ul className="divide-y divide-border">
+          {rows.map((inv) => (
+            <li key={inv.id} className="flex items-center justify-between gap-2 py-3 first:pt-0">
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold">{inv.name}</p>
+                <p className="text-xs text-muted-foreground">{inv.date}</p>
+                <p className="text-[10px] text-muted-foreground">{inv.source}</p>
+              </div>
+              <span className="shrink-0 text-sm font-semibold tabular-nums">
+                {formatZarFromWholeRand(inv.amountZar)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
     </Panel>
   );
 }
