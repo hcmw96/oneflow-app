@@ -47,6 +47,8 @@ export const Route = createFileRoute("/admin/bookings")({
   component: BookingsPage,
 });
 
+type BookingsSortKey = "class_time" | "member_name" | "status";
+
 const SAGE = "#a3b693";
 
 type BookingStatus = "confirmed" | "attended" | "cancelled" | "no-show";
@@ -157,6 +159,13 @@ function rosterStatusLabel(status: BookingStatus): string {
   return "No-show";
 }
 
+function rosterStatusSortRank(status: BookingStatus): number {
+  if (status === "confirmed") return 0;
+  if (status === "attended") return 1;
+  if (status === "no-show") return 2;
+  return 3;
+}
+
 function rosterStatusClass(status: BookingStatus) {
   return cn(
     "inline-flex shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
@@ -222,6 +231,7 @@ function BookingsPage() {
   const [bookings, setBookings] = useState<AdminBookingRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
+  const [bookingsSort, setBookingsSort] = useState<BookingsSortKey>("class_time");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [walkInOpen, setWalkInOpen] = useState(false);
   const [removeTarget, setRemoveTarget] = useState<AdminBookingRow | null>(null);
@@ -336,21 +346,37 @@ function BookingsPage() {
       m.set(b.class_id, list);
     }
     for (const list of m.values()) {
-      list.sort((a, x) => a.memberFull.localeCompare(x.memberFull));
+      list.sort((a, x) => {
+        if (bookingsSort === "status") {
+          const dr = rosterStatusSortRank(a.status) - rosterStatusSortRank(x.status);
+          if (dr !== 0) return dr;
+        }
+        return a.memberFull.localeCompare(x.memberFull);
+      });
     }
     return m;
-  }, [bookings, selectedDay]);
+  }, [bookings, selectedDay, bookingsSort]);
 
   const qNorm = query.trim().toLowerCase();
   const walkInSessions = daySessions;
 
   const visibleSessions = useMemo(() => {
-    return daySessions.filter((session) => {
+    const filtered = daySessions.filter((session) => {
       const roster = bookingsByClass.get(session.id) ?? [];
       if (!qNorm) return true;
       return roster.some((b) => b.memberFull.toLowerCase().includes(qNorm));
     });
-  }, [daySessions, bookingsByClass, qNorm]);
+    if (bookingsSort !== "member_name") return filtered;
+    return [...filtered].sort((s1, s2) => {
+      const r1 = bookingsByClass.get(s1.id) ?? [];
+      const r2 = bookingsByClass.get(s2.id) ?? [];
+      const minName = (rows: AdminBookingRow[]) =>
+        rows.length === 0
+          ? "\uffff"
+          : Math.min(...rows.map((b) => b.memberFull.toLowerCase()));
+      return minName(r1).localeCompare(minName(r2));
+    });
+  }, [daySessions, bookingsByClass, qNorm, bookingsSort]);
 
   const exportCsv = () => {
     const header = ["Class", "Time", "Member", "Short name", "Status", "Credit"];
@@ -537,14 +563,26 @@ function BookingsPage() {
         </button>
       </div>
 
-      <div className="relative mb-5">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search members for this day…"
-          className="w-full rounded-xl border-2 border-border bg-card py-2.5 pl-9 pr-3 text-sm outline-none transition focus:border-[#a3b693]"
-        />
+      <div className="relative mb-5 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+        <div className="relative flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search members for this day…"
+            className="w-full rounded-xl border-2 border-border bg-card py-2.5 pl-9 pr-3 text-sm outline-none transition focus:border-[#a3b693]"
+          />
+        </div>
+        <Select value={bookingsSort} onValueChange={(v) => setBookingsSort(v as BookingsSortKey)}>
+          <SelectTrigger className="w-full sm:w-56 shrink-0">
+            <SelectValue placeholder="Sort" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="class_time">Class time</SelectItem>
+            <SelectItem value="member_name">Member name A–Z</SelectItem>
+            <SelectItem value="status">Status</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {loading ? (

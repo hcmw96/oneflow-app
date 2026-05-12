@@ -59,7 +59,7 @@ type WaiverRow = {
 };
 
 type StatusFilter = "all" | "accepted" | "not_accepted";
-type SortKey = "name_asc" | "name_desc" | "accepted_desc" | "accepted_asc";
+type SortKey = "name_asc" | "name_desc" | "date_accepted" | "not_accepted_first";
 
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
@@ -137,10 +137,20 @@ function WaiversPage() {
       switch (sort) {
         case "name_desc":
           return b.fullName.localeCompare(a.fullName);
-        case "accepted_desc":
-          return (b.acceptedAt ?? "").localeCompare(a.acceptedAt ?? "");
-        case "accepted_asc":
-          return (a.acceptedAt ?? "").localeCompare(b.acceptedAt ?? "");
+        case "date_accepted": {
+          const ta = a.acceptedAt ?? "";
+          const tb = b.acceptedAt ?? "";
+          if (!ta && !tb) return a.fullName.localeCompare(b.fullName);
+          if (!ta) return 1;
+          if (!tb) return -1;
+          return tb.localeCompare(ta);
+        }
+        case "not_accepted_first": {
+          const pa = a.acceptedAt ? 1 : 0;
+          const pb = b.acceptedAt ? 1 : 0;
+          if (pa !== pb) return pa - pb;
+          return a.fullName.localeCompare(b.fullName);
+        }
         case "name_asc":
         default:
           return a.fullName.localeCompare(b.fullName);
@@ -234,8 +244,8 @@ function WaiversPage() {
           <SelectContent>
             <SelectItem value="name_asc">Name A–Z</SelectItem>
             <SelectItem value="name_desc">Name Z–A</SelectItem>
-            <SelectItem value="accepted_desc">Recently accepted</SelectItem>
-            <SelectItem value="accepted_asc">Oldest accepted</SelectItem>
+            <SelectItem value="date_accepted">Date accepted</SelectItem>
+            <SelectItem value="not_accepted_first">Not accepted first</SelectItem>
           </SelectContent>
         </Select>
       </div>

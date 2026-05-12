@@ -138,9 +138,9 @@ function PayoutsPage() {
   const [guideFilter, setGuideFilter] = useState<string>("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
-  const [sort, setSort] = useState<"submitted_desc" | "amount_desc" | "status">(
-    "submitted_desc",
-  );
+  const [sort, setSort] = useState<
+    "submitted_desc" | "guide_name_asc" | "amount_desc" | "status"
+  >("submitted_desc");
   const [page, setPage] = useState(1);
   const [detail, setDetail] = useState<InvoiceRow | null>(null);
 
@@ -369,10 +369,15 @@ function PayoutsPage() {
     });
     out = [...out].sort((a, b) => {
       switch (sort) {
+        case "guide_name_asc":
+          return a.guideName.localeCompare(b.guideName) || b.submitted_at.localeCompare(a.submitted_at);
         case "amount_desc":
-          return b.total_amount - a.total_amount;
-        case "status":
-          return a.status.localeCompare(b.status);
+          return b.total_amount - a.total_amount || b.submitted_at.localeCompare(a.submitted_at);
+        case "status": {
+          const sr = a.status.localeCompare(b.status);
+          if (sr !== 0) return sr;
+          return b.submitted_at.localeCompare(a.submitted_at);
+        }
         case "submitted_desc":
         default:
           return b.submitted_at.localeCompare(a.submitted_at);
@@ -587,15 +592,18 @@ function PayoutsPage() {
             />
             <Select
               value={sort}
-              onValueChange={(v) => setSort(v as "submitted_desc" | "amount_desc" | "status")}
+              onValueChange={(v) =>
+                setSort(v as "submitted_desc" | "guide_name_asc" | "amount_desc" | "status")
+              }
             >
-              <SelectTrigger className="w-full sm:w-48">
+              <SelectTrigger className="w-full sm:w-56">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="submitted_desc">Newest first</SelectItem>
-                <SelectItem value="amount_desc">Amount: high to low</SelectItem>
-                <SelectItem value="status">By status</SelectItem>
+                <SelectItem value="submitted_desc">Submitted date (newest)</SelectItem>
+                <SelectItem value="guide_name_asc">Guide name A–Z</SelectItem>
+                <SelectItem value="amount_desc">Amount high–low</SelectItem>
+                <SelectItem value="status">Status</SelectItem>
               </SelectContent>
             </Select>
           </div>

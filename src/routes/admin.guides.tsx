@@ -15,6 +15,13 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { getUser, supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
@@ -34,6 +41,8 @@ const DISCIPLINE_OPTIONS = ["Yoga", "Sculpt", "Pilates", "Wellzone", "Sauna Jour
 type Discipline = (typeof DISCIPLINE_OPTIONS)[number];
 type RoleType = "director" | "management" | "guide" | "customer" | "other";
 
+type GuideSortKey = "name_asc" | "name_desc" | "joined_asc" | "active_first";
+
 type GuideRow = {
   id: string;
   firstName: string;
@@ -43,6 +52,7 @@ type GuideRow = {
   disciplines: string[];
   active: boolean;
   classesThisWeek: number;
+  joinedAt: string | null;
 };
 
 type GuideProfileRow = {
@@ -51,6 +61,7 @@ type GuideProfileRow = {
   last_name: string | null;
   email: string | null;
   role: string | null;
+  created_at?: string | null;
 };
 
 type GuidesTableRow = {
@@ -108,6 +119,7 @@ function GuidesPage() {
   const [email, setEmail] = useState("");
   const [disciplines, setDisciplines] = useState<string[]>([]);
   const [active, setActive] = useState(true);
+  const [sort, setSort] = useState<GuideSortKey>("name_asc");
 
   const resetForm = useCallback(() => {
     setFirstName("");
@@ -153,7 +165,7 @@ function GuidesPage() {
       supabase.from("profiles").select("role").eq("id", user.id).maybeSingle(),
       supabase
         .from("profiles")
-        .select("id, first_name, last_name, email, role")
+        .select("id, first_name, last_name, email, role, created_at")
         .eq("role", "guide")
         .order("first_name", { ascending: true }),
       supabase.from("guides").select("profile_id, disciplines, is_active"),
@@ -219,6 +231,7 @@ function GuidesPage() {
         disciplines: meta?.disciplines ?? [],
         active: activeState,
         classesThisWeek,
+        joinedAt: p.created_at ?? null,
       };
     });
 
@@ -233,8 +246,27 @@ function GuidesPage() {
   const canManage = viewerRole === "director";
 
   const sortedRows = useMemo(() => {
-    return [...rows].sort((a, b) => a.fullName.localeCompare(b.fullName));
-  }, [rows]);
+    const list = [...rows];
+    list.sort((a, b) => {
+      switch (sort) {
+        case "name_desc":
+          return b.fullName.localeCompare(a.fullName);
+        case "joined_asc": {
+          const ta = a.joinedAt ?? "";
+          const tb = b.joinedAt ?? "";
+          return ta.localeCompare(tb);
+        }
+        case "active_first": {
+          if (a.active !== b.active) return a.active ? -1 : 1;
+          return a.fullName.localeCompare(b.fullName);
+        }
+        case "name_asc":
+        default:
+          return a.fullName.localeCompare(b.fullName);
+      }
+    });
+    return list;
+  }, [rows, sort]);
 
   const toggleDiscipline = (value: Discipline) => {
     setDisciplines((prev) =>
@@ -404,6 +436,20 @@ function GuidesPage() {
           Only directors can invite, edit, or deactivate guides.
         </div>
       )}
+
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+        <Select value={sort} onValueChange={(v) => setSort(v as GuideSortKey)}>
+          <SelectTrigger className="w-full sm:w-56">
+            <SelectValue placeholder="Sort" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="name_asc">Name A–Z</SelectItem>
+            <SelectItem value="name_desc">Name Z–A</SelectItem>
+            <SelectItem value="joined_asc">Date joined</SelectItem>
+            <SelectItem value="active_first">Active first</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
 
       <div
         className={"min-w-0 overflow-x-auto rounded-2xl border bg-card shadow-sm " + SAGE_BORDER}

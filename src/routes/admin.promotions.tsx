@@ -46,7 +46,7 @@ const PAGE_SIZE = 20;
 
 type DiscountType = "percentage" | "fixed";
 type AppliesTo = "all" | "yoga" | "wellzone";
-type SortKey = "created_desc" | "created_asc" | "uses_desc" | "expiry_asc";
+type SortKey = "code_asc" | "expiry_soonest" | "uses_desc";
 
 type PromoRow = {
   id: string;
@@ -111,7 +111,7 @@ function PromotionsPage() {
   const [rows, setRows] = useState<PromoRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
-  const [sort, setSort] = useState<SortKey>("created_desc");
+  const [sort, setSort] = useState<SortKey>("code_asc");
   const [page, setPage] = useState(1);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -157,15 +157,18 @@ function PromotionsPage() {
     let out = rows.filter((r) => !ql || r.code.toLowerCase().includes(ql));
     out = [...out].sort((a, b) => {
       switch (sort) {
-        case "created_asc":
-          return a.created_at.localeCompare(b.created_at);
         case "uses_desc":
-          return b.uses_count - a.uses_count;
-        case "expiry_asc":
-          return (a.valid_until ?? "9999").localeCompare(b.valid_until ?? "9999");
-        case "created_desc":
+          return b.uses_count - a.uses_count || a.code.localeCompare(b.code);
+        case "expiry_soonest": {
+          const sa = a.valid_until ?? "9999-12-31T23:59:59.999Z";
+          const sb = b.valid_until ?? "9999-12-31T23:59:59.999Z";
+          const cmp = sa.localeCompare(sb);
+          if (cmp !== 0) return cmp;
+          return a.code.localeCompare(b.code);
+        }
+        case "code_asc":
         default:
-          return b.created_at.localeCompare(a.created_at);
+          return a.code.localeCompare(b.code);
       }
     });
     return out;
@@ -325,10 +328,9 @@ function PromotionsPage() {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="created_desc">Newest first</SelectItem>
-            <SelectItem value="created_asc">Oldest first</SelectItem>
+            <SelectItem value="code_asc">Code A–Z</SelectItem>
+            <SelectItem value="expiry_soonest">Expiry soonest</SelectItem>
             <SelectItem value="uses_desc">Most used</SelectItem>
-            <SelectItem value="expiry_asc">Expiring soon</SelectItem>
           </SelectContent>
         </Select>
       </div>

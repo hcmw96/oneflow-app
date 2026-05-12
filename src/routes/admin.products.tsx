@@ -175,9 +175,12 @@ function emptyForm() {
   };
 }
 
+type ProductSortKey = "name_asc" | "price_asc" | "price_desc" | "category";
+
 function ProductsPage() {
   const [rows, setRows] = useState<ProductRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [sort, setSort] = useState<ProductSortKey>("name_asc");
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -200,9 +203,7 @@ function ProductsPage() {
       .from("products")
       .select(
         "id, name, category, description, price_zar, credit_count, validity_days, allowed_class_types, is_addon, is_staff_only, is_active, sort_order",
-      )
-      .order("sort_order", { ascending: true })
-      .order("price_zar", { ascending: true });
+      );
 
     if (error) {
       console.error("products load failed", error);
@@ -236,12 +237,25 @@ function ProductsPage() {
   }, [load]);
 
   const sortedRows = useMemo(() => {
-    return [...rows].sort((a, b) => {
-      const so = Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0);
-      if (so !== 0) return so;
-      return a.name.localeCompare(b.name);
+    const list = [...rows];
+    list.sort((a, b) => {
+      switch (sort) {
+        case "price_asc":
+          return a.price_zar - b.price_zar || a.name.localeCompare(b.name);
+        case "price_desc":
+          return b.price_zar - a.price_zar || a.name.localeCompare(b.name);
+        case "category": {
+          const ca = a.category.localeCompare(b.category);
+          if (ca !== 0) return ca;
+          return a.name.localeCompare(b.name);
+        }
+        case "name_asc":
+        default:
+          return a.name.localeCompare(b.name);
+      }
     });
-  }, [rows]);
+    return list;
+  }, [rows, sort]);
 
   const resetFormToDefaults = useCallback(() => {
     const d = emptyForm();
@@ -405,6 +419,20 @@ function ProductsPage() {
           </Button>
         }
       />
+
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+        <Select value={sort} onValueChange={(v) => setSort(v as ProductSortKey)}>
+          <SelectTrigger className="w-full sm:w-64">
+            <SelectValue placeholder="Sort" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="name_asc">Name A–Z</SelectItem>
+            <SelectItem value="price_asc">Price low–high</SelectItem>
+            <SelectItem value="price_desc">Price high–low</SelectItem>
+            <SelectItem value="category">Category</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
 
       <div
         className={cn(

@@ -68,6 +68,7 @@ type BadgeRow = {
   criteria_type: string;
   criteria_value: number | null;
   is_active: boolean;
+  created_at: string;
 };
 
 type AwardRow = {
@@ -136,14 +137,16 @@ function BadgesPage() {
   const [awardsBadgeFilter, setAwardsBadgeFilter] = useState<string>("all");
   const [awardsSearch, setAwardsSearch] = useState("");
   const [awardsPage, setAwardsPage] = useState(1);
+  const [badgesSort, setBadgesSort] = useState<"name_asc" | "most_awarded" | "created_desc">(
+    "name_asc",
+  );
 
   const loadAll = useCallback(async () => {
     setLoading(true);
     const [badgesRes, awardsRes, profilesRes] = await Promise.all([
       supabase
         .from("badges")
-        .select("id, name, description, icon, criteria_type, criteria_value, is_active")
-        .order("criteria_value", { ascending: true })
+        .select("id, name, description, icon, criteria_type, criteria_value, is_active, created_at")
         .order("name", { ascending: true }),
       supabase
         .from("member_badges")
@@ -165,7 +168,21 @@ function BadgesPage() {
       toast.error(supabaseErrorMessage(badgesRes.error, "Could not load badges"));
       setBadges([]);
     } else {
-      setBadges((badgesRes.data ?? []) as BadgeRow[]);
+      setBadges(
+        ((badgesRes.data ?? []) as Record<string, unknown>[]).map((raw) => ({
+          id: String(raw.id),
+          name: String(raw.name ?? ""),
+          description: raw.description == null ? null : String(raw.description),
+          icon: raw.icon == null ? null : String(raw.icon),
+          criteria_type: String(raw.criteria_type ?? ""),
+          criteria_value:
+            raw.criteria_value == null || raw.criteria_value === ""
+              ? null
+              : Number(raw.criteria_value),
+          is_active: raw.is_active !== false,
+          created_at: String(raw.created_at ?? ""),
+        })),
+      );
     }
 
     if (!awardsRes.error) {
@@ -210,6 +227,26 @@ function BadgesPage() {
   useEffect(() => {
     void loadAll();
   }, [loadAll]);
+
+  const sortedBadges = useMemo(() => {
+    const list = [...badges];
+    list.sort((a, b) => {
+      switch (badgesSort) {
+        case "most_awarded": {
+          const ca = counts[a.id] ?? 0;
+          const cb = counts[b.id] ?? 0;
+          if (cb !== ca) return cb - ca;
+          return a.name.localeCompare(b.name);
+        }
+        case "created_desc":
+          return (b.created_at ?? "").localeCompare(a.created_at ?? "");
+        case "name_asc":
+        default:
+          return a.name.localeCompare(b.name);
+      }
+    });
+    return list;
+  }, [badges, counts, badgesSort]);
 
   const openAdd = () => {
     setEditingId(null);
@@ -374,6 +411,23 @@ function BadgesPage() {
         </TabsList>
 
         <TabsContent value="badges" className="mt-0">
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+            <Select
+              value={badgesSort}
+              onValueChange={(v) =>
+                setBadgesSort(v as "name_asc" | "most_awarded" | "created_desc")
+              }
+            >
+              <SelectTrigger className="w-full sm:w-56">
+                <SelectValue placeholder="Sort" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="name_asc">Name A–Z</SelectItem>
+                <SelectItem value="most_awarded">Most awarded</SelectItem>
+                <SelectItem value="created_desc">Date created</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           {loading ? (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {Array.from({ length: 6 }).map((_, i) => (
@@ -387,7 +441,7 @@ function BadgesPage() {
             </div>
           ) : (
             <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {badges.map((b) => (
+              {sortedBadges.map((b) => (
                 <li
                   key={b.id}
                   className="flex flex-col rounded-2xl border border-border bg-card p-5 shadow-sm"
