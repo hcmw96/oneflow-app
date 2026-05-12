@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Loader2, Plus, UserCog } from "lucide-react";
+import { Loader2, Plus, UserCog, Filter, X } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/admin/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -37,6 +37,14 @@ const SAGE = "#a3b693";
 const SAGE_BORDER = "border-[#c5d4b8]/80";
 
 const DISCIPLINE_OPTIONS = ["Yoga", "Sculpt", "Pilates", "Wellzone", "Sauna Journey"] as const;
+
+const DISCIPLINE_FILTER_KEYS = [
+  { key: "yoga", label: "Yoga" },
+  { key: "sculpt", label: "Sculpt" },
+  { key: "pilates", label: "Pilates" },
+  { key: "wellzone", label: "Wellzone" },
+  { key: "sauna", label: "Sauna" },
+] as const;
 
 type Discipline = (typeof DISCIPLINE_OPTIONS)[number];
 type RoleType = "director" | "management" | "guide" | "customer" | "other";
@@ -84,6 +92,19 @@ function normalizeDisciplines(raw: unknown): string[] {
     .filter((v, i, arr) => arr.indexOf(v) === i);
 }
 
+function guideRowDisciplineKeys(disciplines: string[]): Set<string> {
+  const out = new Set<string>();
+  for (const raw of disciplines) {
+    const d = raw.trim().toLowerCase();
+    if (d === "yoga") out.add("yoga");
+    else if (d === "sculpt") out.add("sculpt");
+    else if (d === "pilates") out.add("pilates");
+    else if (d === "wellzone") out.add("wellzone");
+    else if (d.includes("sauna")) out.add("sauna");
+  }
+  return out;
+}
+
 function titleCase(value: string): string {
   const v = value.trim();
   if (!v) return "";
@@ -120,6 +141,8 @@ function GuidesPage() {
   const [disciplines, setDisciplines] = useState<string[]>([]);
   const [active, setActive] = useState(true);
   const [sort, setSort] = useState<GuideSortKey>("name_asc");
+  const [activeListFilter, setActiveListFilter] = useState<"all" | "active" | "inactive">("all");
+  const [disciplineFilters, setDisciplineFilters] = useState<string[]>([]);
 
   const resetForm = useCallback(() => {
     setFirstName("");
@@ -267,6 +290,32 @@ function GuidesPage() {
     });
     return list;
   }, [rows, sort]);
+
+  const guidesFilterCount =
+    Number(activeListFilter !== "all") + disciplineFilters.length;
+
+  const clearGuidesFilters = () => {
+    setActiveListFilter("all");
+    setDisciplineFilters([]);
+  };
+
+  const toggleDisciplineFilterKey = (key: string) => {
+    setDisciplineFilters((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
+    );
+  };
+
+  const displayedRows = useMemo(() => {
+    return sortedRows.filter((row) => {
+      if (activeListFilter === "active" && !row.active) return false;
+      if (activeListFilter === "inactive" && row.active) return false;
+      if (disciplineFilters.length > 0) {
+        const keys = guideRowDisciplineKeys(row.disciplines);
+        if (!disciplineFilters.some((f) => keys.has(f))) return false;
+      }
+      return true;
+    });
+  }, [sortedRows, activeListFilter, disciplineFilters]);
 
   const toggleDiscipline = (value: Discipline) => {
     setDisciplines((prev) =>
@@ -437,18 +486,85 @@ function GuidesPage() {
         </div>
       )}
 
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-        <Select value={sort} onValueChange={(v) => setSort(v as GuideSortKey)}>
-          <SelectTrigger className="w-full sm:w-56">
-            <SelectValue placeholder="Sort" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="name_asc">Name A–Z</SelectItem>
-            <SelectItem value="name_desc">Name Z–A</SelectItem>
-            <SelectItem value="joined_asc">Date joined</SelectItem>
-            <SelectItem value="active_first">Active first</SelectItem>
-          </SelectContent>
-        </Select>
+      <div className="mb-4 flex flex-col gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/40 px-2 py-1 text-xs font-semibold text-muted-foreground">
+            <Filter className="h-3.5 w-3.5" aria-hidden />
+            Filters
+            {guidesFilterCount > 0 ? (
+              <span className="rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-bold text-primary-foreground">
+                {guidesFilterCount}
+              </span>
+            ) : null}
+          </span>
+          {guidesFilterCount > 0 ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-8 gap-1 text-xs text-muted-foreground"
+              onClick={clearGuidesFilters}
+            >
+              <X className="h-3.5 w-3.5" aria-hidden />
+              Clear filters
+            </Button>
+          ) : null}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {(
+            [
+              ["All", "all" as const],
+              ["Active", "active" as const],
+              ["Inactive", "inactive" as const],
+            ] as const
+          ).map(([label, key]) => (
+            <Button
+              key={key}
+              type="button"
+              size="sm"
+              variant={activeListFilter === key ? "default" : "outline"}
+              className={
+                activeListFilter === key ? "bg-[#a3b693] text-[#243120] hover:bg-[#93a985]" : ""
+              }
+              onClick={() => setActiveListFilter(key)}
+            >
+              {label}
+            </Button>
+          ))}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <span className="w-full text-[11px] font-semibold uppercase tracking-wide text-muted-foreground sm:w-auto sm:py-1.5">
+            Disciplines
+          </span>
+          {DISCIPLINE_FILTER_KEYS.map(({ key, label }) => {
+            const on = disciplineFilters.includes(key);
+            return (
+              <Button
+                key={key}
+                type="button"
+                size="sm"
+                variant={on ? "default" : "outline"}
+                className={on ? "bg-[#a3b693] text-[#243120] hover:bg-[#93a985]" : ""}
+                onClick={() => toggleDisciplineFilterKey(key)}
+              >
+                {label}
+              </Button>
+            );
+          })}
+        </div>
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+          <Select value={sort} onValueChange={(v) => setSort(v as GuideSortKey)}>
+            <SelectTrigger className="w-full sm:w-56">
+              <SelectValue placeholder="Sort" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="name_asc">Name A–Z</SelectItem>
+              <SelectItem value="name_desc">Name Z–A</SelectItem>
+              <SelectItem value="joined_asc">Date joined</SelectItem>
+              <SelectItem value="active_first">Active first</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       <div
@@ -456,8 +572,12 @@ function GuidesPage() {
       >
         {loading ? (
           <div className="p-10 text-center text-sm text-muted-foreground">Loading guides…</div>
-        ) : sortedRows.length === 0 ? (
+        ) : rows.length === 0 ? (
           <div className="p-10 text-center text-sm text-muted-foreground">No guides found.</div>
+        ) : displayedRows.length === 0 ? (
+          <div className="p-10 text-center text-sm text-muted-foreground">
+            No guides match your filters.
+          </div>
         ) : (
           <table className="w-full text-sm">
             <thead className="bg-[#a3b693]/15">
@@ -471,7 +591,7 @@ function GuidesPage() {
               </tr>
             </thead>
             <tbody>
-              {sortedRows.map((row) => (
+              {displayedRows.map((row) => (
                 <tr
                   key={row.id}
                   className="cursor-pointer border-t border-border hover:bg-[#a3b693]/5"

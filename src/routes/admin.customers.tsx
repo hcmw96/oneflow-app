@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Loader2, Package, Plus, Search } from "lucide-react";
+import { Filter, Loader2, Package, Plus, Search, X } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/admin/PageHeader";
 import { CustomerProfileSheet } from "@/components/admin/CustomerProfileSheet";
@@ -37,6 +37,12 @@ export const Route = createFileRoute("/admin/customers")({
   }),
   component: CustomersPage,
 });
+
+const TZ = "Africa/Johannesburg";
+
+function yearMonthKeyJhb(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-CA", { timeZone: TZ }).slice(0, 7);
+}
 
 const ALL_ROLES = [
   "customer",
@@ -76,6 +82,9 @@ type MemberRow = {
   credits: number;
   lastVisit: string;
   status: "active" | "paused" | "trial";
+  waiverSigned: boolean;
+  hasBooking: boolean;
+  joinedAt: string | null;
 };
 
 function CustomersPage() {
@@ -83,6 +92,11 @@ function CustomersPage() {
   const search = Route.useSearch();
 
   const [q, setQ] = useState("");
+  const [chipHasCredits, setChipHasCredits] = useState(false);
+  const [chipNoCredits, setChipNoCredits] = useState(false);
+  const [chipNeverBooked, setChipNeverBooked] = useState(false);
+  const [chipWaiverUnsigned, setChipWaiverUnsigned] = useState(false);
+  const [chipJoinedMonth, setChipJoinedMonth] = useState(false);
   const [members, setMembers] = useState<MemberRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [viewerRole, setViewerRole] = useState<string | null>(null);
@@ -142,7 +156,7 @@ function CustomersPage() {
     setLoading(true);
     const { data: profiles, error: pErr } = await supabase
       .from("profiles")
-      .select("id, first_name, last_name, email, phone, role")
+      .select("id, first_name, last_name, email, phone, role, waiver_accepted_at, created_at")
       .eq("role", "customer");
 
     if (pErr) {
@@ -153,6 +167,17 @@ function CustomersPage() {
     }
 
     const ids = (profiles ?? []).map((p: { id: string }) => p.id);
+    const bookedIds = new Set<string>();
+    if (ids.length) {
+      const { data: bookingRows } = await supabase
+        .from("bookings")
+        .select("profile_id")
+        .in("profile_id", ids);
+      for (const row of bookingRows ?? []) {
+        const pid = row.profile_id as string | null;
+        if (pid) bookedIds.add(pid);
+      }
+    }
     const creditByProfile: Record<string, number> = {};
     if (ids.length) {
       const { data: credits } = await supabase
@@ -174,6 +199,7 @@ function CustomersPage() {
     const rows: MemberRow[] = (profiles ?? []).map((p: Record<string, unknown>) => {
       const id = String(p.id);
       const name = [p.first_name, p.last_name].filter(Boolean).join(" ").trim() || "Member";
+      const waiverAt = p.waiver_accepted_at as string | null | undefined;
       return {
         id,
         name,
@@ -184,6 +210,9 @@ function CustomersPage() {
         credits: creditByProfile[id] ?? 0,
         lastVisit: "—",
         status: "active" as const,
+        waiverSigned: Boolean(waiverAt),
+        hasBooking: bookedIds.has(id),
+        joinedAt: (p.created_at as string | null | undefined) ?? null,
       };
     });
 
@@ -195,16 +224,49 @@ function CustomersPage() {
     void load();
   }, [load]);
 
-  const filtered = useMemo(
-    () =>
-      members.filter(
-        (m) =>
-          !q ||
-          m.name.toLowerCase().includes(q.toLowerCase()) ||
-          m.email.toLowerCase().includes(q.toLowerCase()),
-      ),
-    [members, q],
-  );
+  const chipFilterCount =
+    Number(chipHasCredits) +
+    Number(chipNoCredits) +
+    Number(chipNeverBooked) +
+    Number(chipWaiverUnsigned) +
+    Number(chipJoinedMonth);
+
+  const clearChipFilters = () => {
+    setChipHasCredits(false);
+    setChipNoCredits(false);
+    setChipNeverBooked(false);
+    setChipWaiverUnsigned(false);
+    setChipJoinedMonth(false);
+  };
+
+  const filtered = useMemo(() => {
+    const ql = q.trim().toLowerCase();
+    return members.filter((m) => {
+      if (ql) {
+        const hay = `${m.name} ${m.email}`.toLowerCase();
+        if (!hay.includes(ql)) return false;
+      }
+      if (chipHasCredits && !(m.credits > 0)) return false;
+      if (chipNoCredits && m.credits !== 0) return false;
+      if (chipNeverBooked && m.hasBooking) return false;
+      if (chipWaiverUnsigned && m.waiverSigned) return false;
+      if (
+        chipJoinedMonth &&
+        (!m.joinedAt || yearMonthKeyJhb(m.joinedAt) !== yearMonthKeyJhb(new Date().toISOString()))
+      ) {
+        return false;
+      }
+      return true;
+    });
+  }, [
+    members,
+    q,
+    chipHasCredits,
+    chipNoCredits,
+    chipNeverBooked,
+    chipWaiverUnsigned,
+    chipJoinedMonth,
+  ]);
 
   const resetAddForm = () => {
     setFirstName("");
@@ -398,8 +460,8 @@ function CustomersPage() {
         onAssigned={() => void load()}
       />
 
-      <div className="mb-4 max-w-md">
-        <div className="relative">
+      <div className="mb-4 space-y-3">
+        <div className="relative max-w-md">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input
             value={q}
@@ -407,6 +469,54 @@ function CustomersPage() {
             placeholder="Search by name or email…"
             className="w-full rounded-lg border border-border bg-card py-2.5 pl-9 pr-3 text-sm outline-none focus:border-primary"
           />
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/40 px-2 py-1 text-xs font-semibold text-muted-foreground">
+            <Filter className="h-3.5 w-3.5" aria-hidden />
+            Filters
+            {chipFilterCount > 0 ? (
+              <span className="rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-bold text-primary-foreground">
+                {chipFilterCount}
+              </span>
+            ) : null}
+          </span>
+          {chipFilterCount > 0 ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-8 gap-1 text-xs text-muted-foreground"
+              onClick={clearChipFilters}
+            >
+              <X className="h-3.5 w-3.5" aria-hidden />
+              Clear filters
+            </Button>
+          ) : null}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {(
+            [
+              ["Has credits", chipHasCredits, () => setChipHasCredits((v) => !v)] as const,
+              ["No credits", chipNoCredits, () => setChipNoCredits((v) => !v)] as const,
+              ["Never booked", chipNeverBooked, () => setChipNeverBooked((v) => !v)] as const,
+              ["Waiver not signed", chipWaiverUnsigned, () => setChipWaiverUnsigned((v) => !v)] as const,
+              ["Joined this month", chipJoinedMonth, () => setChipJoinedMonth((v) => !v)] as const,
+            ] as const
+          ).map(([label, on, toggle]) => (
+            <button
+              key={label}
+              type="button"
+              onClick={toggle}
+              className={
+                "rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors " +
+                (on
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-border bg-card text-muted-foreground hover:bg-muted/60")
+              }
+            >
+              {label}
+            </button>
+          ))}
         </div>
       </div>
 

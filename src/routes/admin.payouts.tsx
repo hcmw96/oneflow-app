@@ -5,9 +5,11 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleDollarSign,
+  Filter,
   Loader2,
   Search,
   Send,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/admin/PageHeader";
@@ -350,7 +352,9 @@ function PayoutsPage() {
   const guideOptions = useMemo(() => {
     const set = new Map<string, string>();
     for (const i of invoices) set.set(i.guide_id, i.guideName);
-    return [...set.entries()].map(([id, name]) => ({ id, name }));
+    return [...set.entries()]
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
   }, [invoices]);
 
   const filteredInvoices = useMemo(() => {
@@ -385,6 +389,21 @@ function PayoutsPage() {
     });
     return out;
   }, [invoices, q, statusFilter, guideFilter, dateFrom, dateTo, sort]);
+
+  const adminInvoiceFilterCount =
+    (q.trim() ? 1 : 0) +
+    (statusFilter !== "all" ? 1 : 0) +
+    (guideFilter !== "all" ? 1 : 0) +
+    (dateFrom ? 1 : 0) +
+    (dateTo ? 1 : 0);
+
+  const clearAdminInvoiceFilters = () => {
+    setQ("");
+    setStatusFilter("all");
+    setGuideFilter("all");
+    setDateFrom("");
+    setDateTo("");
+  };
 
   useEffect(() => {
     setPage(1);
@@ -542,6 +561,29 @@ function PayoutsPage() {
           <TabsTrigger value="inbox">All invoices</TabsTrigger>
         </TabsList>
         <TabsContent value="inbox" className="mt-0">
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/40 px-2 py-1 text-xs font-semibold text-muted-foreground">
+              <Filter className="h-3.5 w-3.5" aria-hidden />
+              Filters
+              {adminInvoiceFilterCount > 0 ? (
+                <span className="rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-bold text-primary-foreground">
+                  {adminInvoiceFilterCount}
+                </span>
+              ) : null}
+            </span>
+            {adminInvoiceFilterCount > 0 ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 gap-1 text-xs text-muted-foreground"
+                onClick={clearAdminInvoiceFilters}
+              >
+                <X className="h-3.5 w-3.5" aria-hidden />
+                Clear filters
+              </Button>
+            ) : null}
+          </div>
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
             <div className="relative w-full sm:max-w-xs">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -565,7 +607,7 @@ function PayoutsPage() {
             </Select>
             <Select value={guideFilter} onValueChange={setGuideFilter}>
               <SelectTrigger className="w-full sm:w-52">
-                <SelectValue />
+                <SelectValue placeholder="Guide" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All guides</SelectItem>

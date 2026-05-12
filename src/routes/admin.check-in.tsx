@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Search, QrCode, UserPlus, Check, Undo2, X } from "lucide-react";
+import { Search, QrCode, UserPlus, Check, Undo2, X, Filter } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/admin/PageHeader";
 import { QRScanner } from "@/components/admin/QRScanner";
@@ -22,6 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import { deleteMayChallengeCheckInForBooking } from "@/lib/mayChallengeCheckIn";
 import { awardClassesAttendedBadges } from "@/lib/badges";
 import {
@@ -69,6 +70,8 @@ type BookingRow = {
     | { id: string; name: string; starts_at: string; guide_name: string | null }[]
     | null;
 };
+
+type RosterCheckFilter = "all" | "checked_in" | "not_yet";
 
 type RosterRow = {
   id: string;
@@ -141,6 +144,9 @@ function CheckInPage() {
   const [todayClasses, setTodayClasses] = useState<TodayClass[]>([]);
   const [roster, setRoster] = useState<RosterRow[]>([]);
   const [query, setQuery] = useState("");
+  const [rosterCheckFilter, setRosterCheckFilter] = useState<RosterCheckFilter>("all");
+  const [filterMatAddon, setFilterMatAddon] = useState(false);
+  const [filterTowelAddon, setFilterTowelAddon] = useState(false);
   const [activeSession, setActiveSession] = useState<string>("all");
   const [walkInOpen, setWalkInOpen] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -252,11 +258,43 @@ function CheckInPage() {
     });
   }, [todayClasses, roster]);
 
-  const filtered = roster.filter((b) => {
-    if (activeSession !== "all" && b.class_id !== activeSession) return false;
-    if (query && !b.member.toLowerCase().includes(query.toLowerCase())) return false;
-    return true;
-  });
+  const checkInFilterCount =
+    Number(activeSession !== "all") +
+    Number(rosterCheckFilter !== "all") +
+    Number(filterMatAddon) +
+    Number(filterTowelAddon) +
+    Number(query.trim().length > 0);
+
+  const clearCheckInFilters = () => {
+    setActiveSession("all");
+    setRosterCheckFilter("all");
+    setFilterMatAddon(false);
+    setFilterTowelAddon(false);
+    setQuery("");
+  };
+
+  const filtered = useMemo(() => {
+    const ql = query.trim().toLowerCase();
+    return roster.filter((b) => {
+      if (activeSession !== "all" && b.class_id !== activeSession) return false;
+      if (ql && !b.member.toLowerCase().includes(ql)) return false;
+      if (rosterCheckFilter === "checked_in") {
+        if (b.status !== "attended") return false;
+      } else if (rosterCheckFilter === "not_yet") {
+        if (b.status === "attended" || b.status === "cancelled") return false;
+      }
+      if (filterMatAddon && !b.matAddon) return false;
+      if (filterTowelAddon && !b.towelAddon) return false;
+      return true;
+    });
+  }, [
+    roster,
+    activeSession,
+    query,
+    rosterCheckFilter,
+    filterMatAddon,
+    filterTowelAddon,
+  ]);
 
   const checkedInCount = roster.filter((r) => r.status === "attended").length;
   const totalCapacity = sessions.reduce((s, x) => s + x.capacity, 0);
@@ -446,6 +484,74 @@ function CheckInPage() {
                 placeholder="Search member by name…"
                 className="w-full rounded-lg border border-border bg-background py-2.5 pl-9 pr-3 text-sm outline-none focus:border-primary"
               />
+            </div>
+
+            <div className="mt-3 flex flex-col gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/40 px-2 py-1 text-xs font-semibold text-muted-foreground">
+                  <Filter className="h-3.5 w-3.5" aria-hidden />
+                  Roster filters
+                  {checkInFilterCount > 0 ? (
+                    <span className="rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-bold text-primary-foreground">
+                      {checkInFilterCount}
+                    </span>
+                  ) : null}
+                </span>
+                {checkInFilterCount > 0 ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 gap-1 text-xs text-muted-foreground"
+                    onClick={clearCheckInFilters}
+                  >
+                    <X className="h-3.5 w-3.5" aria-hidden />
+                    Clear filters
+                  </Button>
+                ) : null}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {(
+                  [
+                    ["All", "all" as const],
+                    ["Checked in", "checked_in" as const],
+                    ["Not yet", "not_yet" as const],
+                  ] as const
+                ).map(([label, key]) => (
+                  <Button
+                    key={key}
+                    type="button"
+                    size="sm"
+                    variant={rosterCheckFilter === key ? "default" : "outline"}
+                    className={cn(
+                      rosterCheckFilter === key && "bg-primary text-primary-foreground",
+                    )}
+                    onClick={() => setRosterCheckFilter(key)}
+                  >
+                    {label}
+                  </Button>
+                ))}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={filterMatAddon ? "default" : "outline"}
+                  className={cn(filterMatAddon && "bg-primary text-primary-foreground")}
+                  onClick={() => setFilterMatAddon((v) => !v)}
+                >
+                  Mat add-on
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={filterTowelAddon ? "default" : "outline"}
+                  className={cn(filterTowelAddon && "bg-primary text-primary-foreground")}
+                  onClick={() => setFilterTowelAddon((v) => !v)}
+                >
+                  Towel add-on
+                </Button>
+              </div>
             </div>
 
             <ul className="mt-3 divide-y divide-border">

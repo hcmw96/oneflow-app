@@ -5,6 +5,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Filter,
   Loader2,
   MapPin,
   Pencil,
@@ -69,6 +70,7 @@ const LOCATIONS = ["Studio 1", "Studio 2", "Wellzone", "Sauna"] as const;
 const CLASS_TYPES = [
   { value: "yoga", label: "Yoga" },
   { value: "sculpt", label: "Sculpt" },
+  { value: "pilates", label: "Pilates" },
   { value: "wellzone", label: "Wellzone" },
   { value: "sauna_journey", label: "Sauna journey" },
 ] as const;
@@ -171,6 +173,7 @@ function endOfWeekJhbDayKey(): string {
 const TYPE_BADGE_CLASS: Record<string, string> = {
   yoga: "bg-[#e8efe3] text-[#3d4f36]",
   sculpt: "bg-amber-100 text-amber-800",
+  pilates: "bg-violet-100 text-violet-800",
   wellzone: "bg-sky-100 text-sky-800",
   sauna_journey: "bg-orange-100 text-orange-800",
 };
@@ -191,6 +194,7 @@ function ClassesPage() {
   const [guideFilter, setGuideFilter] = useState<string>("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [occupancyFilter, setOccupancyFilter] = useState<"all" | "has_bookings" | "empty">("all");
   const [collapsedDays, setCollapsedDays] = useState<Record<string, boolean>>({});
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [pastPage, setPastPage] = useState(1);
@@ -351,10 +355,13 @@ function ClassesPage() {
         end.setHours(23, 59, 59, 999);
         if (c.starts_at > end.toISOString()) return false;
       }
+      const booked = c.booked_count ?? 0;
+      if (occupancyFilter === "has_bookings" && booked <= 0) return false;
+      if (occupancyFilter === "empty" && booked > 0) return false;
       return true;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tabFiltered, q, typeFilter, locationFilter, guideFilter, dateFrom, dateTo, guideMap]);
+  }, [tabFiltered, q, typeFilter, locationFilter, guideFilter, dateFrom, dateTo, occupancyFilter, guideMap]);
 
   // Sort: ascending for today/week/upcoming, descending for past.
   const sorted = useMemo(() => {
@@ -393,7 +400,26 @@ function ClassesPage() {
 
   useEffect(() => {
     setPastPage(1);
-  }, [tab, q, typeFilter, locationFilter, guideFilter, dateFrom, dateTo]);
+  }, [tab, q, typeFilter, locationFilter, guideFilter, dateFrom, dateTo, occupancyFilter]);
+
+  const classesFilterCount =
+    (q.trim() ? 1 : 0) +
+    (typeFilter !== "all" ? 1 : 0) +
+    (locationFilter !== "all" ? 1 : 0) +
+    (guideFilter !== "all" ? 1 : 0) +
+    (dateFrom ? 1 : 0) +
+    (dateTo ? 1 : 0) +
+    (occupancyFilter !== "all" ? 1 : 0);
+
+  const clearClassesFilters = () => {
+    setQ("");
+    setTypeFilter("all");
+    setLocationFilter("all");
+    setGuideFilter("all");
+    setDateFrom("");
+    setDateTo("");
+    setOccupancyFilter("all");
+  };
 
   // Dialog helpers
   const resetForm = () => {
@@ -608,6 +634,32 @@ function ClassesPage() {
         </TabsList>
 
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+          <div className="flex flex-wrap items-center gap-2 sm:mr-auto sm:w-full sm:max-w-none">
+            <span className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/40 px-2 py-1 text-xs font-semibold text-muted-foreground">
+              <Filter className="h-3.5 w-3.5" aria-hidden />
+              Filters
+              {classesFilterCount > 0 ? (
+                <span className="rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-bold text-primary-foreground">
+                  {classesFilterCount}
+                </span>
+              ) : null}
+            </span>
+            {classesFilterCount > 0 ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 gap-1 text-xs text-muted-foreground"
+                onClick={clearClassesFilters}
+              >
+                <X className="h-3.5 w-3.5" aria-hidden />
+                Clear filters
+              </Button>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
           <div className="relative w-full sm:max-w-xs">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <input
@@ -671,6 +723,19 @@ function ClassesPage() {
             className="w-full sm:w-40"
             aria-label="To date"
           />
+          <Select
+            value={occupancyFilter}
+            onValueChange={(v) => setOccupancyFilter(v as "all" | "has_bookings" | "empty")}
+          >
+            <SelectTrigger className="w-full sm:w-44">
+              <SelectValue placeholder="Bookings" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Any bookings</SelectItem>
+              <SelectItem value="has_bookings">Has bookings</SelectItem>
+              <SelectItem value="empty">Empty classes</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         {canManage && selected.size > 0 && (

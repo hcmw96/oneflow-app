@@ -6,6 +6,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Download,
+  Filter,
   Search,
   Undo2,
   UserPlus,
@@ -31,6 +32,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { cancelBookingWithPolicy } from "@/lib/bookingCancellation";
 import { deleteMayChallengeCheckInForBooking } from "@/lib/mayChallengeCheckIn";
@@ -223,6 +225,19 @@ function stripLetter(dow: number) {
   return letters[dow] ?? "?";
 }
 
+const SESSION_LOCATIONS = ["Studio 1", "Studio 2", "Wellzone", "Sauna"] as const;
+
+function sessionMatchesClassTypeFilter(classType: string, filter: string): boolean {
+  if (filter === "all") return true;
+  const c = classType.trim().toLowerCase();
+  if (filter === "sauna") return c.includes("sauna");
+  if (filter === "pilates") return c === "pilates";
+  if (filter === "yoga") return c === "yoga";
+  if (filter === "sculpt") return c === "sculpt";
+  if (filter === "wellzone") return c === "wellzone";
+  return c === filter.toLowerCase();
+}
+
 function BookingsPage() {
   const [role, setRole] = useState<string | null>(null);
   const [viewWeekStart, setViewWeekStart] = useState(() => startOfCalendarWeekSunday(new Date()));
@@ -232,6 +247,9 @@ function BookingsPage() {
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [bookingsSort, setBookingsSort] = useState<BookingsSortKey>("class_time");
+  const [sessionTypeFilter, setSessionTypeFilter] = useState<string>("all");
+  const [sessionGuideFilter, setSessionGuideFilter] = useState<string>("all");
+  const [sessionLocationFilter, setSessionLocationFilter] = useState<string>("all");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [walkInOpen, setWalkInOpen] = useState(false);
   const [removeTarget, setRemoveTarget] = useState<AdminBookingRow | null>(null);
@@ -337,6 +355,49 @@ function BookingsPage() {
     return out;
   }, [weekClasses, selectedDay]);
 
+  const guideNameOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const c of weekClasses) {
+      const g = c.guide_name?.trim();
+      if (g) set.add(g);
+    }
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [weekClasses]);
+
+  const locationOptions = useMemo(() => {
+    const set = new Set<string>(SESSION_LOCATIONS);
+    for (const c of weekClasses) {
+      const loc = c.location?.trim();
+      if (loc) set.add(loc);
+    }
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [weekClasses]);
+
+  const daySessionsFiltered = useMemo(() => {
+    return daySessions.filter((s) => {
+      if (!sessionMatchesClassTypeFilter(s.class_type, sessionTypeFilter)) return false;
+      if (sessionGuideFilter !== "all") {
+        if ((s.guide_name ?? "").trim() !== sessionGuideFilter) return false;
+      }
+      if (sessionLocationFilter !== "all") {
+        if ((s.location ?? "").trim() !== sessionLocationFilter) return false;
+      }
+      return true;
+    });
+  }, [daySessions, sessionTypeFilter, sessionGuideFilter, sessionLocationFilter]);
+
+  const sessionFilterCount =
+    Number(sessionTypeFilter !== "all") +
+    Number(sessionGuideFilter !== "all") +
+    Number(sessionLocationFilter !== "all");
+
+  const clearSessionFilters = () => {
+    setSessionTypeFilter("all");
+    setSessionGuideFilter("all");
+    setSessionLocationFilter("all");
+    setQuery("");
+  };
+
   const bookingsByClass = useMemo(() => {
     const m = new Map<string, AdminBookingRow[]>();
     for (const b of bookings) {
@@ -361,7 +422,7 @@ function BookingsPage() {
   const walkInSessions = daySessions;
 
   const visibleSessions = useMemo(() => {
-    const filtered = daySessions.filter((session) => {
+    const filtered = daySessionsFiltered.filter((session) => {
       const roster = bookingsByClass.get(session.id) ?? [];
       if (!qNorm) return true;
       return roster.some((b) => b.memberFull.toLowerCase().includes(qNorm));
@@ -376,12 +437,15 @@ function BookingsPage() {
           : Math.min(...rows.map((b) => b.memberFull.toLowerCase()));
       return minName(r1).localeCompare(minName(r2));
     });
-  }, [daySessions, bookingsByClass, qNorm, bookingsSort]);
+  }, [daySessionsFiltered, bookingsByClass, qNorm, bookingsSort]);
+
+  const bookingsFilterBadgeCount =
+    sessionFilterCount + (qNorm ? 1 : 0);
 
   const exportCsv = () => {
     const header = ["Class", "Time", "Member", "Short name", "Status", "Credit"];
     const rows: string[] = [];
-    for (const session of daySessions) {
+    for (const session of daySessionsFiltered) {
       const roster = bookingsByClass.get(session.id) ?? [];
       const filtered = qNorm
         ? roster.filter((b) => b.memberFull.toLowerCase().includes(qNorm))
@@ -563,7 +627,7 @@ function BookingsPage() {
         </button>
       </div>
 
-      <div className="relative mb-5 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+      <div className="relative mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
         <div className="relative flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input
@@ -585,6 +649,88 @@ function BookingsPage() {
         </Select>
       </div>
 
+      <div className="mb-5 flex flex-col gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/40 px-2 py-1 text-xs font-semibold text-muted-foreground">
+            <Filter className="h-3.5 w-3.5" aria-hidden />
+            Filters
+            {bookingsFilterBadgeCount > 0 ? (
+              <span className="rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-bold text-primary-foreground">
+                {bookingsFilterBadgeCount}
+              </span>
+            ) : null}
+          </span>
+          {bookingsFilterBadgeCount > 0 ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-8 gap-1 text-xs text-muted-foreground"
+              onClick={clearSessionFilters}
+            >
+              <X className="h-3.5 w-3.5" aria-hidden />
+              Clear filters
+            </Button>
+          ) : null}
+        </div>
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+          <div className="w-full min-w-0 sm:w-44">
+            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Class type
+            </label>
+            <Select value={sessionTypeFilter} onValueChange={setSessionTypeFilter}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="All types" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All types</SelectItem>
+                <SelectItem value="yoga">Yoga</SelectItem>
+                <SelectItem value="sculpt">Sculpt</SelectItem>
+                <SelectItem value="pilates">Pilates</SelectItem>
+                <SelectItem value="wellzone">Wellzone</SelectItem>
+                <SelectItem value="sauna">Sauna</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="w-full min-w-0 sm:w-52">
+            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Guide
+            </label>
+            <Select value={sessionGuideFilter} onValueChange={setSessionGuideFilter}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="All guides" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All guides</SelectItem>
+                {guideNameOptions.map((name) => (
+                  <SelectItem key={name} value={name}>
+                    {name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="w-full min-w-0 sm:w-44">
+            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Location
+            </label>
+            <Select value={sessionLocationFilter} onValueChange={setSessionLocationFilter}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="All locations" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All locations</SelectItem>
+                {locationOptions.map((loc) => (
+                  <SelectItem key={loc} value={loc}>
+                    {loc}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      </div>
+
       {loading ? (
         <div className="rounded-2xl border border-border bg-card p-12 text-center text-sm text-muted-foreground">
           Loading bookings…
@@ -593,9 +739,13 @@ function BookingsPage() {
         <div className="rounded-2xl border border-dashed border-border bg-card p-12 text-center text-sm text-muted-foreground">
           No classes scheduled for this day.
         </div>
+      ) : daySessionsFiltered.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-border bg-card p-12 text-center text-sm text-muted-foreground">
+          No classes match your filters for this day.
+        </div>
       ) : visibleSessions.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-border bg-card p-12 text-center text-sm text-muted-foreground">
-          No members match &ldquo;{query.trim()}&rdquo; for classes on this day.
+          No members match &ldquo;{query.trim()}&rdquo; for the filtered classes on this day.
         </div>
       ) : (
         <ul className="space-y-3 sm:space-y-4">
