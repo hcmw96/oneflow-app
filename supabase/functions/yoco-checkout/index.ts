@@ -131,6 +131,8 @@ serve(async (req) => {
     .from("products")
     .select("*")
     .eq("id", pack_id)
+    .order("category", { ascending: true })
+    .order("name", { ascending: true })
     .single();
   console.log("pack result:", JSON.stringify(pack), "error:", JSON.stringify(packError));
 

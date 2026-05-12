@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
+import { groupProductsByDisplayCategory } from "@/lib/productCategories";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -17,7 +18,9 @@ import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -131,7 +134,7 @@ export function AssignPackageDialog({ open, onOpenChange, target, canAssign, onA
         .select("id, name, credit_count, category, validity_days, allowed_class_types")
         .eq("is_active", true)
         .eq("is_addon", false)
-        .order("sort_order", { ascending: true })
+        .order("category", { ascending: true })
         .order("name", { ascending: true });
 
       if (error) {
@@ -154,6 +157,14 @@ export function AssignPackageDialog({ open, onOpenChange, target, canAssign, onA
       setProductsLoading(false);
     })();
   }, [open, target?.profileId]);
+
+  const productsByGroup = useMemo(
+    () =>
+      groupProductsByDisplayCategory(products, (a, b) =>
+        a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+      ),
+    [products],
+  );
 
   const toggleClassType = (value: string) => {
     setCustomClassTypes((prev) =>
@@ -374,20 +385,26 @@ export function AssignPackageDialog({ open, onOpenChange, target, canAssign, onA
                       <SelectValue placeholder="Select a product" />
                     </SelectTrigger>
                     <SelectContent>
-                      {products.map((p) => {
-                        const cc =
-                          p.credit_count == null
-                            ? "—"
-                            : p.credit_count >= UNLIMITED_PRODUCT_THRESHOLD
-                              ? "Unlimited"
-                              : String(p.credit_count);
-                        const cat = p.category ?? "—";
-                        return (
-                          <SelectItem key={p.id} value={p.id}>
-                            {p.name} · {cc} credits · {cat}
-                          </SelectItem>
-                        );
-                      })}
+                      {productsByGroup.map((section) => (
+                        <SelectGroup key={section.label}>
+                          <SelectLabel className="text-xs text-muted-foreground">
+                            {section.label}
+                          </SelectLabel>
+                          {section.items.map((p) => {
+                            const cc =
+                              p.credit_count == null
+                                ? "—"
+                                : p.credit_count >= UNLIMITED_PRODUCT_THRESHOLD
+                                  ? "Unlimited"
+                                  : String(p.credit_count);
+                            return (
+                              <SelectItem key={p.id} value={p.id}>
+                                {p.name} · {cc} credits
+                              </SelectItem>
+                            );
+                          })}
+                        </SelectGroup>
+                      ))}
                     </SelectContent>
                   </Select>
                 )}

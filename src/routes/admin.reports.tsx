@@ -15,6 +15,7 @@ import { PageHeader } from "@/components/admin/PageHeader";
 import { StatCard } from "@/components/admin/StatCard";
 import { supabase } from "@/lib/supabase";
 import { addDays, startOfDay, startOfWeek } from "@/lib/format";
+import { PRODUCT_DISPLAY_GROUPS, revenueChartLabelForCategories } from "@/lib/productCategories";
 import { cn } from "@/lib/utils";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
@@ -31,9 +32,9 @@ const SAGE_LIGHT = "#c5d4b8";
 const SAGE_BG = "bg-[#e8efe3]/90";
 const SAGE_BORDER = "border-[#c5d4b8]/80";
 
-type PeriodMode = "daily" | "weekly" | "monthly";
+const REVENUE_CHART_BAR_COLORS = [SAGE, SAGE_DARK, SAGE_LIGHT, "#94a3b8", "#64748b", "#86a68a", "#b8c9a8", "#78716c"];
 
-const CATEGORY_CHART_KEYS = ["CLASS PACKS", "WELLZONE", "ALL ACCESS"] as const;
+type PeriodMode = "daily" | "weekly" | "monthly";
 
 function formatPriceZar(zar: number) {
   const n = Number(zar);
@@ -75,16 +76,6 @@ function periodLabel(mode: PeriodMode, start: Date, end: Date) {
     return `${start.toLocaleDateString("en-ZA", { day: "numeric", month: "short" })} – ${end.toLocaleDateString("en-ZA", opts)}`;
   }
   return start.toLocaleDateString("en-ZA", { month: "long", year: "numeric" });
-}
-
-function mapProductCategoryToBucket(
-  cat: string | null | undefined,
-): (typeof CATEGORY_CHART_KEYS)[number] | "Other" {
-  const c = (cat ?? "").toLowerCase();
-  if (c === "yoga") return "CLASS PACKS";
-  if (c === "wellzone") return "WELLZONE";
-  if (c === "all_access") return "ALL ACCESS";
-  return "Other";
 }
 
 type ProductJoin = { price_zar?: number | null; category?: string | null } | null;
@@ -185,7 +176,7 @@ const emptyState = (label: string): ReportsState => ({
   revenueZar: 0,
   passesSold: 0,
   aovZar: 0,
-  revenueByCategory: CATEGORY_CHART_KEYS.map((name) => ({ name, revenue: 0 })),
+  revenueByCategory: PRODUCT_DISPLAY_GROUPS.map((g) => ({ name: g.label, revenue: 0 })),
   checkIns: 0,
   topClasses: [],
   occupancyPct: null,
@@ -266,29 +257,26 @@ function ReportsPage() {
     const inPeriodPurchases = (purchasesRes.data ?? []) as PurchaseRow[];
 
     let revenueZar = 0;
-    const byBucket: Record<string, number> = {
-      "CLASS PACKS": 0,
-      WELLZONE: 0,
-      "ALL ACCESS": 0,
-      Other: 0,
-    };
+    const byLabel = new Map<string, number>();
+    for (const g of PRODUCT_DISPLAY_GROUPS) {
+      byLabel.set(g.label, 0);
+    }
 
     for (const row of inPeriodPurchases) {
       const prod = oneProduct(row.products);
       const price = Number(row.price_zar ?? prod?.price_zar ?? 0) || 0;
       revenueZar += price;
-      const bucket = mapProductCategoryToBucket(row.category ?? prod?.category ?? null);
-      if (bucket === "Other") byBucket.Other += price;
-      else byBucket[bucket] += price;
+      const label = revenueChartLabelForCategories(row.category ?? null, prod?.category ?? null);
+      byLabel.set(label, (byLabel.get(label) ?? 0) + price);
     }
 
     const passesSold = inPeriodPurchases.length;
     const aovZar = passesSold > 0 ? revenueZar / passesSold : 0;
 
-    const revenueByCategory = [
-      ...CATEGORY_CHART_KEYS.map((name) => ({ name, revenue: byBucket[name] ?? 0 })),
-      ...(byBucket.Other > 0 ? [{ name: "Other", revenue: byBucket.Other }] : []),
-    ];
+    const revenueByCategory = PRODUCT_DISPLAY_GROUPS.map((g) => ({
+      name: g.label,
+      revenue: byLabel.get(g.label) ?? 0,
+    }));
 
     const classes = (classesRes.data ?? []) as {
       id: string;
@@ -464,7 +452,7 @@ function ReportsPage() {
               <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Revenue by product category
               </p>
-              <div className="h-[220px] w-full min-w-0 sm:h-[260px]">
+              <div className="h-[240px] w-full min-w-0 sm:h-[280px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart
                     data={state.revenueByCategory}
@@ -473,11 +461,11 @@ function ReportsPage() {
                     <CartesianGrid strokeDasharray="3 3" stroke={SAGE_LIGHT} vertical={false} />
                     <XAxis
                       dataKey="name"
-                      tick={{ fontSize: 11, fill: "#3d4f36" }}
+                      tick={{ fontSize: 10, fill: "#3d4f36" }}
                       interval={0}
-                      angle={-12}
+                      angle={-18}
                       textAnchor="end"
-                      height={56}
+                      height={72}
                     />
                     <YAxis
                       tick={{ fontSize: 11, fill: "#3d4f36" }}
@@ -492,9 +480,7 @@ function ReportsPage() {
                       {state.revenueByCategory.map((_, i) => (
                         <Cell
                           key={i}
-                          fill={
-                            i === 0 ? SAGE : i === 1 ? SAGE_DARK : i === 2 ? SAGE_LIGHT : "#94a3b8"
-                          }
+                          fill={REVENUE_CHART_BAR_COLORS[i % REVENUE_CHART_BAR_COLORS.length]}
                         />
                       ))}
                     </Bar>

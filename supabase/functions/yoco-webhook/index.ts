@@ -12,7 +12,13 @@ serve(async (req) => {
   const { pack_id, profile_id } = event.payload.metadata;
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
-  const { data: pack } = await supabase.from("products").select("*").eq("id", pack_id).single();
+  const { data: pack } = await supabase
+    .from("products")
+    .select("*")
+    .eq("id", pack_id)
+    .order("category", { ascending: true })
+    .order("name", { ascending: true })
+    .single();
   if (!pack) return new Response("Pack not found", { status: 404 });
 
   const credits =

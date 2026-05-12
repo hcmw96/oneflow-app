@@ -133,12 +133,11 @@ function PricingPage() {
       buckets[cat].push(p);
     }
 
-    const bySortOrder = (a: ProductRow, b: ProductRow) =>
-      Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0) ||
-      Number(a.price_zar) - Number(b.price_zar);
+    const byName = (a: ProductRow, b: ProductRow) =>
+      a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
 
     for (const c of CUSTOMER_PRICING_CATEGORY_ORDER) {
-      buckets[c].sort(bySortOrder);
+      buckets[c].sort(byName);
     }
 
     return buckets;
@@ -175,7 +174,8 @@ function PricingPage() {
         .select("*")
         .eq("is_active", true)
         .eq("is_addon", false)
-        .order("sort_order");
+        .order("category", { ascending: true })
+        .order("name", { ascending: true });
 
       if (cancelled) return;
 

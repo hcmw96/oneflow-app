@@ -138,6 +138,8 @@ function PaymentSuccessPage() {
           .from("products")
           .select("name, credit_count")
           .eq("id", packId)
+          .order("category", { ascending: true })
+          .order("name", { ascending: true })
           .maybeSingle();
         const creditCount = Number((product as ProductRow | null)?.credit_count ?? 0);
         if (!cancelled) {
@@ -157,6 +159,8 @@ function PaymentSuccessPage() {
             .from("products")
             .select("id, name, category, allowed_class_types, credit_count, validity_days")
             .eq("id", packId)
+            .order("category", { ascending: true })
+            .order("name", { ascending: true })
             .maybeSingle(),
           supabase.from("profiles").select("id").eq("id", profileId).maybeSingle(),
         ],

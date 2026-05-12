@@ -1,10 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { Loader2, Pencil, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/admin/PageHeader";
 import { supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
+import {
+  CREDIT_CATEGORY_ORDERED,
+  groupProductsByDisplayCategory,
+  PRODUCT_CATEGORY_SLUG_LABEL,
+  productCategorySlugLabel,
+} from "@/lib/productCategories";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -39,15 +45,7 @@ const SAGE_BORDER = "border-[#c5d4b8]/80";
 const UNLIMITED_CREDITS = 999;
 
 /** Matches DB `credit_category` / products.category enum (lowercase, underscores). */
-const CREDIT_CATEGORIES = [
-  "all_access",
-  "cafe",
-  "complimentary",
-  "power",
-  "staff",
-  "wellzone",
-  "yoga",
-] as const;
+const CREDIT_CATEGORIES = [...CREDIT_CATEGORY_ORDERED] as const;
 
 type CreditCategory = (typeof CREDIT_CATEGORIES)[number];
 
@@ -70,25 +68,9 @@ type ProductRow = {
   sort_order: number | null;
 };
 
-const CATEGORY_OPTIONS: { value: CreditCategory; label: string }[] = [
-  { value: "all_access", label: "All Access" },
-  { value: "cafe", label: "Café" },
-  { value: "complimentary", label: "Complimentary" },
-  { value: "power", label: "Power" },
-  { value: "staff", label: "Staff" },
-  { value: "wellzone", label: "Wellzone" },
-  { value: "yoga", label: "Yoga" },
-];
-
-const CATEGORY_TABLE_LABEL: Record<string, string> = {
-  all_access: "All Access",
-  cafe: "Café",
-  complimentary: "Complimentary",
-  power: "Power",
-  staff: "Staff",
-  wellzone: "Wellzone",
-  yoga: "Yoga",
-};
+const CATEGORY_OPTIONS: { value: CreditCategory; label: string }[] = CREDIT_CATEGORY_ORDERED.map(
+  (value) => ({ value, label: PRODUCT_CATEGORY_SLUG_LABEL[value] }),
+);
 
 const CLASS_TYPE_OPTIONS = [
   { value: "yoga", label: "Yoga" },
@@ -104,8 +86,7 @@ function formatPriceZar(zar: number) {
 }
 
 function tableCategoryLabel(category: string | null | undefined) {
-  if (!category) return "—";
-  return CATEGORY_TABLE_LABEL[category] ?? category;
+  return productCategorySlugLabel(category);
 }
 
 /** Parse PostgreSQL `text[]` text representation, e.g. `{yoga,sculpt}` or `{"yoga","sculpt"}`. */
@@ -203,7 +184,9 @@ function ProductsPage() {
       .from("products")
       .select(
         "id, name, category, description, price_zar, credit_count, validity_days, allowed_class_types, is_addon, is_staff_only, is_active, sort_order",
-      );
+      )
+      .order("category", { ascending: true })
+      .order("name", { ascending: true });
 
     if (error) {
       console.error("products load failed", error);
@@ -236,25 +219,25 @@ function ProductsPage() {
     void load();
   }, [load]);
 
-  const sortedRows = useMemo(() => {
-    const list = [...rows];
-    list.sort((a, b) => {
+  const groupedProductRows = useMemo(() => {
+    return groupProductsByDisplayCategory(rows, (a, b) => {
       switch (sort) {
         case "price_asc":
-          return a.price_zar - b.price_zar || a.name.localeCompare(b.name);
+          return (
+            a.price_zar - b.price_zar ||
+            a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+          );
         case "price_desc":
-          return b.price_zar - a.price_zar || a.name.localeCompare(b.name);
-        case "category": {
-          const ca = a.category.localeCompare(b.category);
-          if (ca !== 0) return ca;
-          return a.name.localeCompare(b.name);
-        }
+          return (
+            b.price_zar - a.price_zar ||
+            a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+          );
+        case "category":
         case "name_asc":
         default:
-          return a.name.localeCompare(b.name);
+          return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
       }
     });
-    return list;
   }, [rows, sort]);
 
   const resetFormToDefaults = useCallback(() => {
@@ -458,57 +441,69 @@ function ProductsPage() {
               </tr>
             </thead>
             <tbody>
-              {sortedRows.map((p) => (
-                <tr key={p.id} className="border-t border-border">
-                  <td className="max-w-[140px] truncate px-4 py-3 font-semibold sm:max-w-xs sm:px-5 md:max-w-md">
-                    {p.name}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-3 sm:px-5">
-                    <span className="inline-flex rounded-full bg-[#e8efe3] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#3d4f36]">
-                      {tableCategoryLabel(p.category)}
-                    </span>
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-3 tabular-nums sm:px-5">
-                    {formatPriceZar(p.price_zar)}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-3 sm:px-5">{creditsDisplay(p.credit_count)}</td>
-                  <td className="whitespace-nowrap px-4 py-3 text-muted-foreground sm:px-5">
-                    {validityDisplay(p.validity_days)}
-                  </td>
-                  <td className="px-4 py-3 sm:px-5">
-                    <div className="flex items-center gap-2">
-                      <Switch
-                        checked={p.is_active}
-                        disabled={togglingId === p.id}
-                        onCheckedChange={(checked) => void persistActive(p.id, checked)}
-                        className="data-[state=checked]:bg-[#a3b693]"
-                        aria-label={p.is_active ? "Deactivate product" : "Activate product"}
-                      />
-                      <span className="hidden text-xs text-muted-foreground sm:inline">
-                        {p.is_active ? "Active" : "Inactive"}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-right sm:px-5">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="gap-1 border-[#c5d4b8] bg-card"
-                      onClick={() => openEdit(p)}
+              {groupedProductRows.map((section) => (
+                <Fragment key={section.label}>
+                  <tr className="border-t border-[#c5d4b8]/80 bg-[#e8efe3]/40">
+                    <td
+                      colSpan={7}
+                      className="px-4 py-2 text-left text-xs font-bold uppercase tracking-wider text-[#3d4f36] sm:px-5"
                     >
-                      <Pencil className="h-3.5 w-3.5" aria-hidden />
-                      Edit
-                    </Button>
-                  </td>
-                </tr>
+                      {section.label}
+                    </td>
+                  </tr>
+                  {section.items.map((p) => (
+                    <tr key={p.id} className="border-t border-border">
+                      <td className="max-w-[140px] truncate px-4 py-3 font-semibold sm:max-w-xs sm:px-5 md:max-w-md">
+                        {p.name}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3 sm:px-5">
+                        <span className="inline-flex rounded-full bg-[#e8efe3] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#3d4f36]">
+                          {tableCategoryLabel(p.category)}
+                        </span>
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3 tabular-nums sm:px-5">
+                        {formatPriceZar(p.price_zar)}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3 sm:px-5">{creditsDisplay(p.credit_count)}</td>
+                      <td className="whitespace-nowrap px-4 py-3 text-muted-foreground sm:px-5">
+                        {validityDisplay(p.validity_days)}
+                      </td>
+                      <td className="px-4 py-3 sm:px-5">
+                        <div className="flex items-center gap-2">
+                          <Switch
+                            checked={p.is_active}
+                            disabled={togglingId === p.id}
+                            onCheckedChange={(checked) => void persistActive(p.id, checked)}
+                            className="data-[state=checked]:bg-[#a3b693]"
+                            aria-label={p.is_active ? "Deactivate product" : "Activate product"}
+                          />
+                          <span className="hidden text-xs text-muted-foreground sm:inline">
+                            {p.is_active ? "Active" : "Inactive"}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-right sm:px-5">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="gap-1 border-[#c5d4b8] bg-card"
+                          onClick={() => openEdit(p)}
+                        >
+                          <Pencil className="h-3.5 w-3.5" aria-hidden />
+                          Edit
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </Fragment>
               ))}
             </tbody>
           </table>
         )}
       </div>
 
-      {!loading && sortedRows.length === 0 && (
+      {!loading && rows.length === 0 && (
         <p className="mt-4 text-center text-sm text-muted-foreground">No products yet. Add one to get started.</p>
       )}
 
