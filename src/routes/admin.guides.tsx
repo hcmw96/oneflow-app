@@ -25,6 +25,9 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { getUser, supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
+import { AssignPackageDialog, type AssignPackageTarget } from "@/components/admin/AssignPackageDialog";
+import { GuideActivePackagePills } from "@/components/admin/GuideActivePackagePills";
+import { fetchActiveUserCreditsByProfileIds, type GuideCreditPillRow } from "@/lib/activeUserCredits";
 
 export const Route = createFileRoute("/admin/guides")({
   head: () => ({
@@ -61,6 +64,7 @@ type GuideRow = {
   active: boolean;
   classesThisWeek: number;
   joinedAt: string | null;
+  packages: GuideCreditPillRow[];
 };
 
 type GuideProfileRow = {
@@ -143,6 +147,8 @@ function GuidesPage() {
   const [sort, setSort] = useState<GuideSortKey>("name_asc");
   const [activeListFilter, setActiveListFilter] = useState<"all" | "active" | "inactive">("all");
   const [disciplineFilters, setDisciplineFilters] = useState<string[]>([]);
+  const [assignOpen, setAssignOpen] = useState(false);
+  const [assignTarget, setAssignTarget] = useState<AssignPackageTarget | null>(null);
 
   const resetForm = useCallback(() => {
     setFirstName("");
@@ -238,7 +244,8 @@ function GuidesPage() {
       classCountByGuideName.set(key, (classCountByGuideName.get(key) ?? 0) + 1);
     }
 
-    const mapped: GuideRow[] = ((profilesRes.data ?? []) as GuideProfileRow[]).map((p) => {
+    const mapped: Omit<GuideRow, "packages">[] = ((profilesRes.data ?? []) as GuideProfileRow[]).map(
+      (p) => {
       const first = titleCase(p.first_name ?? "");
       const last = titleCase(p.last_name ?? "");
       const fullName = `${first} ${last}`.trim() || "Guide";
@@ -256,9 +263,16 @@ function GuidesPage() {
         classesThisWeek,
         joinedAt: p.created_at ?? null,
       };
-    });
+    },
+    );
 
-    setRows(mapped);
+    const creditMap = await fetchActiveUserCreditsByProfileIds(mapped.map((r) => r.id));
+    const withPackages: GuideRow[] = mapped.map((row) => ({
+      ...row,
+      packages: creditMap.get(row.id) ?? [],
+    }));
+
+    setRows(withPackages);
     setLoading(false);
   }, []);
 
@@ -267,6 +281,7 @@ function GuidesPage() {
   }, [load]);
 
   const canManage = viewerRole === "director";
+  const canAssignPackages = viewerRole === "director" || viewerRole === "management";
 
   const sortedRows = useMemo(() => {
     const list = [...rows];
@@ -587,6 +602,7 @@ function GuidesPage() {
                 <th className="px-5 py-3 font-medium">Disciplines</th>
                 <th className="px-5 py-3 font-medium">Status</th>
                 <th className="px-5 py-3 font-medium">Classes This Week</th>
+                <th className="px-5 py-3 font-medium">Packages</th>
                 <th className="px-5 py-3 font-medium text-right">Deactivate</th>
               </tr>
             </thead>
@@ -630,6 +646,31 @@ function GuidesPage() {
                   </td>
                   <td className="px-5 py-3 tabular-nums text-muted-foreground">
                     {row.classesThisWeek}
+                  </td>
+                  <td
+                    className="max-w-[min(280px,40vw)] px-5 py-3 align-top"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {row.packages.length === 0 ? (
+                      <span className="text-xs text-muted-foreground">No packages</span>
+                    ) : (
+                      <GuideActivePackagePills
+                        credits={row.packages}
+                        onPillClick={
+                          canAssignPackages
+                            ? () => {
+                                setAssignTarget({
+                                  profileId: row.id,
+                                  displayName: row.fullName,
+                                  email: row.email || null,
+                                  firstName: row.firstName,
+                                });
+                                setAssignOpen(true);
+                              }
+                            : undefined
+                        }
+                      />
+                    )}
                   </td>
                   <td className="px-5 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                     <div className="inline-flex items-center gap-2">
@@ -738,6 +779,17 @@ function GuidesPage() {
           </SheetFooter>
         </SheetContent>
       </Sheet>
+
+      <AssignPackageDialog
+        open={assignOpen}
+        onOpenChange={(o) => {
+          setAssignOpen(o);
+          if (!o) setAssignTarget(null);
+        }}
+        target={assignTarget}
+        canAssign={canAssignPackages}
+        onAssigned={() => void load()}
+      />
     </div>
   );
 }

@@ -45,13 +45,37 @@ export function isLimitedAdminRole(role: string | null | undefined) {
   return r === "guide" || r === "front_desk";
 }
 
+export function isBohRole(role: string | null | undefined) {
+  return (role ?? "").toLowerCase() === "boh";
+}
+
+/** Director & management: pending leave badge + full admin. */
+export function canSeePendingLeaveRequestsBadge(role: string | null | undefined) {
+  const r = (role ?? "").toLowerCase();
+  return r === "director" || r === "management";
+}
+
 export function isPathAllowedForLimitedRole(pathname: string) {
   return LIMITED_ADMIN_ROUTES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+}
+
+/** BOH is restricted to timesheets; guide/front_desk use LIMITED_ADMIN_ROUTES. */
+export function isPathAllowedForRestrictedAdmin(role: string | null | undefined, pathname: string) {
+  if (isBohRole(role)) {
+    return pathname === "/admin/timesheets" || pathname.startsWith("/admin/timesheets/");
+  }
+  if (isLimitedAdminRole(role)) {
+    return isPathAllowedForLimitedRole(pathname);
+  }
+  return true;
 }
 
 export function navItemsForRole(role: string | null | undefined): AdminNavItem[] {
   const r = (role ?? "").toLowerCase();
   if (r === "director" || r === "management") return adminNavItems;
+  if (isBohRole(role)) {
+    return adminNavItems.filter((i) => i.to === "/admin/timesheets");
+  }
   if (isLimitedAdminRole(role)) {
     const allow = new Set<string>(LIMITED_ADMIN_ROUTES);
     return adminNavItems.filter((i) => allow.has(i.to));

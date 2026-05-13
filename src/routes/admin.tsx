@@ -3,7 +3,7 @@ import * as React from "react";
 import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { AdminShell } from "@/components/admin/AdminShell";
-import { isLimitedAdminRole, isPathAllowedForLimitedRole } from "@/components/admin/AdminNav";
+import { isBohRole, isPathAllowedForRestrictedAdmin } from "@/components/admin/AdminNav";
 import { useAuth } from "@/contexts/auth";
 
 export const Route = createFileRoute("/admin")({
@@ -29,7 +29,13 @@ export const Route = createFileRoute("/admin")({
 
 function isAdminRole(role: string | null | undefined) {
   const r = (role ?? "").toLowerCase();
-  return r === "director" || r === "management" || r === "guide" || r === "front_desk";
+  return (
+    r === "director" ||
+    r === "management" ||
+    r === "guide" ||
+    r === "front_desk" ||
+    r === "boh"
+  );
 }
 
 function AdminLayout() {
@@ -41,8 +47,9 @@ function AdminLayout() {
   useEffect(() => {
     if (!authReady || !user || !profileReady) return;
     if (!isAdminRole(profileRole)) return;
-    if (isLimitedAdminRole(profileRole) && !isPathAllowedForLimitedRole(pathname)) {
-      navigate({ to: "/admin/check-in", replace: true });
+    if (!isPathAllowedForRestrictedAdmin(profileRole, pathname)) {
+      const to = isBohRole(profileRole) ? "/admin/timesheets" : "/admin/check-in";
+      navigate({ to, replace: true });
     }
   }, [authReady, user, profileReady, profileRole, pathname, navigate]);
 

@@ -91,7 +91,12 @@ function ProtectedOutlet() {
 
   const onboardingDone = profile?.onboarding_complete === true;
   const role = (profile?.role ?? "").toLowerCase();
-  const isStaff = role === "director" || role === "management" || role === "guide";
+  const isStaff =
+    role === "director" ||
+    role === "management" ||
+    role === "guide" ||
+    role === "front_desk" ||
+    role === "boh";
 
   useEffect(() => {
     if (initialRouteResolved.current) return;

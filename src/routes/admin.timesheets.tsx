@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CalendarPlus,
   ChevronLeft,
@@ -83,14 +83,13 @@ type TimesheetRow = {
   notes: string | null;
 };
 
-type Role = "director" | "management" | "guide" | "other";
+type Role = "director" | "management" | "clock_staff" | "other";
 
 function classifyRole(role: string | null | undefined): Role {
   const r = (role ?? "").toLowerCase();
   if (r === "director") return "director";
   if (r === "management") return "management";
-  if (r === "guide") return "guide";
-  if (r === "front_desk") return "guide";
+  if (r === "guide" || r === "front_desk" || r === "boh") return "clock_staff";
   return "other";
 }
 
@@ -121,6 +120,11 @@ function todayJhbISODate(): string {
   const m = String(jhbNow.getMonth() + 1).padStart(2, "0");
   const d = String(jhbNow.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
+}
+
+/** Calendar day in JHB for an instant (for matching scheduled shifts to “today”). */
+function jhbDayKeyFromIso(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-CA", { timeZone: TZ });
 }
 
 function combineDateTimeLocal(dateStr: string, timeStr: string): Date {
@@ -172,6 +176,7 @@ function TimesheetsPage() {
   const search = Route.useSearch();
   const [tab, setTab] = useState<string>("shifts");
   const [role, setRole] = useState<Role>("other");
+  const clockStaffDefaulted = useRef(false);
   const [me, setMe] = useState<string | null>(null);
   const [myProfile, setMyProfile] = useState<{
     first_name: string | null;
@@ -231,7 +236,7 @@ function TimesheetsPage() {
       supabase
         .from("profiles")
         .select("id, first_name, last_name, role")
-        .in("role", ["guide", "management", "director"])
+        .in("role", ["guide", "management", "director", "boh", "front_desk"])
         .order("first_name", { ascending: true }),
       supabase
         .from("shifts")
@@ -342,9 +347,15 @@ function TimesheetsPage() {
 
   useEffect(() => {
     if (!isAdmin && tab === "leave-requests") {
-      setTab("shifts");
+      setTab(role === "clock_staff" ? "clock" : "shifts");
     }
-  }, [isAdmin, tab]);
+  }, [isAdmin, tab, role]);
+
+  useEffect(() => {
+    if (role !== "clock_staff" || clockStaffDefaulted.current) return;
+    clockStaffDefaulted.current = true;
+    setTab("clock");
+  }, [role]);
 
   const groupedShifts = useMemo(() => {
     const map = new Map<string, ShiftRow[]>();
@@ -410,10 +421,22 @@ function TimesheetsPage() {
   const myTodaysShift = useMemo(() => {
     if (!me) return null;
     const today = todayJhbISODate();
-    return shifts.find(
-      (s) => s.profile_id === me && new Date(s.starts_at).toISOString().slice(0, 10) === today,
+    return (
+      shifts.find((s) => s.profile_id === me && jhbDayKeyFromIso(s.starts_at) === today) ?? null
     );
   }, [shifts, me]);
+
+  const myTodaysWorkedHours = useMemo(() => {
+    if (!me) return 0;
+    const today = todayJhbISODate();
+    let total = 0;
+    for (const t of timesheets) {
+      if (t.profile_id !== me) continue;
+      if (t.shift_date !== today) continue;
+      total += hoursBetween(t.clocked_in_at, t.clocked_out_at);
+    }
+    return total;
+  }, [timesheets, me]);
 
   const openAddShift = () => {
     setEditingShiftId(null);
@@ -571,10 +594,26 @@ function TimesheetsPage() {
       ) : null}
 
       <Tabs value={tab} onValueChange={onTabChange}>
-        <TabsList className="mb-4 flex flex-wrap">
-          <TabsTrigger value="shifts">Shifts</TabsTrigger>
-          <TabsTrigger value="timesheets">Timesheets</TabsTrigger>
-          <TabsTrigger value="clock">Clock in/out</TabsTrigger>
+        <TabsList className="mb-4 flex h-auto min-h-10 w-full flex-wrap gap-1">
+          {role === "clock_staff" ? (
+            <>
+              <TabsTrigger value="clock" className="min-h-11 flex-1 sm:flex-1">
+                Clock in/out
+              </TabsTrigger>
+              <TabsTrigger value="shifts" className="min-h-11 flex-1 sm:flex-1">
+                Shifts
+              </TabsTrigger>
+              <TabsTrigger value="timesheets" className="min-h-11 flex-1 sm:flex-1">
+                Timesheets
+              </TabsTrigger>
+            </>
+          ) : (
+            <>
+              <TabsTrigger value="shifts">Shifts</TabsTrigger>
+              <TabsTrigger value="timesheets">Timesheets</TabsTrigger>
+              <TabsTrigger value="clock">Clock in/out</TabsTrigger>
+            </>
+          )}
           {isAdmin ? <TabsTrigger value="leave-requests">Leave requests</TabsTrigger> : null}
         </TabsList>
 
@@ -802,57 +841,67 @@ function TimesheetsPage() {
         </TabsContent>
 
         <TabsContent value="clock" className="mt-0">
-          <div className="rounded-2xl border border-[#c5d4b8]/80 bg-[#f4f7f0]/70 p-8 text-center shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-wide text-[#3d4f36]">
-              {myTodaysShift
-                ? `Today's shift: ${formatTime(myTodaysShift.starts_at)} – ${formatTime(myTodaysShift.ends_at)}${myTodaysShift.location ? ` · ${myTodaysShift.location}` : ""}`
-                : "No shift scheduled today"}
-            </p>
-            <p className="mt-2 font-display text-3xl font-bold sm:text-4xl">
-              {new Date().toLocaleTimeString("en-ZA", {
-                timeZone: TZ,
-                hour: "numeric",
-                minute: "2-digit",
-                hour12: true,
-              })}
-            </p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {new Date().toLocaleDateString("en-ZA", {
-                timeZone: TZ,
-                weekday: "long",
-                day: "numeric",
-                month: "long",
-              })}
-            </p>
+          <div className="space-y-6 rounded-2xl border border-[#c5d4b8]/80 bg-[#f4f7f0]/70 p-5 shadow-sm sm:p-8">
+            <div className="text-center">
+              <p className="text-xs font-semibold uppercase tracking-wide text-[#3d4f36]">
+                {myTodaysShift
+                  ? `Today's shift: ${formatTime(myTodaysShift.starts_at)} – ${formatTime(myTodaysShift.ends_at)}${myTodaysShift.location ? ` · ${myTodaysShift.location}` : ""}`
+                  : "No shift scheduled today"}
+              </p>
+              <p className="mt-2 font-display text-3xl font-bold sm:text-4xl">
+                {new Date().toLocaleTimeString("en-ZA", {
+                  timeZone: TZ,
+                  hour: "numeric",
+                  minute: "2-digit",
+                  hour12: true,
+                })}
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {new Date().toLocaleDateString("en-ZA", {
+                  timeZone: TZ,
+                  weekday: "long",
+                  day: "numeric",
+                  month: "long",
+                })}
+              </p>
+            </div>
 
-            {myActiveTimesheet ? (
-              <div className="mt-8">
-                <p className="mb-3 text-sm font-semibold text-[#3d4f36]">
-                  Clocked in at {formatTime(myActiveTimesheet.clocked_in_at)}
+            {myTodaysWorkedHours > 0 ? (
+              <p className="rounded-xl bg-background/70 px-4 py-3 text-center text-sm font-semibold text-[#3d4f36]">
+                Today&apos;s hours logged:{" "}
+                <span className="tabular-nums">{myTodaysWorkedHours.toFixed(2)}h</span>
+              </p>
+            ) : null}
+
+            <div className="mx-auto flex w-full max-w-md flex-col gap-4">
+              <Button
+                type="button"
+                size="lg"
+                className="min-h-[56px] w-full gap-2 bg-[#a3b693] px-6 text-base font-semibold text-white hover:bg-[#8fa67d] disabled:opacity-45"
+                onClick={() => void clockIn()}
+                disabled={clocking || !!myActiveTimesheet}
+              >
+                <LogIn className="h-6 w-6 shrink-0" /> Clock in
+              </Button>
+              <Button
+                type="button"
+                size="lg"
+                className="min-h-[56px] w-full gap-2 bg-destructive px-6 text-base font-semibold text-white hover:bg-destructive/90 disabled:opacity-45"
+                onClick={() => void clockOut()}
+                disabled={clocking || !myActiveTimesheet}
+              >
+                <LogOut className="h-6 w-6 shrink-0" /> Clock out
+              </Button>
+              {myActiveTimesheet ? (
+                <p className="text-center text-sm font-semibold text-[#3d4f36]">
+                  On shift — clocked in at {formatTime(myActiveTimesheet.clocked_in_at)}
                 </p>
-                <Button
-                  type="button"
-                  size="lg"
-                  className="h-16 gap-2 bg-destructive px-8 text-base text-white hover:bg-destructive/90"
-                  onClick={() => void clockOut()}
-                  disabled={clocking}
-                >
-                  <LogOut className="h-5 w-5" /> Clock out
-                </Button>
-              </div>
-            ) : (
-              <div className="mt-8">
-                <Button
-                  type="button"
-                  size="lg"
-                  className="h-16 gap-2 bg-[#a3b693] px-8 text-base text-white hover:bg-[#8fa67d]"
-                  onClick={() => void clockIn()}
-                  disabled={clocking}
-                >
-                  <LogIn className="h-5 w-5" /> Clock in
-                </Button>
-              </div>
-            )}
+              ) : (
+                <p className="text-center text-xs text-muted-foreground">
+                  Use Clock in when you start and Clock out when you finish.
+                </p>
+              )}
+            </div>
           </div>
         </TabsContent>
 
