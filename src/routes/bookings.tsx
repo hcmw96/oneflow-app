@@ -21,9 +21,7 @@ type ClassJoin = {
   class_type: string;
   location: string;
   starts_at: string;
-  guides?: {
-    profiles: { first_name: string } | { first_name: string }[] | null;
-  } | null;
+  guide_name?: string | null;
 };
 
 type RawBooking = {
@@ -50,11 +48,9 @@ function one<T>(v: T | T[] | null | undefined): T | null {
 }
 
 function guideFirstFromClass(cls: ClassJoin | null): string | null {
-  const g = cls?.guides;
-  if (!g) return null;
-  const p = g.profiles;
-  const prof = one(p);
-  return prof?.first_name?.trim() || null;
+  const gn = cls?.guide_name?.trim();
+  if (!gn) return null;
+  return gn.split(/\s+/)[0] ?? null;
 }
 
 function BookingsPage() {
@@ -75,8 +71,7 @@ function BookingsPage() {
       .from("bookings")
       .select(
         `id, status, qr_token,
-         classes ( name, class_type, location, starts_at,
-           guides ( profiles ( first_name ) ) )`,
+         classes ( name, class_type, location, starts_at, guide_name )`,
       )
       .eq("profile_id", user.id)
       .in("status", ["confirmed", "attended"])

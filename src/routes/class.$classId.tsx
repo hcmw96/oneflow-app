@@ -19,13 +19,6 @@ export const Route = createFileRoute("/class/$classId")({
 
 type PaymentMethod = "credit" | "yoco" | "points";
 
-type GuideJoin = {
-  profiles:
-    | { first_name: string; last_name: string }
-    | { first_name: string; last_name: string }[]
-    | null;
-};
-
 type ClassDetail = {
   id: string;
   name: string;
@@ -37,13 +30,7 @@ type ClassDetail = {
   booked_count: number;
   description?: string | null;
   guide_name?: string | null;
-  guides?: GuideJoin | GuideJoin[] | null;
 };
-
-function one<T>(v: T | T[] | null | undefined): T | null {
-  if (v == null) return null;
-  return Array.isArray(v) ? (v[0] ?? null) : v;
-}
 
 function ClassDetailPage() {
   const { classId } = Route.useParams();
@@ -61,7 +48,7 @@ function ClassDetailPage() {
       supabase
         .from("classes")
         .select(
-          "id, name, class_type, location, starts_at, ends_at, capacity, booked_count, description, guide_name, guides ( profiles ( first_name, last_name ) )",
+          "id, name, class_type, location, starts_at, ends_at, capacity, booked_count, description, guide_name",
         )
         .eq("id", classId)
         .maybeSingle(),
@@ -122,11 +109,7 @@ function ClassDetailPage() {
   const full = fillRatio >= 1;
   const addOns = (mat ? 4000 : 0) + (towel ? 2500 : 0);
 
-  const g = one(session.guides);
-  const prof = g?.profiles;
-  const p = one(prof);
-  const guideNameFromJoin = p ? `${p.first_name} ${p.last_name}`.trim() : null;
-  const guideName = guideNameFromJoin || session.guide_name?.trim() || null;
+  const guideName = session.guide_name?.trim() || null;
   const initials = guideName
     ? guideName
         .split(/\s+/)

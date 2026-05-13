@@ -18,6 +18,7 @@ import { PageHeader } from "@/components/admin/PageHeader";
 import { StatCard } from "@/components/admin/StatCard";
 import { getUser, supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
+import { fetchGuidesForClassSelect, type GuideSelectRow } from "@/lib/guidesForSelect";
 import { displayClassType } from "@/types/studio";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -87,12 +88,7 @@ type ClassRow = {
   is_cancelled: boolean;
 };
 
-type GuideOption = {
-  /** `guides.id` — stored on `classes.guide_id`. */
-  guide_id: string;
-  first_name: string | null;
-  last_name: string | null;
-};
+type GuideOption = GuideSelectRow;
 
 type TabKey = "today" | "week" | "upcoming";
 
@@ -259,37 +255,13 @@ function ClassesPage() {
   }, []);
 
   const loadGuides = useCallback(async () => {
-    const { data, error } = await supabase
-      .from("guides")
-      .select("id, profiles ( first_name, last_name )")
-      .eq("is_active", true);
-
+    const { data, error } = await fetchGuidesForClassSelect();
     if (error) {
       console.error(error);
       toast.error(supabaseErrorMessage(error, "Could not load guides"));
       return;
     }
-
-    type GuideRow = {
-      id: string;
-      profiles:
-        | { first_name: string | null; last_name: string | null }
-        | { first_name: string | null; last_name: string | null }[]
-        | null;
-    };
-
-    const normalized: GuideOption[] = (data ?? []).map((raw: GuideRow) => {
-      const p = Array.isArray(raw.profiles) ? raw.profiles[0] : raw.profiles;
-      return {
-        guide_id: String(raw.id),
-        first_name: p?.first_name ?? null,
-        last_name: p?.last_name ?? null,
-      };
-    });
-    normalized.sort((a, b) =>
-      (a.first_name ?? "").localeCompare(b.first_name ?? "", undefined, { sensitivity: "base" }),
-    );
-    setGuides(normalized);
+    setGuides(data);
   }, []);
 
   const load = useCallback(async () => {

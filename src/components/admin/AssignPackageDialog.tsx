@@ -48,6 +48,44 @@ export type AssignPackageTarget = {
   firstName?: string | null;
 };
 
+type PackageAssignFailure = {
+  displayName: string;
+  profileId: string;
+  email: string | null;
+  reason: string;
+};
+
+function recordPackageAssignFailure(
+  target: AssignPackageTarget,
+  context: string,
+  error: unknown,
+  failures: PackageAssignFailure[],
+): void {
+  const reason = supabaseErrorMessage(error, "Unknown error");
+  console.error(`[AssignPackageDialog] ${context}`, {
+    profileId: target.profileId,
+    displayName: target.displayName,
+    email: target.email,
+    reason,
+    error,
+  });
+  failures.push({
+    displayName: target.displayName,
+    profileId: target.profileId,
+    email: target.email,
+    reason,
+  });
+}
+
+function summarizePackageFailures(failures: PackageAssignFailure[]): string {
+  if (failures.length === 0) return "";
+  if (failures.length === 1) {
+    const f = failures[0]!;
+    return `${f.displayName} (${f.profileId}): ${f.reason}`;
+  }
+  return failures.map((f) => `• ${f.displayName} (${f.profileId}): ${f.reason}`).join("\n").slice(0, 2500);
+}
+
 type ProductPick = {
   id: string;
   name: string;
@@ -288,7 +326,7 @@ export function AssignPackageDialog({
     const total = isUnlimited ? rawCount : Math.trunc(rawCount);
 
     setSubmitting(true);
-    let failed = 0;
+    const failures: PackageAssignFailure[] = [];
     for (const t of assignees) {
       const { data: inserted, error } = await supabase
         .from("user_credits")
@@ -312,8 +350,7 @@ export function AssignPackageDialog({
         .maybeSingle();
 
       if (error) {
-        console.error(error);
-        failed += 1;
+        recordPackageAssignFailure(t, "user_credits insert (existing product)", error, failures);
         continue;
       }
       if (inserted) {
@@ -334,8 +371,13 @@ export function AssignPackageDialog({
     setSubmitting(false);
     setConfirmOpen(false);
 
-    if (failed > 0) {
-      toast.error(`Could not assign to ${failed} member(s). Others were saved.`);
+    if (failures.length > 0) {
+      toast.error(
+        failures.length === assignees.length
+          ? "Could not assign package to any selected member."
+          : `Could not assign to ${failures.length} member(s). Others were saved.`,
+        { description: summarizePackageFailures(failures), duration: 16_000 },
+      );
     } else {
       const names = assignees.map((a) => a.displayName).join(", ");
       toast.success(
@@ -378,7 +420,7 @@ export function AssignPackageDialog({
     const total = isUnlimited ? UNLIMITED_MANUAL_TOTAL : Math.trunc(Number(customCredits));
 
     setSubmitting(true);
-    let failed = 0;
+    const failures: PackageAssignFailure[] = [];
     for (const t of assignees) {
       const { data: inserted, error } = await supabase
         .from("user_credits")
@@ -398,8 +440,7 @@ export function AssignPackageDialog({
         .maybeSingle();
 
       if (error) {
-        console.error(error);
-        failed += 1;
+        recordPackageAssignFailure(t, "user_credits insert (custom package)", error, failures);
         continue;
       }
       if (inserted) {
@@ -420,8 +461,13 @@ export function AssignPackageDialog({
     setSubmitting(false);
     setConfirmOpen(false);
 
-    if (failed > 0) {
-      toast.error(`Could not assign to ${failed} member(s). Others were saved.`);
+    if (failures.length > 0) {
+      toast.error(
+        failures.length === assignees.length
+          ? "Could not assign package to any selected member."
+          : `Could not assign to ${failures.length} member(s). Others were saved.`,
+        { description: summarizePackageFailures(failures), duration: 16_000 },
+      );
     } else {
       toast.success(
         assignees.length === 1
