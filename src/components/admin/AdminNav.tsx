@@ -34,6 +34,7 @@ export const LIMITED_ADMIN_ROUTES = [
   "/admin/check-in",
   "/admin/bookings",
   "/admin/classes",
+  "/admin/timesheets",
   // /admin/scheduling redirects to /admin/classes; keep it allow-listed so
   // the redirect can complete before the limited-role guard fires.
   "/admin/scheduling",

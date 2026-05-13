@@ -9,7 +9,9 @@ type TemplateName =
   | "class_invite"
   | "waiver_reminder"
   | "package_assigned"
-  | "marketing";
+  | "marketing"
+  | "leave_request"
+  | "leave_request_response";
 
 type RequestPayload = {
   to: string;
@@ -117,6 +119,53 @@ function buildTemplate(template: TemplateName, data: Record<string, unknown> = {
     return {
       subject,
       content: htmlBody,
+    };
+  }
+
+  if (template === "leave_request") {
+    const requesterName = String(data.requester_name ?? "Staff member");
+    const leaveTypeLabel = String(data.leave_type_label ?? "Leave");
+    const startDate = String(data.start_date ?? "");
+    const endDate = String(data.end_date ?? "");
+    const notes = String(data.notes ?? "None");
+    const sickNote = String(data.sick_note ?? "Not provided");
+    return {
+      subject: `Leave Request — ${requesterName} — ${leaveTypeLabel} — ${startDate}`,
+      content: `
+        <h2 style="font-size:22px;font-weight:600;color:#a3b693;margin:0 0 16px;">New leave request</h2>
+        <p style="font-size:15px;line-height:1.6;color:#444;margin:0 0 12px;">${esc(requesterName)} has submitted a leave request:</p>
+        <div style="background:#f5f5f0;border-radius:8px;padding:16px 20px;margin:16px 0;">
+          ${detailRow("Type", leaveTypeLabel)}
+          ${detailRow("Dates", `${startDate} to ${endDate}`)}
+          ${detailRow("Notes", notes)}
+          ${detailRow("Sick note", sickNote)}
+        </div>
+        <p style="font-size:15px;line-height:1.6;color:#444;margin:0 0 12px;">Log into the admin dashboard to approve or decline.</p>
+        ${ctaButton("https://oneflow1.netlify.app/admin/timesheets?tab=leave-requests", "Review Request")}
+        <p style="font-size:14px;color:#888;margin:24px 0 0;">One Flow Team</p>
+      `,
+    };
+  }
+
+  if (template === "leave_request_response") {
+    const first = String(data.staff_first_name ?? "there");
+    const typeLabel = String(data.leave_type_label ?? "leave");
+    const start = String(data.start_date ?? "");
+    const end = String(data.end_date ?? "");
+    const outcome = String(data.outcome ?? "updated");
+    const reviewer = String(data.reviewer_name ?? "Management");
+    const noteRaw = String(data.review_note ?? "").trim();
+    const noteBlock = noteRaw
+      ? `<p style="font-size:14px;line-height:1.6;color:#444;margin:16px 0 0;padding:12px 14px;background:#f5f5f0;border-radius:8px;"><span style="font-weight:600;">Note:</span> ${esc(noteRaw)}</p>`
+      : "";
+    return {
+      subject: `Your leave request has been ${outcome}`,
+      content: `
+        <h2 style="font-size:22px;font-weight:600;color:#a3b693;margin:0 0 16px;">Leave request ${esc(outcome)}</h2>
+        <p style="font-size:15px;line-height:1.6;color:#444;margin:0 0 12px;">Hi ${esc(first)}, your ${esc(typeLabel)} request from ${esc(start)} to ${esc(end)} has been ${esc(outcome)} by ${esc(reviewer)}.</p>
+        ${noteBlock}
+        <p style="font-size:14px;color:#888;margin:24px 0 0;">One Flow Team</p>
+      `,
     };
   }
 

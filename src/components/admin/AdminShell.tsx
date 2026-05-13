@@ -1,7 +1,7 @@
 import { type ReactNode, useEffect, useState } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
-import { Home, LogOut, PanelLeftClose, PanelLeft, Menu } from "lucide-react";
-import { AdminNav, adminNavItems, navItemsForRole } from "./AdminNav";
+import { ClipboardList, Home, LogOut, PanelLeftClose, PanelLeft, Menu } from "lucide-react";
+import { AdminNav, adminNavItems, isLimitedAdminRole, navItemsForRole } from "./AdminNav";
 import { getUser, supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -17,6 +17,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [profile, setProfile] = useState<AdminProfile | null>(null);
+  const [pendingLeaveCount, setPendingLeaveCount] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -49,6 +50,31 @@ export function AdminShell({ children }: { children: ReactNode }) {
   }, []);
 
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+
+  const canSeeLeaveQueue = Boolean(profile?.role && !isLimitedAdminRole(profile.role));
+  useEffect(() => {
+    if (!canSeeLeaveQueue) {
+      setPendingLeaveCount(0);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const { count, error } = await supabase
+        .from("leave_requests")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "pending");
+      if (cancelled) return;
+      if (error) {
+        console.error("leave_requests pending count", error);
+        return;
+      }
+      setPendingLeaveCount(count ?? 0);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [canSeeLeaveQueue, pathname]);
+
   const visibleNav = navItemsForRole(profile?.role);
   const currentLabel =
     visibleNav.find(
@@ -221,6 +247,26 @@ export function AdminShell({ children }: { children: ReactNode }) {
               <PanelLeftClose className="h-4 w-4 shrink-0" />
             )}
           </button>
+
+          {canSeeLeaveQueue ? (
+            <Link
+              to="/admin/timesheets"
+              search={{ tab: "leave-requests" }}
+              className="relative shrink-0 rounded-md p-2 text-muted-foreground hover:bg-muted"
+              aria-label={
+                pendingLeaveCount > 0
+                  ? `Leave requests, ${pendingLeaveCount} pending`
+                  : "Leave requests"
+              }
+            >
+              <ClipboardList className="h-5 w-5 shrink-0" />
+              {pendingLeaveCount > 0 ? (
+                <span className="absolute -right-0.5 -top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold leading-none text-destructive-foreground">
+                  {pendingLeaveCount > 99 ? "99+" : pendingLeaveCount}
+                </span>
+              ) : null}
+            </Link>
+          ) : null}
 
           <h1 className="min-w-0 flex-1 truncate font-display text-base font-semibold">
             {currentLabel}

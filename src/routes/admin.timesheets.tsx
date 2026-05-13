@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   CalendarPlus,
@@ -47,8 +47,12 @@ import {
 } from "@/components/ui/alert-dialog";
 import { getUser, supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
+import { AdminLeaveRequestsTab, StaffLeaveRequestSection } from "@/components/admin/LeaveRequestsBlock";
 
 export const Route = createFileRoute("/admin/timesheets")({
+  validateSearch: (raw: Record<string, unknown>) => ({
+    tab: raw.tab === "leave-requests" ? ("leave-requests" as const) : undefined,
+  }),
   head: () => ({ meta: [{ title: "Timesheets — One Flow Admin" }] }),
   component: TimesheetsPage,
 });
@@ -86,6 +90,7 @@ function classifyRole(role: string | null | undefined): Role {
   if (r === "director") return "director";
   if (r === "management") return "management";
   if (r === "guide") return "guide";
+  if (r === "front_desk") return "guide";
   return "other";
 }
 
@@ -163,9 +168,16 @@ function startOfWeekJhb(): Date {
 }
 
 function TimesheetsPage() {
+  const navigate = useNavigate();
+  const search = Route.useSearch();
   const [tab, setTab] = useState<string>("shifts");
   const [role, setRole] = useState<Role>("other");
   const [me, setMe] = useState<string | null>(null);
+  const [myProfile, setMyProfile] = useState<{
+    first_name: string | null;
+    last_name: string | null;
+    email: string | null;
+  } | null>(null);
   const [staff, setStaff] = useState<StaffRow[]>([]);
   const [shifts, setShifts] = useState<ShiftRow[]>([]);
   const [timesheets, setTimesheets] = useState<TimesheetRow[]>([]);
@@ -201,10 +213,15 @@ function TimesheetsPage() {
       setMe(user.id);
       const { data } = await supabase
         .from("profiles")
-        .select("role")
+        .select("role, first_name, last_name, email")
         .eq("id", user.id)
         .maybeSingle();
       setRole(classifyRole((data as { role?: string } | null)?.role));
+      setMyProfile({
+        first_name: (data as { first_name?: string | null } | null)?.first_name ?? null,
+        last_name: (data as { last_name?: string | null } | null)?.last_name ?? null,
+        email: (data as { email?: string | null } | null)?.email ?? null,
+      });
     })();
   }, []);
 
@@ -303,6 +320,31 @@ function TimesheetsPage() {
   }, [role, loadAll]);
 
   const isAdmin = role === "director" || role === "management";
+
+  useEffect(() => {
+    if (search.tab === "leave-requests" && isAdmin) {
+      setTab("leave-requests");
+    }
+  }, [search.tab, isAdmin]);
+
+  const onTabChange = (v: string) => {
+    setTab(v);
+    if (v === "leave-requests" && isAdmin) {
+      void navigate({
+        to: "/admin/timesheets",
+        search: { tab: "leave-requests" },
+        replace: true,
+      });
+    } else {
+      void navigate({ to: "/admin/timesheets", search: {}, replace: true });
+    }
+  };
+
+  useEffect(() => {
+    if (!isAdmin && tab === "leave-requests") {
+      setTab("shifts");
+    }
+  }, [isAdmin, tab]);
 
   const groupedShifts = useMemo(() => {
     const map = new Map<string, ShiftRow[]>();
@@ -522,11 +564,18 @@ function TimesheetsPage() {
         description="Schedule shifts, track clock-in/out, review hours."
       />
 
-      <Tabs value={tab} onValueChange={setTab}>
-        <TabsList className="mb-4">
+      {me && myProfile ? (
+        <div className="mb-6">
+          <StaffLeaveRequestSection profileId={me} staffProfile={myProfile} />
+        </div>
+      ) : null}
+
+      <Tabs value={tab} onValueChange={onTabChange}>
+        <TabsList className="mb-4 flex flex-wrap">
           <TabsTrigger value="shifts">Shifts</TabsTrigger>
           <TabsTrigger value="timesheets">Timesheets</TabsTrigger>
           <TabsTrigger value="clock">Clock in/out</TabsTrigger>
+          {isAdmin ? <TabsTrigger value="leave-requests">Leave requests</TabsTrigger> : null}
         </TabsList>
 
         <TabsContent value="shifts" className="mt-0">
@@ -806,6 +855,14 @@ function TimesheetsPage() {
             )}
           </div>
         </TabsContent>
+
+        {isAdmin ? (
+          <TabsContent value="leave-requests" className="mt-0">
+            {me && myProfile ? (
+              <AdminLeaveRequestsTab meId={me} reviewerProfile={myProfile} />
+            ) : null}
+          </TabsContent>
+        ) : null}
       </Tabs>
 
       <Sheet open={shiftSheetOpen} onOpenChange={(o) => !o && setShiftSheetOpen(false)}>
