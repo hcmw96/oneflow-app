@@ -211,7 +211,9 @@ export function BookingSheet({ session, open, onOpenChange }: Props) {
       });
       toast.error(
         error
-          ? supabaseErrorMessage(error, "Could not complete booking")
+          ? error.code === "23505"
+            ? "You already have an active booking for this class."
+            : supabaseErrorMessage(error, "Could not complete booking")
           : "Booking failed — no row returned. This is often RLS or a missing database field.",
       );
       setLoading(false);
