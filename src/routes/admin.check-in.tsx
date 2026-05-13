@@ -33,7 +33,6 @@ import {
   bookingConfirmationEmailData,
   bookingConfirmationTemplateForClassType,
 } from "@/lib/bookingConfirmationEmail";
-import { fetchFlowPointsPerClass } from "@/lib/flowPointsPerClass";
 
 export const Route = createFileRoute("/admin/check-in")({
   component: CheckInPage,
@@ -331,8 +330,7 @@ function CheckInPage() {
         });
         void awardClassesAttendedBadges(row.profileId);
       }
-      const pts = await fetchFlowPointsPerClass(supabase);
-      toast.success(`Checked in · +${pts} Flow Points`);
+      toast.success("Checked in · +10 Flow Points");
     } else {
       await deleteMayChallengeCheckInForBooking(id);
       toast.success("Reverted to confirmed");
@@ -431,8 +429,7 @@ function CheckInPage() {
       void awardClassesAttendedBadges(booking.profile_id as string);
     }
 
-    const pts = await fetchFlowPointsPerClass(supabase);
-    toast.success(`Welcome ${firstName}! · +${pts} Flow Points`, {
+    toast.success(`Welcome ${firstName}! · +10 Flow Points`, {
       duration: 3000,
       className:
         "!border-emerald-600/30 !bg-emerald-600 !px-6 !py-5 !text-lg !font-semibold !text-white !shadow-md",
@@ -830,7 +827,6 @@ function WalkInSheet({
       });
       void awardClassesAttendedBadges(profileId);
     }
-    const pts = await fetchFlowPointsPerClass(supabase);
     if (session?.starts_at) {
       await supabase.functions.invoke("send-email", {
         body: {
@@ -847,7 +843,7 @@ function WalkInSheet({
         },
       });
     }
-    toast.success(`${displayName} checked in · +${pts} Flow Points`);
+    toast.success(`${displayName} checked in · +10 Flow Points`);
     onOpenChange(false);
     onDone();
   };

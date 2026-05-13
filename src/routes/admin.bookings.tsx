@@ -40,7 +40,6 @@ import {
   bookingConfirmationEmailData,
   bookingConfirmationTemplateForClassType,
 } from "@/lib/bookingConfirmationEmail";
-import { fetchFlowPointsPerClass } from "@/lib/flowPointsPerClass";
 import {
   fetchTheSageCreditProfileIds,
   RosterAddonPills,
@@ -507,8 +506,7 @@ function BookingsPage() {
           booking_id: id,
         });
       }
-      const pts = await fetchFlowPointsPerClass(supabase);
-      toast.success(`Checked in · +${pts} Flow Points`);
+      toast.success("Checked in · +10 Flow Points");
     } else {
       await deleteMayChallengeCheckInForBooking(id);
       toast.success("Undone");
@@ -1063,7 +1061,6 @@ function WalkInSheet({
         booking_id: newBooking.id as string,
       });
     }
-    const pts = await fetchFlowPointsPerClass(supabase);
     if (session?.starts_at) {
       await supabase.functions.invoke("send-email", {
         body: {
@@ -1080,7 +1077,7 @@ function WalkInSheet({
         },
       });
     }
-    toast.success(`${displayName} checked in · +${pts} Flow Points`);
+    toast.success(`${displayName} checked in · +10 Flow Points`);
     onOpenChange(false);
     onDone();
   };
