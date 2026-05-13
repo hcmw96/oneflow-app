@@ -87,15 +87,16 @@ type ClassRow = {
   is_cancelled: boolean;
 };
 
-type GuideProfile = {
-  id: string;
+type GuideOption = {
+  /** `guides.id` — stored on `classes.guide_id`. */
+  guide_id: string;
   first_name: string | null;
   last_name: string | null;
 };
 
 type TabKey = "today" | "week" | "upcoming";
 
-function guideFullName(g: Pick<GuideProfile, "first_name" | "last_name">) {
+function guideFullName(g: Pick<GuideOption, "first_name" | "last_name">) {
   return [g.first_name, g.last_name].filter(Boolean).join(" ").trim() || "";
 }
 
@@ -204,7 +205,7 @@ const TYPE_BADGE_CLASS: Record<string, string> = {
 function ClassesPage() {
   const [role, setRole] = useState<string | null>(null);
   const [rows, setRows] = useState<ClassRow[]>([]);
-  const [guides, setGuides] = useState<GuideProfile[]>([]);
+  const [guides, setGuides] = useState<GuideOption[]>([]);
   const [loading, setLoading] = useState(true);
   const isGuide = (role ?? "").toLowerCase() === "guide";
   const canManage = !isGuide;
@@ -259,15 +260,36 @@ function ClassesPage() {
 
   const loadGuides = useCallback(async () => {
     const { data, error } = await supabase
-      .from("profiles")
-      .select("id, first_name, last_name")
-      .eq("role", "guide")
-      .order("first_name", { ascending: true });
+      .from("guides")
+      .select("id, profiles ( first_name, last_name )")
+      .eq("is_active", true);
+
     if (error) {
       console.error(error);
+      toast.error(supabaseErrorMessage(error, "Could not load guides"));
       return;
     }
-    setGuides((data ?? []) as GuideProfile[]);
+
+    type GuideRow = {
+      id: string;
+      profiles:
+        | { first_name: string | null; last_name: string | null }
+        | { first_name: string | null; last_name: string | null }[]
+        | null;
+    };
+
+    const normalized: GuideOption[] = (data ?? []).map((raw: GuideRow) => {
+      const p = Array.isArray(raw.profiles) ? raw.profiles[0] : raw.profiles;
+      return {
+        guide_id: String(raw.id),
+        first_name: p?.first_name ?? null,
+        last_name: p?.last_name ?? null,
+      };
+    });
+    normalized.sort((a, b) =>
+      (a.first_name ?? "").localeCompare(b.first_name ?? "", undefined, { sensitivity: "base" }),
+    );
+    setGuides(normalized);
   }, []);
 
   const load = useCallback(async () => {
@@ -303,7 +325,7 @@ function ClassesPage() {
     const map = new Map<string, string>();
     for (const g of guides) {
       const n = guideFullName(g);
-      if (n) map.set(g.id, n);
+      if (n) map.set(g.guide_id, n);
     }
     return map;
   }, [guides]);
@@ -757,7 +779,7 @@ function ClassesPage() {
               <SelectItem value="all">All guides</SelectItem>
               <SelectItem value={GUIDE_NONE}>No guide assigned</SelectItem>
               {guides.map((g) => (
-                <SelectItem key={g.id} value={g.id}>
+                <SelectItem key={g.guide_id} value={g.guide_id}>
                   {guideFullName(g) || "Guide"}
                 </SelectItem>
               ))}
@@ -1022,7 +1044,7 @@ function ClassesPage() {
                 <SelectContent>
                   <SelectItem value={GUIDE_NONE}>No guide</SelectItem>
                   {guides.map((g) => (
-                    <SelectItem key={g.id} value={g.id}>
+                    <SelectItem key={g.guide_id} value={g.guide_id}>
                       {guideFullName(g) || "Guide"}
                     </SelectItem>
                   ))}
@@ -1185,7 +1207,7 @@ function ClassesPage() {
               <SelectContent>
                 <SelectItem value={GUIDE_NONE}>No guide</SelectItem>
                 {guides.map((g) => (
-                  <SelectItem key={g.id} value={g.id}>
+                  <SelectItem key={g.guide_id} value={g.guide_id}>
                     {guideFullName(g) || "Guide"}
                   </SelectItem>
                 ))}
