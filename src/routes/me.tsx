@@ -558,9 +558,17 @@ function BillingPanel() {
 
   return (
     <Panel title="Billing history">
-      <p className="text-sm text-muted-foreground">
-        Passes and credit grants linked to your account (checkout and in-studio).
-      </p>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm text-muted-foreground">
+          Passes and credit grants linked to your account (checkout and in-studio).
+        </p>
+        <Link
+          to="/pricing"
+          className="shrink-0 rounded-full border border-border bg-background px-4 py-2 text-sm font-semibold text-primary hover:bg-muted/60"
+        >
+          View passes
+        </Link>
+      </div>
       {loading ? (
         <p className="mt-4 text-sm text-muted-foreground">Loading…</p>
       ) : rows.length === 0 ? (

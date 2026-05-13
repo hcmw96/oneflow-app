@@ -240,11 +240,12 @@ function HomePage() {
         </section>
 
         <Link
-          to="/pricing"
-          className="block rounded-2xl border border-border bg-card px-5 py-4 text-center"
+          to="/schedule"
+          className="block rounded-2xl border border-border bg-card px-5 py-4 text-center transition-colors active:bg-muted/40"
         >
-          <p className="font-display text-lg font-bold">{credits} credits remaining</p>
-          <p className="mt-1 text-sm text-muted-foreground">View passes</p>
+          <p className="font-display text-lg font-bold">
+            {credits === 1 ? "1 credit remaining" : `${credits} credits remaining`} — Book a class →
+          </p>
         </Link>
 
         {upcomingBookings.length > 0 ? (

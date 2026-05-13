@@ -162,19 +162,24 @@ export default function SchedulePage() {
     const now = new Date();
     const isToday = isSameDay(day, now);
     const rows = data ?? [];
-    const visible = rows
-      .filter((c) => {
-        if (!isToday) return true;
-        const classStart = new Date(c.starts_at);
-        return classStart.getTime() > now.getTime() - 15 * 60 * 1000;
-      })
+    const mapped = rows
       .map((c) => {
         const raw = c as Record<string, unknown>;
         return {
           ...(c as ClassRow),
           guide_name: guideNameFromRow(raw.guide_name),
         };
-      });
+      })
+      .sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime());
+
+    const graceMs = 15 * 60 * 1000;
+    const nowT = now.getTime();
+    const visible = isToday
+      ? [
+          ...mapped.filter((c) => new Date(c.starts_at).getTime() > nowT - graceMs),
+          ...mapped.filter((c) => new Date(c.starts_at).getTime() <= nowT - graceMs),
+        ]
+      : mapped;
 
     classesCacheRef.current.set(key, visible);
     setClasses(visible);
@@ -349,6 +354,44 @@ export default function SchedulePage() {
         {...swipeHandlers}
       >
         <h2 className="font-display text-lg font-bold">{longDayLabel}</h2>
+        <div className="flex flex-wrap gap-2 pb-1">
+          <button
+            type="button"
+            onClick={() => setSelectedDay(startOfDay(new Date()))}
+            className={cn(
+              "rounded-full border px-3 py-1 text-xs font-semibold transition-colors",
+              isSameDay(selectedDay, today)
+                ? "border-[#a3b693] bg-[#a3b693]/15 text-[#3d4f36]"
+                : "border-border bg-card text-muted-foreground hover:bg-muted/50",
+            )}
+          >
+            Today
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedDay(startOfDay(addDays(new Date(), -1)))}
+            className={cn(
+              "rounded-full border px-3 py-1 text-xs font-semibold transition-colors",
+              isSameDay(selectedDay, startOfDay(addDays(new Date(), -1)))
+                ? "border-[#a3b693] bg-[#a3b693]/15 text-[#3d4f36]"
+                : "border-border bg-card text-muted-foreground hover:bg-muted/50",
+            )}
+          >
+            Yesterday
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedDay(startOfDay(addDays(new Date(), -2)))}
+            className={cn(
+              "rounded-full border px-3 py-1 text-xs font-semibold transition-colors",
+              isSameDay(selectedDay, startOfDay(addDays(new Date(), -2)))
+                ? "border-[#a3b693] bg-[#a3b693]/15 text-[#3d4f36]"
+                : "border-border bg-card text-muted-foreground hover:bg-muted/50",
+            )}
+          >
+            Day before yesterday
+          </button>
+        </div>
         <div
           key={scheduleDayKey(selectedDay)}
           className={cn("space-y-5", !loading && "schedule-content-animate")}
@@ -360,14 +403,21 @@ export default function SchedulePage() {
               No classes scheduled for this day.
             </div>
           ) : (
-            classes.map((c) => (
-              <ScheduleRow
-                key={c.id}
-                session={c}
-                alreadyBooked={userBookings.includes(c.id)}
-                onReserve={() => setBookingFor(c)}
-              />
-            ))
+            classes.map((c) => {
+              const graceMs = 15 * 60 * 1000;
+              const greyPast =
+                isSameDay(selectedDay, today) &&
+                new Date(c.starts_at).getTime() <= Date.now() - graceMs;
+              return (
+                <ScheduleRow
+                  key={c.id}
+                  session={c}
+                  alreadyBooked={userBookings.includes(c.id)}
+                  greyPast={greyPast}
+                  onReserve={() => setBookingFor(c)}
+                />
+              );
+            })
           )}
         </div>
       </main>
@@ -389,10 +439,12 @@ export default function SchedulePage() {
 function ScheduleRow({
   session,
   alreadyBooked,
+  greyPast,
   onReserve,
 }: {
   session: ClassRow;
   alreadyBooked: boolean;
+  greyPast?: boolean;
   onReserve: () => void;
 }) {
   const [descExpanded, setDescExpanded] = useState(false);
@@ -410,7 +462,12 @@ function ScheduleRow({
   const almostFull = session.booked_count / session.capacity >= 0.8;
 
   return (
-    <div className="rounded-2xl border border-border bg-card px-5 py-5">
+    <div
+      className={cn(
+        "rounded-2xl border border-border bg-card px-5 py-5",
+        greyPast && "opacity-55 saturate-75",
+      )}
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           {almostFull && !full && (

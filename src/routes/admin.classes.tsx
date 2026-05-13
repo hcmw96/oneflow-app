@@ -3,8 +3,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   CalendarDays,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   Filter,
   Loader2,
   MapPin,
@@ -62,7 +60,6 @@ export const Route = createFileRoute("/admin/classes")({
 });
 
 const TZ = "Africa/Johannesburg";
-const PAST_PAGE_SIZE = 20;
 const GUIDE_NONE = "__none__";
 
 const LOCATIONS = ["Studio 1", "Studio 2", "Wellzone", "Sauna"] as const;
@@ -96,7 +93,7 @@ type GuideProfile = {
   last_name: string | null;
 };
 
-type TabKey = "today" | "week" | "upcoming" | "past";
+type TabKey = "today" | "week" | "upcoming";
 
 function guideFullName(g: Pick<GuideProfile, "first_name" | "last_name">) {
   return [g.first_name, g.last_name].filter(Boolean).join(" ").trim() || "";
@@ -124,6 +121,14 @@ function jhbDayKey(iso: string): string {
   return new Date(iso).toLocaleDateString("en-CA", { timeZone: TZ });
 }
 
+/** Add calendar days in Africa/Johannesburg (no DST). */
+function jhbOffsetDayKey(dayKey: string, deltaDays: number): string {
+  const [y, m, d] = dayKey.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, (m || 1) - 1, d || 1, 12, 0, 0));
+  dt.setUTCDate(dt.getUTCDate() + deltaDays);
+  return dt.toLocaleDateString("en-CA", { timeZone: TZ });
+}
+
 function jhbDayLabel(dayKey: string): string {
   const [y, m, d] = dayKey.split("-").map(Number);
   // Build a noon UTC date and format in JHB to avoid DST/edge issues (none in JHB anyway).
@@ -134,6 +139,24 @@ function jhbDayLabel(dayKey: string): string {
     day: "numeric",
     month: "long",
   });
+}
+
+/** Within calendar “today” (JHB), upcoming first then earlier-today at bottom. */
+function orderClassesChronologicalWithTodayPastAtBottom(
+  list: ClassRow[],
+  dayKey: string,
+  todayKey: string,
+  tab: TabKey,
+  todaySubDay: number,
+  nowMs: number,
+): ClassRow[] {
+  const asc = [...list].sort((a, b) => a.starts_at.localeCompare(b.starts_at));
+  const splitToday =
+    todaySubDay === 0 && dayKey === todayKey && (tab === "today" || tab === "week");
+  if (!splitToday) return asc;
+  const upcoming = asc.filter((c) => new Date(c.starts_at).getTime() >= nowMs);
+  const past = asc.filter((c) => new Date(c.starts_at).getTime() < nowMs);
+  return [...upcoming, ...past];
 }
 
 function formatTime(iso: string): string {
@@ -187,7 +210,9 @@ function ClassesPage() {
   const canManage = !isGuide;
 
   // UI state
-  const [tab, setTab] = useState<TabKey>("week");
+  const [tab, setTab] = useState<TabKey>("today");
+  /** When tab is "today": 0 = today, 1 = yesterday, 2 = day before yesterday (JHB). */
+  const [todaySubDay, setTodaySubDay] = useState(0);
   const [q, setQ] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [locationFilter, setLocationFilter] = useState<string>("all");
@@ -197,7 +222,6 @@ function ClassesPage() {
   const [occupancyFilter, setOccupancyFilter] = useState<"all" | "has_bookings" | "empty">("all");
   const [collapsedDays, setCollapsedDays] = useState<Record<string, boolean>>({});
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [pastPage, setPastPage] = useState(1);
 
   // Dialog state
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -316,17 +340,17 @@ function ClassesPage() {
       const startMs = new Date(c.starts_at).getTime();
       const dk = jhbDayKey(c.starts_at);
       switch (tab) {
-        case "today":
-          return dk === todayKey;
+        case "today": {
+          const anchor = jhbOffsetDayKey(todayKey, -todaySubDay);
+          return dk === anchor;
+        }
         case "week":
           return dk >= weekStart && dk <= weekEnd;
         case "upcoming":
           return startMs >= nowMs;
-        case "past":
-          return startMs < nowMs;
       }
     });
-  }, [rows, tab, todayKey, weekStart, weekEnd, nowMs]);
+  }, [rows, tab, todayKey, weekStart, weekEnd, nowMs, todaySubDay]);
 
   // Search + filter bar
   const filtered = useMemo(() => {
@@ -363,15 +387,13 @@ function ClassesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tabFiltered, q, typeFilter, locationFilter, guideFilter, dateFrom, dateTo, occupancyFilter, guideMap]);
 
-  // Sort: ascending for today/week/upcoming, descending for past.
   const sorted = useMemo(() => {
     const copy = [...filtered];
     copy.sort((a, b) => a.starts_at.localeCompare(b.starts_at));
-    if (tab === "past") copy.reverse();
     return copy;
-  }, [filtered, tab]);
+  }, [filtered]);
 
-  // Group by JHB day
+  // Group by JHB day; week tab lists today first, then future weekdays, then Mon–Sun past days collapsed by default.
   const grouped = useMemo(() => {
     const map = new Map<string, ClassRow[]>();
     for (const c of sorted) {
@@ -379,28 +401,28 @@ function ClassesPage() {
       if (!map.has(k)) map.set(k, []);
       map.get(k)!.push(c);
     }
-    return [...map.entries()];
-  }, [sorted]);
 
-  // Past pagination
-  const pastPageCount = tab === "past" ? Math.max(1, Math.ceil(sorted.length / PAST_PAGE_SIZE)) : 1;
-  const visibleGrouped = useMemo(() => {
-    if (tab !== "past") return grouped;
-    const start = (pastPage - 1) * PAST_PAGE_SIZE;
-    const end = start + PAST_PAGE_SIZE;
-    const paginated = sorted.slice(start, end);
-    const map = new Map<string, ClassRow[]>();
-    for (const c of paginated) {
-      const k = jhbDayKey(c.starts_at);
-      if (!map.has(k)) map.set(k, []);
-      map.get(k)!.push(c);
+    let entries: [string, ClassRow[]][] = [...map.entries()].map(([k, list]) => [
+      k,
+      orderClassesChronologicalWithTodayPastAtBottom(list, k, todayKey, tab, todaySubDay, nowMs),
+    ]);
+
+    if (tab === "week") {
+      const inRange = entries.filter(([k]) => k >= weekStart && k <= weekEnd);
+      const outRange = entries.filter(([k]) => k < weekStart || k > weekEnd);
+      const beforeToday = inRange.filter(([k]) => k < todayKey).sort((a, b) => a[0].localeCompare(b[0]));
+      const todayEnt = inRange.filter(([k]) => k === todayKey);
+      const afterToday = inRange.filter(([k]) => k > todayKey).sort((a, b) => a[0].localeCompare(b[0]));
+      entries = [...todayEnt, ...afterToday, ...beforeToday, ...outRange];
+    } else {
+      entries.sort((a, b) => a[0].localeCompare(b[0]));
     }
-    return [...map.entries()];
-  }, [tab, grouped, sorted, pastPage]);
+    return entries;
+  }, [sorted, tab, todayKey, weekStart, weekEnd, todaySubDay, nowMs]);
 
   useEffect(() => {
-    setPastPage(1);
-  }, [tab, q, typeFilter, locationFilter, guideFilter, dateFrom, dateTo, occupancyFilter]);
+    if (tab !== "today") setTodaySubDay(0);
+  }, [tab]);
 
   const classesFilterCount =
     (q.trim() ? 1 : 0) +
@@ -626,12 +648,44 @@ function ClassesPage() {
       </div>
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)}>
-        <TabsList className="mb-4 flex flex-wrap">
+        <TabsList className="mb-3 flex flex-wrap">
           <TabsTrigger value="today">Today</TabsTrigger>
           <TabsTrigger value="week">This Week</TabsTrigger>
           <TabsTrigger value="upcoming">All Upcoming</TabsTrigger>
-          <TabsTrigger value="past">Past</TabsTrigger>
         </TabsList>
+
+        {tab === "today" ? (
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            <span className="text-xs font-medium text-muted-foreground">View:</span>
+            <Button
+              type="button"
+              size="sm"
+              variant={todaySubDay === 0 ? "default" : "outline"}
+              className={todaySubDay === 0 ? "bg-[#a3b693] hover:bg-[#8fa67d]" : ""}
+              onClick={() => setTodaySubDay(0)}
+            >
+              Today
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={todaySubDay === 1 ? "default" : "outline"}
+              className={todaySubDay === 1 ? "bg-[#a3b693] hover:bg-[#8fa67d]" : ""}
+              onClick={() => setTodaySubDay(1)}
+            >
+              Yesterday
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={todaySubDay === 2 ? "default" : "outline"}
+              className={todaySubDay === 2 ? "bg-[#a3b693] hover:bg-[#8fa67d]" : ""}
+              onClick={() => setTodaySubDay(2)}
+            >
+              Day before yesterday
+            </Button>
+          </div>
+        ) : null}
 
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
           <div className="flex flex-wrap items-center gap-2 sm:mr-auto sm:w-full sm:max-w-none">
@@ -775,19 +829,22 @@ function ClassesPage() {
                 <Skeleton key={i} className="h-20 w-full rounded-2xl" />
               ))}
             </div>
-          ) : visibleGrouped.length === 0 ? (
+          ) : grouped.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-border bg-card py-16 text-center">
               <CalendarDays className="h-10 w-10 text-muted-foreground" strokeWidth={1.5} />
-              <p className="text-sm text-muted-foreground">
-                {tab === "past"
-                  ? "No past classes match your filters."
-                  : "No classes match your filters."}
-              </p>
+              <p className="text-sm text-muted-foreground">No classes match your filters.</p>
             </div>
           ) : (
             <div className="space-y-4">
-              {visibleGrouped.map(([dayKey, list]) => {
-                const collapsed = collapsedDays[dayKey] === true;
+              {grouped.map(([dayKey, list]) => {
+                const isPastWeekDay =
+                  tab === "week" &&
+                  dayKey < todayKey &&
+                  dayKey >= weekStart &&
+                  dayKey <= weekEnd;
+                const collapsed = isPastWeekDay
+                  ? collapsedDays[dayKey] !== false
+                  : collapsedDays[dayKey] === true;
                 return (
                   <section
                     key={dayKey}
@@ -822,12 +879,18 @@ function ClassesPage() {
                           const guideDisp = resolveGuideDisplay(c);
                           const typeBadge = TYPE_BADGE_CLASS[c.class_type] ?? "bg-muted text-foreground";
                           const isSelected = selected.has(c.id);
+                          const startedPast = new Date(c.starts_at).getTime() < nowMs;
+                          const greyRow =
+                            startedPast &&
+                            ((tab === "today" && todaySubDay === 0 && dayKey === todayKey) ||
+                              (tab === "week" && dayKey === todayKey));
                           return (
                             <li
                               key={c.id}
                               className={cn(
                                 "flex items-start gap-3 px-4 py-3 hover:bg-muted/30",
                                 isSelected && "bg-[#e8efe3]/40",
+                                greyRow && "opacity-[0.55]",
                               )}
                             >
                               {canManage && (
@@ -898,34 +961,6 @@ function ClassesPage() {
                   </section>
                 );
               })}
-            </div>
-          )}
-
-          {tab === "past" && !loading && sorted.length > 0 && (
-            <div className="mt-4 flex items-center justify-between gap-3 text-xs text-muted-foreground">
-              <span>
-                Page {pastPage} of {pastPageCount} · {sorted.length} total
-              </span>
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPastPage((p) => Math.max(1, p - 1))}
-                  disabled={pastPage <= 1}
-                >
-                  <ChevronLeft className="h-4 w-4" /> Prev
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPastPage((p) => Math.min(pastPageCount, p + 1))}
-                  disabled={pastPage >= pastPageCount}
-                >
-                  Next <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
             </div>
           )}
         </TabsContent>
