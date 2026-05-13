@@ -10,6 +10,7 @@ import {
   SheetDescription,
 } from "@/components/ui/sheet";
 import { getUser, supabase } from "@/lib/supabase";
+import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { cn } from "@/lib/utils";
 import {
   bookingConfirmationEmailData,
@@ -36,6 +37,7 @@ interface Credit {
   is_unlimited: boolean;
   expires_at: string | null;
   allowed_class_types: string[] | null;
+  category?: string | null;
 }
 
 interface Props {
@@ -92,25 +94,42 @@ export function BookingSheet({ session, open, onOpenChange }: Props) {
       setUserId(user.id);
       setUserEmail(user.email ?? null);
 
-      const [{ data: creditsData }, { data: pointsData }, { data: ships }] = await Promise.all([
-        supabase
-          .from("user_credits")
-          .select(
-            "id, product_name, credits_remaining, is_unlimited, expires_at, allowed_class_types",
-          )
-          .eq("profile_id", user.id)
-          .gte("expires_at", new Date().toISOString())
-          .neq("category", "cafe")
-          .order("expires_at"),
-        supabase.from("profiles").select("flow_points").eq("id", user.id).maybeSingle(),
-        supabase
-          .from("friendships")
-          .select("requester_id, addressee_id")
-          .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`)
-          .eq("status", "accepted"),
-      ]);
+      const [{ data: creditsData, error: creditsErr }, { data: pointsData }, { data: ships }] =
+        await Promise.all([
+          supabase
+            .from("user_credits")
+            .select(
+              "id, product_name, credits_remaining, is_unlimited, expires_at, allowed_class_types, category",
+            )
+            .eq("profile_id", user.id),
+          supabase.from("profiles").select("flow_points").eq("id", user.id).maybeSingle(),
+          supabase
+            .from("friendships")
+            .select("requester_id, addressee_id")
+            .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`)
+            .eq("status", "accepted"),
+        ]);
 
-      const eligible = (creditsData ?? []).filter((c) => {
+      if (creditsErr) {
+        console.error("[BookingSheet] user_credits query failed", creditsErr);
+      }
+
+      // Credits attach to profile_id (same as auth user id for all roles, including staff).
+      const nowMs = Date.now();
+      const pool = (creditsData ?? []).filter((c) => {
+        const cat = String((c as { category?: string | null }).category ?? "").toLowerCase();
+        if (cat === "cafe") return false;
+        if (c.is_unlimited) {
+          if (c.expires_at && new Date(c.expires_at).getTime() < nowMs) return false;
+          return true;
+        }
+        const rem = Number(c.credits_remaining);
+        if (!Number.isFinite(rem) || rem <= 0) return false;
+        if (c.expires_at && new Date(c.expires_at).getTime() < nowMs) return false;
+        return true;
+      });
+
+      const eligible = pool.filter((c) => {
         if (!c.allowed_class_types || c.allowed_class_types.length === 0) return true;
         return c.allowed_class_types.includes(session.class_type);
       });
@@ -177,20 +196,37 @@ export function BookingSheet({ session, open, onOpenChange }: Props) {
         qr_token: globalThis.crypto.randomUUID(),
       })
       .select()
-      .single();
+      .maybeSingle();
 
-    if (error) {
-      toast.error(error.message);
+    if (error || !booking) {
+      console.error("[BookingSheet] booking insert failed", {
+        message: error?.message,
+        code: error?.code,
+        details: error?.details,
+        hint: error?.hint,
+        userId,
+        classId: session.id,
+        creditId: selectedCredit,
+        paymentMethod: selectedCredit ? "credit" : "flow_points",
+      });
+      toast.error(
+        error
+          ? supabaseErrorMessage(error, "Could not complete booking")
+          : "Booking failed — no row returned. This is often RLS or a missing database field.",
+      );
       setLoading(false);
       return;
     }
 
-    await supabase.from("flow_points").insert({
+    const fpIns = await supabase.from("flow_points").insert({
       profile_id: userId,
       points: 1,
       reason: "class_attended",
       reference_id: booking.id,
     });
+    if (fpIns.error) {
+      console.error("[BookingSheet] flow_points insert after booking failed", fpIns.error);
+    }
 
     if (isMayChallenge && isMay) {
       await supabase.from("challenge_entries").insert({

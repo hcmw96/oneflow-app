@@ -40,14 +40,7 @@ import {
   AssignPackageDialog,
   type AssignPackageTarget,
 } from "@/components/admin/AssignPackageDialog";
-import {
-  Sheet,
-  SheetClose,
-  SheetContent,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+import { CustomerProfileSheet } from "@/components/admin/CustomerProfileSheet";
 import {
   Select,
   SelectContent,
@@ -690,86 +683,16 @@ function StaffPage() {
         onAssigned={() => void load()}
       />
 
-      <Sheet open={profileSheetRow !== null} onOpenChange={(o) => !o && setProfileSheetRow(null)}>
-        <SheetContent side="right" className="w-full max-w-md overflow-y-auto">
-          {profileSheetRow ? (
-            <>
-              <SheetHeader>
-                <SheetTitle>Staff profile</SheetTitle>
-              </SheetHeader>
-              <div className="mt-6 space-y-4 text-sm">
-                <div className="flex items-center gap-3">
-                  {profileSheetRow.avatarUrl ? (
-                    <img
-                      src={profileSheetRow.avatarUrl}
-                      alt=""
-                      className="h-14 w-14 rounded-full object-cover ring-2 ring-border"
-                    />
-                  ) : (
-                    <div className="grid h-14 w-14 place-content-center rounded-full bg-[#a3b693] text-lg font-bold text-white">
-                      {initials(
-                        profileSheetRow.firstName,
-                        profileSheetRow.lastName,
-                        profileSheetRow.email,
-                      )}
-                    </div>
-                  )}
-                  <div className="min-w-0">
-                    <p className="font-display text-lg font-bold leading-tight">
-                      {profileSheetRow.fullName}
-                    </p>
-                    <p className="text-muted-foreground">{ROLE_LABEL[profileSheetRow.role]}</p>
-                  </div>
-                </div>
-                <dl className="space-y-3">
-                  <div className="flex gap-2">
-                    <dt className="w-20 shrink-0 text-muted-foreground">Email</dt>
-                    <dd className="min-w-0 break-all">{profileSheetRow.email || "—"}</dd>
-                  </div>
-                  <div className="flex gap-2">
-                    <dt className="w-20 shrink-0 text-muted-foreground">Phone</dt>
-                    <dd>{profileSheetRow.phone?.trim() || "—"}</dd>
-                  </div>
-                  <div className="flex gap-2">
-                    <dt className="w-20 shrink-0 text-muted-foreground">Joined</dt>
-                    <dd>
-                      {profileSheetRow.createdAt
-                        ? formatDate(profileSheetRow.createdAt)
-                        : "—"}
-                    </dd>
-                  </div>
-                </dl>
-              </div>
-              <SheetFooter className="mt-8 flex-col gap-2 sm:flex-col">
-                <Button
-                  type="button"
-                  className="w-full gap-2 bg-[#a3b693] text-white hover:bg-[#8fa67d]"
-                  disabled={!canManage}
-                  onClick={() => {
-                    const row = profileSheetRow;
-                    setAssignTarget({
-                      profileId: row.id,
-                      displayName: row.fullName,
-                      email: row.email?.trim() || null,
-                      firstName: row.firstName,
-                    });
-                    setAssignOpen(true);
-                    setProfileSheetRow(null);
-                  }}
-                >
-                  <Package className="h-4 w-4 shrink-0" aria-hidden />
-                  Assign package
-                </Button>
-                <SheetClose asChild>
-                  <Button type="button" variant="outline" className="w-full">
-                    Close
-                  </Button>
-                </SheetClose>
-              </SheetFooter>
-            </>
-          ) : null}
-        </SheetContent>
-      </Sheet>
+      <CustomerProfileSheet
+        customerId={profileSheetRow?.id ?? null}
+        open={profileSheetRow !== null}
+        onOpenChange={(o) => {
+          if (!o) setProfileSheetRow(null);
+        }}
+        viewerRole={viewerRole}
+        variant="staff"
+        onProfileUpdated={() => void load()}
+      />
 
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent

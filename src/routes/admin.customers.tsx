@@ -115,6 +115,7 @@ function CustomersPage() {
   const [chipNeverBooked, setChipNeverBooked] = useState(false);
   const [chipWaiverUnsigned, setChipWaiverUnsigned] = useState(false);
   const [chipJoinedMonth, setChipJoinedMonth] = useState(false);
+  const [roleFilter, setRoleFilter] = useState<string>("all");
   const [members, setMembers] = useState<MemberRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [viewerRole, setViewerRole] = useState<string | null>(null);
@@ -186,7 +187,7 @@ function CustomersPage() {
     const { data: profiles, error: pErr } = await supabase
       .from("profiles")
       .select("id, first_name, last_name, email, phone, role, waiver_accepted_at, created_at")
-      .eq("role", "customer");
+      .order("first_name", { ascending: true });
 
     if (pErr) {
       console.error(pErr);
@@ -276,6 +277,7 @@ function CustomersPage() {
         const hay = `${m.name} ${m.email}`.toLowerCase();
         if (!hay.includes(ql)) return false;
       }
+      if (roleFilter !== "all" && m.role !== roleFilter) return false;
       if (chipHasCredits && !(m.credits > 0)) return false;
       if (chipNoCredits && m.credits !== 0) return false;
       if (chipNeverBooked && m.hasBooking) return false;
@@ -296,6 +298,7 @@ function CustomersPage() {
     chipNeverBooked,
     chipWaiverUnsigned,
     chipJoinedMonth,
+    roleFilter,
   ]);
 
   const selectedSet = useMemo(() => new Set(selectedMemberIds), [selectedMemberIds]);
@@ -505,7 +508,7 @@ function CustomersPage() {
     <div className={cn(selectedMemberIds.length > 0 && "pb-28")}>
       <PageHeader
         title="Customers"
-        description={loading ? "Loading…" : `${members.length} members`}
+        description={loading ? "Loading…" : `${members.length} people`}
         actions={
           <Button
             type="button"
@@ -525,6 +528,7 @@ function CustomersPage() {
         open={sheetOpen}
         onOpenChange={closeProfileSheet}
         viewerRole={viewerRole}
+        variant="customer"
         onProfileUpdated={() => void load()}
       />
 
@@ -713,6 +717,21 @@ function CustomersPage() {
             className="w-full rounded-lg border border-border bg-card py-2.5 pl-9 pr-3 text-sm outline-none focus:border-primary"
           />
         </div>
+        <div className="w-full sm:w-52">
+          <Select value={roleFilter} onValueChange={setRoleFilter}>
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="Role" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All roles</SelectItem>
+              {ALL_ROLES.map((r) => (
+                <SelectItem key={r} value={r}>
+                  {ROLE_LABEL[r]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
           <span className="inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-border bg-muted/40 px-2 py-1 text-xs font-semibold text-muted-foreground sm:w-auto sm:justify-start">
             <Filter className="h-3.5 w-3.5" aria-hidden />
@@ -820,7 +839,7 @@ function CustomersPage() {
             </table>
           ) : members.length === 0 ? (
             <AdminEmptyState
-              title="No members yet"
+              title="No people yet"
               actionLabel="Add member"
               onAction={() => {
                 resetAddForm();

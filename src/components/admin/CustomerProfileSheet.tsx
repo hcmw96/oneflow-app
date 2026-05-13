@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Calendar, Loader2, Mail, Package, Phone, Shield, Trash2, User } from "lucide-react";
+import { Calendar, Loader2, Mail, Package, Phone, Shield, Trash2, User, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import {
   AssignPackageDialog,
@@ -17,7 +17,13 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -74,6 +80,7 @@ type ProfileRow = {
   phone: string | null;
   date_of_birth: string | null;
   role: string | null;
+  secondary_roles: string[] | null;
   avatar_url: string | null;
   waiver_accepted_at: string | null;
   created_at: string | null;
@@ -88,6 +95,16 @@ type CreditRow = {
   credits_total: number | null;
   is_unlimited: boolean | null;
   expires_at: string | null;
+  yoco_payment_id?: string | null;
+  created_at?: string | null;
+};
+
+type CreditTransactionRow = {
+  id: string;
+  product_name: string | null;
+  credits_total: number | null;
+  created_at: string | null;
+  yoco_payment_id: string | null;
 };
 
 type BookingRow = {
@@ -115,6 +132,8 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   viewerRole: string | null;
+  /** "staff" shows Staff profile title; behaviour and data are the same. */
+  variant?: "customer" | "staff";
   onProfileUpdated?: () => void;
 };
 
@@ -123,6 +142,7 @@ export function CustomerProfileSheet({
   open,
   onOpenChange,
   viewerRole,
+  variant = "customer",
   onProfileUpdated,
 }: Props) {
   const canManage =
@@ -149,13 +169,22 @@ export function CustomerProfileSheet({
   const [removeCreditId, setRemoveCreditId] = useState<string | null>(null);
   const [removingCredit, setRemovingCredit] = useState(false);
 
+  const [creditTransactions, setCreditTransactions] = useState<CreditTransactionRow[]>([]);
+  const [secondaryPopoverOpen, setSecondaryPopoverOpen] = useState(false);
+  const [secondaryDraft, setSecondaryDraft] = useState<string[]>([]);
+  const [savingSecondary, setSavingSecondary] = useState(false);
+  const [emailVerified, setEmailVerified] = useState<boolean | null>(null);
+  const [resendBusy, setResendBusy] = useState(false);
+
+  const title = variant === "staff" ? "Staff profile" : "Customer profile";
+
   const load = useCallback(async () => {
     if (!customerId) return;
     setLoading(true);
     const { data: p, error: pErr } = await supabase
       .from("profiles")
       .select(
-        "id, first_name, last_name, email, phone, date_of_birth, role, avatar_url, waiver_accepted_at, created_at, notes, is_active",
+        "id, first_name, last_name, email, phone, date_of_birth, role, secondary_roles, avatar_url, waiver_accepted_at, created_at, notes, is_active",
       )
       .eq("id", customerId)
       .maybeSingle();
@@ -169,6 +198,7 @@ export function CustomerProfileSheet({
       );
       setProfile(null);
       setCredits([]);
+      setCreditTransactions([]);
       setBookings([]);
       setLoading(false);
       return;
@@ -182,8 +212,11 @@ export function CustomerProfileSheet({
     const [{ data: cr }, { data: bk }] = await Promise.all([
       supabase
         .from("user_credits")
-        .select("id, product_name, credits_remaining, credits_total, is_unlimited, expires_at")
-        .eq("profile_id", customerId),
+        .select(
+          "id, product_name, credits_remaining, credits_total, is_unlimited, expires_at, yoco_payment_id, created_at",
+        )
+        .eq("profile_id", customerId)
+        .order("created_at", { ascending: false }),
       supabase
         .from("bookings")
         .select(
@@ -203,6 +236,20 @@ export function CustomerProfileSheet({
     const now = Date.now();
     const crRows = (cr ?? []) as CreditRow[];
     setCredits(crRows.filter((row) => isCreditActive(row, now)));
+    const txRows: CreditTransactionRow[] = crRows.map((row) => ({
+      id: row.id,
+      product_name: row.product_name,
+      credits_total: row.credits_total,
+      created_at: row.created_at ?? null,
+      yoco_payment_id: row.yoco_payment_id ?? null,
+    }));
+    txRows.sort((a, b) => {
+      const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
+      if (tb !== ta) return tb - ta;
+      return b.id.localeCompare(a.id);
+    });
+    setCreditTransactions(txRows);
     setBookings((bk ?? []) as BookingRow[]);
     setLoading(false);
   }, [customerId]);
@@ -211,6 +258,38 @@ export function CustomerProfileSheet({
     if (!open || !customerId) return;
     void load();
   }, [open, customerId, load]);
+
+  useEffect(() => {
+    if (!open || !customerId || !canManage) {
+      setEmailVerified(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const { data, error } = await supabase.functions.invoke<{
+        verified?: boolean;
+        unknown?: boolean;
+      }>("resend-verification-email", {
+        body: { profile_id: customerId, action: "status" },
+      });
+      if (cancelled) return;
+      if (error) {
+        setEmailVerified(null);
+        return;
+      }
+      if (data?.unknown) setEmailVerified(null);
+      else setEmailVerified(data?.verified ?? null);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, customerId, canManage]);
+
+  useEffect(() => {
+    if (!secondaryPopoverOpen || !profile) return;
+    const raw = profile.secondary_roles ?? [];
+    setSecondaryDraft([...raw].filter((r) => ALL_ROLES.includes(r as AllRole)).sort());
+  }, [secondaryPopoverOpen, profile]);
 
   const fullName = useMemo(() => {
     if (!profile) return "";
@@ -221,6 +300,52 @@ export function CustomerProfileSheet({
     if (bookingStatusFilter === "all") return bookings;
     return bookings.filter((b) => b.status === bookingStatusFilter);
   }, [bookings, bookingStatusFilter]);
+
+  const saveSecondaryRoles = async () => {
+    if (!profile || !canManage) return;
+    const primary = (profile.role ?? "customer").toLowerCase();
+    const next = [...new Set(secondaryDraft.map((r) => r.toLowerCase()))].filter(
+      (r) => isAllRole(r) && r !== primary,
+    );
+    setSavingSecondary(true);
+    const { error } = await supabase
+      .from("profiles")
+      .update({ secondary_roles: next })
+      .eq("id", profile.id);
+    setSavingSecondary(false);
+    if (error) {
+      toast.error(supabaseErrorMessage(error, "Could not save secondary roles"));
+      return;
+    }
+    setProfile((prev) => (prev ? { ...prev, secondary_roles: next } : null));
+    setSecondaryPopoverOpen(false);
+    toast.success(`Secondary roles updated for ${fullName}`);
+    onProfileUpdated?.();
+  };
+
+  const resendVerificationEmail = async () => {
+    if (!profile?.id || !canManage) return;
+    setResendBusy(true);
+    const { data, error } = await supabase.functions.invoke<{ ok?: boolean; error?: string; skipped?: boolean }>(
+      "resend-verification-email",
+      { body: { profile_id: profile.id } },
+    );
+    setResendBusy(false);
+    if (error) {
+      toast.error(supabaseErrorMessage(error, "Could not send verification email"));
+      return;
+    }
+    if (data && typeof data === "object" && "error" in data && data.error) {
+      toast.error(String(data.error));
+      return;
+    }
+    if (data && typeof data === "object" && "skipped" in data && data.skipped) {
+      toast.success("Email is already verified.");
+      setEmailVerified(true);
+    } else {
+      toast.success(`Verification email sent to ${profile.email ?? "member"}`);
+    }
+  };
 
   const openAssignPackage = () => {
     if (!profile) return;
@@ -274,7 +399,7 @@ export function CustomerProfileSheet({
       .update({ role: next })
       .eq("id", profile.id)
       .select("id, role")
-      .single();
+      .maybeSingle();
     setSavingRole(false);
     setRoleConfirmOpen(false);
     setPendingRole(null);
@@ -352,7 +477,7 @@ export function CustomerProfileSheet({
           }}
         >
           <SheetHeader className="border-b border-border px-6 py-4 text-left">
-            <SheetTitle className="font-display text-xl">Customer profile</SheetTitle>
+            <SheetTitle className="font-display text-xl">{title}</SheetTitle>
           </SheetHeader>
 
           {loading || !profile ? (
@@ -411,6 +536,69 @@ export function CustomerProfileSheet({
                             profile.role ??
                             "—"}
                         </span>
+                        {(profile.secondary_roles ?? [])
+                          .filter((r) => isAllRole(r.toLowerCase()) && r.toLowerCase() !== (profile.role ?? "").toLowerCase())
+                          .map((r) => (
+                            <span
+                              key={r}
+                              className="inline-flex rounded-full border border-[#a3b693]/50 bg-[#e8efe3]/80 px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wide text-[#4a6b3c]"
+                            >
+                              {ROLE_LABEL[r.toLowerCase()] ?? r}
+                            </span>
+                          ))}
+                        {canManage ? (
+                          <Popover open={secondaryPopoverOpen} onOpenChange={setSecondaryPopoverOpen}>
+                            <PopoverTrigger asChild>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="h-7 gap-1 text-xs"
+                              >
+                                <Pencil className="h-3 w-3" aria-hidden />
+                                Edit secondary roles
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-80" align="start">
+                              <p className="mb-2 text-xs text-muted-foreground">
+                                Extra role tags (primary is above). Same person can wear multiple hats.
+                              </p>
+                              <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
+                                {ALL_ROLES.filter(
+                                  (r) => r !== (profile.role ?? "customer").toLowerCase(),
+                                ).map((r) => (
+                                  <label
+                                    key={r}
+                                    className="flex cursor-pointer items-center gap-2 text-sm"
+                                  >
+                                    <Checkbox
+                                      checked={secondaryDraft.includes(r)}
+                                      onCheckedChange={(checked) => {
+                                        setSecondaryDraft((prev) =>
+                                          checked === true
+                                            ? [...prev, r]
+                                            : prev.filter((x) => x !== r),
+                                        );
+                                      }}
+                                    />
+                                    {ROLE_LABEL[r]}
+                                  </label>
+                                ))}
+                              </div>
+                              <Button
+                                type="button"
+                                className="mt-3 w-full bg-[#a3b693] text-white hover:bg-[#8fa67d]"
+                                disabled={savingSecondary}
+                                onClick={() => void saveSecondaryRoles()}
+                              >
+                                {savingSecondary ? (
+                                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                ) : null}
+                                Save secondary roles
+                              </Button>
+                            </PopoverContent>
+                          </Popover>
+                        ) : null}
                         <span
                           className={cn(
                             "inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wide",
@@ -428,7 +616,30 @@ export function CustomerProfileSheet({
                         <dt className="flex w-24 shrink-0 items-center gap-1 text-muted-foreground">
                           <Mail className="h-3.5 w-3.5" /> Email
                         </dt>
-                        <dd className="min-w-0 break-all">{profile.email ?? "—"}</dd>
+                        <dd className="min-w-0 break-all">
+                          <span className="block">{profile.email ?? "—"}</span>
+                          {canManage && profile.email?.trim() && emailVerified !== true ? (
+                            <div className="mt-2 space-y-1">
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="text-xs"
+                                disabled={resendBusy}
+                                onClick={() => void resendVerificationEmail()}
+                              >
+                                {resendBusy ? (
+                                  <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                                ) : null}
+                                Resend verification email
+                              </Button>
+                              <p className="text-[11px] leading-snug text-muted-foreground">
+                                Uses Supabase Auth email settings. If nothing arrives, confirm Auth →
+                                email confirmations are enabled and SMTP (e.g. Resend) allows your domain.
+                              </p>
+                            </div>
+                          ) : null}
+                        </dd>
                       </div>
                       <div className="flex gap-2">
                         <dt className="flex w-24 shrink-0 items-center gap-1 text-muted-foreground">
@@ -570,6 +781,59 @@ export function CustomerProfileSheet({
                       );
                     })}
                   </ul>
+                )}
+              </section>
+
+              <section className="border-t border-border pt-6">
+                <h4 className="mb-3 font-display text-lg font-semibold">Credit transaction history</h4>
+                {creditTransactions.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No credit rows yet.</p>
+                ) : (
+                  <div className="overflow-x-auto rounded-lg border border-border">
+                    <table className="w-full min-w-[520px] text-sm">
+                      <thead className="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
+                        <tr>
+                          <th className="px-3 py-2 font-medium">Product</th>
+                          <th className="px-3 py-2 font-medium">Assigned</th>
+                          <th className="px-3 py-2 font-medium">Credits total</th>
+                          <th className="px-3 py-2 font-medium">Payment</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {creditTransactions.map((tx) => {
+                          const pay = (tx.yoco_payment_id ?? "").trim();
+                          const payLabel =
+                            !pay || pay === "manual_assignment"
+                              ? "Manual / comp"
+                              : pay.length > 24
+                                ? `${pay.slice(0, 12)}…${pay.slice(-6)}`
+                                : pay;
+                          const assigned =
+                            tx.created_at != null
+                              ? new Date(tx.created_at).toLocaleString("en-ZA", {
+                                  day: "numeric",
+                                  month: "short",
+                                  year: "numeric",
+                                  hour: "numeric",
+                                  minute: "2-digit",
+                                })
+                              : "—";
+                          return (
+                            <tr key={tx.id} className="border-t border-border">
+                              <td className="px-3 py-2 font-medium">{tx.product_name ?? "—"}</td>
+                              <td className="px-3 py-2 text-muted-foreground">{assigned}</td>
+                              <td className="px-3 py-2 tabular-nums">
+                                {tx.credits_total == null ? "—" : String(tx.credits_total)}
+                              </td>
+                              <td className="max-w-[200px] truncate px-3 py-2 text-muted-foreground">
+                                {payLabel}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
                 )}
               </section>
 

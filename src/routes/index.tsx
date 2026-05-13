@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Sparkles } from "lucide-react";
+import { Calendar, MapPin, Sparkles } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { Skeleton } from "@/components/ui/skeleton";
 import challengeBg from "@/assets/challenge-bg.jpg";
@@ -39,6 +39,9 @@ function HomePage() {
   const [weeklyGoal, setWeeklyGoal] = useState(3);
   const [weeklyDone, setWeeklyDone] = useState(0);
   const [challengeStamped, setChallengeStamped] = useState(0);
+  const [upcomingBookings, setUpcomingBookings] = useState<
+    { id: string; name: string; startsAt: string; location: string }[]
+  >([]);
   const challengeTotalDays = 31;
   const SAGE = "#a3b693";
   const goalPct = weeklyGoal > 0 ? Math.min(100, (weeklyDone / weeklyGoal) * 100) : 0;
@@ -58,6 +61,7 @@ function HomePage() {
       setWeeklyGoal(3);
       setWeeklyDone(0);
       setChallengeStamped(0);
+      setUpcomingBookings([]);
 
       if (!user || cancelled) {
         if (!cancelled) setLoading(false);
@@ -73,6 +77,7 @@ function HomePage() {
         { data: creditRows },
         { count: attendedCount, error: attendedErr },
         { count: weeklyAttended, error: weeklyErr },
+        { data: bookingRows },
         stampedDays,
       ] = await Promise.all([
         supabase.from("profiles").select("first_name, weekly_goal, flow_points").eq("id", uid).maybeSingle(),
@@ -93,6 +98,16 @@ function HomePage() {
           .not("checked_in_at", "is", null)
           .gte("checked_in_at", weekStart.toISOString())
           .lt("checked_in_at", weekEnd.toISOString()),
+        supabase
+          .from("bookings")
+          .select(
+            `
+            id,
+            classes ( name, starts_at, location )
+          `,
+          )
+          .eq("profile_id", uid)
+          .eq("status", "confirmed"),
         countMayChallengeStampedDays(uid),
       ]);
 
@@ -120,6 +135,26 @@ function HomePage() {
       const fpRaw = (profile as { flow_points?: number | null } | null)?.flow_points;
       setPoints(typeof fpRaw === "number" && Number.isFinite(fpRaw) ? Math.max(0, fpRaw) : 0);
       setChallengeStamped(stampedDays);
+
+      const nowT = Date.now();
+      type ClassJoin = { name: string; starts_at: string; location: string } | null;
+      const upcoming = (bookingRows ?? [])
+        .map((row) => {
+          const raw = row as { id: string; classes: ClassJoin | ClassJoin[] | null };
+          const c = Array.isArray(raw.classes) ? raw.classes[0] : raw.classes;
+          if (!c?.starts_at) return null;
+          return {
+            id: raw.id,
+            name: c.name ?? "Class",
+            startsAt: c.starts_at,
+            location: c.location ?? "—",
+          };
+        })
+        .filter((x): x is NonNullable<typeof x> => x != null && new Date(x.startsAt).getTime() > nowT)
+        .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime())
+        .slice(0, 3);
+      setUpcomingBookings(upcoming);
+
       setLoading(false);
     }
 
@@ -211,6 +246,51 @@ function HomePage() {
           <p className="font-display text-lg font-bold">{credits} credits remaining</p>
           <p className="mt-1 text-sm text-muted-foreground">View passes</p>
         </Link>
+
+        {upcomingBookings.length > 0 ? (
+          <section className="rounded-2xl border border-border bg-card p-5">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h2 className="font-display text-xl font-bold">Upcoming bookings</h2>
+              <Link
+                to="/bookings"
+                className="text-xs font-semibold text-primary underline-offset-2 hover:underline"
+              >
+                View all
+              </Link>
+            </div>
+            <ul className="space-y-3">
+              {upcomingBookings.map((b) => {
+                const d = new Date(b.startsAt);
+                const dateStr = d.toLocaleDateString("en-ZA", {
+                  weekday: "short",
+                  day: "numeric",
+                  month: "short",
+                });
+                const timeStr = d
+                  .toLocaleTimeString("en-ZA", { hour: "numeric", minute: "2-digit", hour12: true })
+                  .toUpperCase();
+                return (
+                  <li
+                    key={b.id}
+                    className="flex flex-col gap-1 rounded-xl border border-border bg-muted/20 px-3 py-3 text-sm"
+                  >
+                    <p className="font-semibold leading-snug">{b.name}</p>
+                    <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+                      <span className="inline-flex items-center gap-1">
+                        <Calendar className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                        {dateStr} · {timeStr}
+                      </span>
+                      <span className="inline-flex items-center gap-1">
+                        <MapPin className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                        {b.location}
+                      </span>
+                    </p>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        ) : null}
 
         <section className="rounded-2xl border border-border bg-card p-5">
           <h2 className="font-display text-2xl font-bold">Your Weekly Goal</h2>

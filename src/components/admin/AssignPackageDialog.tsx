@@ -3,7 +3,12 @@ import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
-import { groupProductsByDisplayCategory } from "@/lib/productCategories";
+import {
+  CREDIT_CATEGORY_ORDERED,
+  PRODUCT_CATEGORY_SLUG_LABEL,
+  normalizeProductCategoryKey,
+  type CreditCategoryOrdered,
+} from "@/lib/productCategories";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -28,9 +33,7 @@ import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
-  SelectGroup,
   SelectItem,
-  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -54,13 +57,11 @@ type ProductPick = {
   allowed_class_types: string[] | null;
 };
 
-type CustomCategory = "yoga" | "wellzone" | "all_access";
-
-const CUSTOM_CATEGORIES: { value: CustomCategory; label: string }[] = [
-  { value: "yoga", label: "Yoga" },
-  { value: "wellzone", label: "Wellzone" },
-  { value: "all_access", label: "All access" },
-];
+const CUSTOM_CATEGORY_ITEMS: { value: CreditCategoryOrdered; label: string }[] =
+  CREDIT_CATEGORY_ORDERED.map((value) => ({
+    value,
+    label: PRODUCT_CATEGORY_SLUG_LABEL[value],
+  }));
 
 const CLASS_TYPE_OPTIONS = [
   { value: "yoga", label: "Yoga" },
@@ -116,11 +117,12 @@ export function AssignPackageDialog({
   const [tab, setTab] = useState<"existing" | "custom">("existing");
   const [products, setProducts] = useState<ProductPick[]>([]);
   const [productsLoading, setProductsLoading] = useState(false);
+  const [existingCategory, setExistingCategory] = useState<string>("");
   const [selectedProductId, setSelectedProductId] = useState<string>("");
   const [existingNote, setExistingNote] = useState("");
 
   const [customName, setCustomName] = useState("");
-  const [customCategory, setCustomCategory] = useState<CustomCategory>("yoga");
+  const [customCategory, setCustomCategory] = useState<CreditCategoryOrdered>("yoga");
   const [customCredits, setCustomCredits] = useState("10");
   const [customUnlimited, setCustomUnlimited] = useState(false);
   const [customValidityDays, setCustomValidityDays] = useState("");
@@ -145,6 +147,7 @@ export function AssignPackageDialog({
 
   const resetForms = useCallback(() => {
     setTab("existing");
+    setExistingCategory("");
     setSelectedProductId("");
     setExistingNote("");
     setCustomName("");
@@ -203,13 +206,30 @@ export function AssignPackageDialog({
     })();
   }, [open, assigneeKey]);
 
-  const productsByGroup = useMemo(
-    () =>
-      groupProductsByDisplayCategory(products, (a, b) =>
-        a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
-      ),
-    [products],
-  );
+  const categorySlugsInCatalog = useMemo(() => {
+    const s = new Set<string>();
+    for (const p of products) {
+      s.add(normalizeProductCategoryKey(p.category));
+    }
+    return s;
+  }, [products]);
+
+  const existingCategoryOptions = useMemo(() => {
+    const ordered: string[] = [...CREDIT_CATEGORY_ORDERED].filter((k) =>
+      categorySlugsInCatalog.has(k),
+    );
+    if (categorySlugsInCatalog.has("other")) {
+      ordered.push("other");
+    }
+    return ordered;
+  }, [categorySlugsInCatalog]);
+
+  const productsInSelectedCategory = useMemo(() => {
+    if (!existingCategory) return [];
+    return products
+      .filter((p) => normalizeProductCategoryKey(p.category) === existingCategory)
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+  }, [products, existingCategory]);
 
   const toggleClassType = (value: string) => {
     setCustomClassTypes((prev) =>
@@ -444,6 +464,10 @@ export function AssignPackageDialog({
 
   const openAssignConfirm = (kind: "existing" | "custom") => {
     if (kind === "existing") {
+      if (!existingCategory) {
+        toast.error("Select a category.");
+        return;
+      }
       if (!selectedProductId) {
         toast.error("Select a product.");
         return;
@@ -532,35 +556,57 @@ export function AssignPackageDialog({
 
             <TabsContent value="existing" className="space-y-4 pt-2">
               <div className="grid gap-2">
+                <Label>Category</Label>
+                {productsLoading ? (
+                  <p className="text-sm text-muted-foreground">Loading products…</p>
+                ) : (
+                  <Select
+                    value={existingCategory || undefined}
+                    onValueChange={(v) => {
+                      setExistingCategory(v);
+                      setSelectedProductId("");
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {existingCategoryOptions.map((slug) => (
+                        <SelectItem key={slug} value={slug}>
+                          {PRODUCT_CATEGORY_SLUG_LABEL[slug] ?? slug}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+              <div className="grid gap-2">
                 <Label>Product</Label>
                 {productsLoading ? (
                   <p className="text-sm text-muted-foreground">Loading products…</p>
+                ) : !existingCategory ? (
+                  <p className="text-sm text-muted-foreground">Choose a category first.</p>
+                ) : productsInSelectedCategory.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No products in this category.</p>
                 ) : (
                   <Select value={selectedProductId} onValueChange={setSelectedProductId}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select a product" />
                     </SelectTrigger>
                     <SelectContent>
-                      {productsByGroup.map((section) => (
-                        <SelectGroup key={section.label}>
-                          <SelectLabel className="text-xs text-muted-foreground">
-                            {section.label}
-                          </SelectLabel>
-                          {section.items.map((p) => {
-                            const cc =
-                              p.credit_count == null
-                                ? "—"
-                                : p.credit_count >= UNLIMITED_PRODUCT_THRESHOLD
-                                  ? "Unlimited"
-                                  : String(p.credit_count);
-                            return (
-                              <SelectItem key={p.id} value={p.id}>
-                                {p.name} · {cc} credits
-                              </SelectItem>
-                            );
-                          })}
-                        </SelectGroup>
-                      ))}
+                      {productsInSelectedCategory.map((p) => {
+                        const cc =
+                          p.credit_count == null
+                            ? "—"
+                            : p.credit_count >= UNLIMITED_PRODUCT_THRESHOLD
+                              ? "Unlimited"
+                              : String(p.credit_count);
+                        return (
+                          <SelectItem key={p.id} value={p.id}>
+                            {p.name} · {cc} credits
+                          </SelectItem>
+                        );
+                      })}
                     </SelectContent>
                   </Select>
                 )}
@@ -581,7 +627,12 @@ export function AssignPackageDialog({
                 </Button>
                 <Button
                   type="button"
-                  disabled={submitting || productsLoading || !selectedProductId}
+                  disabled={
+                    submitting ||
+                    productsLoading ||
+                    !existingCategory ||
+                    !selectedProductId
+                  }
                   className="bg-[#a3b693] text-white hover:bg-[#8fa67d]"
                   onClick={() => openAssignConfirm("existing")}
                 >
@@ -605,13 +656,13 @@ export function AssignPackageDialog({
                 <Label>Category</Label>
                 <Select
                   value={customCategory}
-                  onValueChange={(v) => setCustomCategory(v as CustomCategory)}
+                  onValueChange={(v) => setCustomCategory(v as CreditCategoryOrdered)}
                 >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {CUSTOM_CATEGORIES.map((c) => (
+                    {CUSTOM_CATEGORY_ITEMS.map((c) => (
                       <SelectItem key={c.value} value={c.value}>
                         {c.label}
                       </SelectItem>
