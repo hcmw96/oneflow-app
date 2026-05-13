@@ -55,10 +55,18 @@ type RoleType = "director" | "management" | "guide" | "customer" | "other";
 type GuideSortKey = "name_asc" | "name_desc" | "joined_asc" | "active_first";
 
 type GuideRow = {
+  /** `guides.id` */
+  guideId: string;
+  /** `profiles.id` (same as `guides.profile_id`) — used for edits, packages, toggles. */
   id: string;
   firstName: string;
   lastName: string;
   email: string;
+  phone: string;
+  avatarUrl: string | null;
+  profileRole: string | null;
+  bio: string | null;
+  photoUrl: string | null;
   fullName: string;
   disciplines: string[];
   active: boolean;
@@ -67,19 +75,24 @@ type GuideRow = {
   packages: GuideCreditPillRow[];
 };
 
-type GuideProfileRow = {
+type GuideDbRow = {
+  id: string;
+  profile_id: string;
+  bio: string | null;
+  photo_url: string | null;
+  disciplines: unknown;
+  is_active: boolean | null;
+};
+
+type GuideProfileJoin = {
   id: string;
   first_name: string | null;
   last_name: string | null;
   email: string | null;
+  phone: string | null;
+  avatar_url: string | null;
   role: string | null;
-  created_at?: string | null;
-};
-
-type GuidesTableRow = {
-  profile_id: string;
-  disciplines: string[] | null;
-  is_active?: boolean | null;
+  created_at: string | null;
 };
 
 function normalizeDisciplineValue(value: string): string {
@@ -190,14 +203,11 @@ function GuidesPage() {
     const weekEnd = new Date(weekStart);
     weekEnd.setDate(weekStart.getDate() + 7);
 
-    const [viewerRoleRes, profilesRes, guidesRes, classesRes] = await Promise.all([
+    const [viewerRoleRes, guidesRes, classesRes] = await Promise.all([
       supabase.from("profiles").select("role").eq("id", user.id).maybeSingle(),
       supabase
-        .from("profiles")
-        .select("id, first_name, last_name, email, role, created_at")
-        .eq("role", "guide")
-        .order("first_name", { ascending: true }),
-      supabase.from("guides").select("profile_id, disciplines, is_active"),
+        .from("guides")
+        .select("id, profile_id, bio, photo_url, disciplines, is_active"),
       supabase
         .from("classes")
         .select("guide_name")
@@ -209,9 +219,9 @@ function GuidesPage() {
     if (viewerRoleRes.error) console.error(viewerRoleRes.error);
     setViewerRole(roleType((viewerRoleRes.data as { role?: string | null } | null)?.role));
 
-    if (profilesRes.error) {
-      console.error(profilesRes.error);
-      toast.error(supabaseErrorMessage(profilesRes.error, "Could not load guides"));
+    if (guidesRes.error) {
+      console.error(guidesRes.error);
+      toast.error(supabaseErrorMessage(guidesRes.error, "Could not load guides"));
       setRows([]);
       setLoading(false);
       return;
@@ -222,20 +232,34 @@ function GuidesPage() {
       toast.error(supabaseErrorMessage(classesRes.error, "Could not load weekly classes"));
     }
 
-    if (guidesRes.error) {
-      console.error(guidesRes.error);
-      toast.error(
-        `${supabaseErrorMessage(guidesRes.error, "Could not load guide disciplines")} — showing profile data only.`,
-      );
+    const guideRows = (guidesRes.data ?? []) as GuideDbRow[];
+    const profileIds = [...new Set(guideRows.map((g) => g.profile_id).filter(Boolean))];
+
+    if (profileIds.length === 0) {
+      setRows([]);
+      setLoading(false);
+      return;
     }
 
-    const guideMetaByProfile = new Map<string, { disciplines: string[]; active: boolean }>();
-    for (const raw of (guidesRes.data ?? []) as GuidesTableRow[]) {
-      guideMetaByProfile.set(String(raw.profile_id), {
-        disciplines: normalizeDisciplines(raw.disciplines),
-        active: raw.is_active !== false,
-      });
+    const { data: profileRows, error: profilesErr } = await supabase
+      .from("profiles")
+      .select("id, first_name, last_name, email, phone, avatar_url, role, created_at")
+      .in("id", profileIds);
+
+    if (profilesErr) {
+      console.error(profilesErr);
+      toast.error(supabaseErrorMessage(profilesErr, "Could not load guide profiles"));
+      setRows([]);
+      setLoading(false);
+      return;
     }
+
+    const profileById = new Map(
+      (profileRows ?? []).map((raw) => {
+        const p = raw as GuideProfileJoin;
+        return [String(p.id), p];
+      }),
+    );
 
     const classCountByGuideName = new Map<string, number>();
     for (const c of (classesRes.data ?? []) as { guide_name: string | null }[]) {
@@ -244,26 +268,38 @@ function GuidesPage() {
       classCountByGuideName.set(key, (classCountByGuideName.get(key) ?? 0) + 1);
     }
 
-    const mapped: Omit<GuideRow, "packages">[] = ((profilesRes.data ?? []) as GuideProfileRow[]).map(
-      (p) => {
+    const mapped: Omit<GuideRow, "packages">[] = [];
+    for (const g of guideRows) {
+      const p = profileById.get(String(g.profile_id));
+      if (!p) {
+        console.warn(`[admin/guides] guides row ${g.id} has no matching profile ${g.profile_id}`);
+        continue;
+      }
       const first = titleCase(p.first_name ?? "");
       const last = titleCase(p.last_name ?? "");
       const fullName = `${first} ${last}`.trim() || "Guide";
-      const meta = guideMetaByProfile.get(p.id);
-      const activeState = meta?.active ?? true;
       const classesThisWeek = classCountByGuideName.get(fullName.toLowerCase()) ?? 0;
-      return {
-        id: p.id,
+      mapped.push({
+        guideId: String(g.id),
+        id: String(g.profile_id),
         firstName: first,
         lastName: last,
         email: (p.email ?? "").trim(),
+        phone: (p.phone ?? "").trim(),
+        avatarUrl: p.avatar_url ?? null,
+        profileRole: p.role ?? null,
+        bio: g.bio ?? null,
+        photoUrl: g.photo_url ?? null,
         fullName,
-        disciplines: meta?.disciplines ?? [],
-        active: activeState,
+        disciplines: normalizeDisciplines(g.disciplines),
+        active: g.is_active !== false,
         classesThisWeek,
         joinedAt: p.created_at ?? null,
-      };
-    },
+      });
+    }
+
+    mapped.sort((a, b) =>
+      a.firstName.localeCompare(b.firstName, undefined, { sensitivity: "base" }),
     );
 
     const creditMap = await fetchActiveUserCreditsByProfileIds(mapped.map((r) => r.id));
@@ -609,7 +645,7 @@ function GuidesPage() {
             <tbody>
               {displayedRows.map((row) => (
                 <tr
-                  key={row.id}
+                  key={row.guideId}
                   className="cursor-pointer border-t border-border hover:bg-[#a3b693]/5"
                   onClick={() => openEdit(row)}
                 >
