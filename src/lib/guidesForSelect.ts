@@ -9,49 +9,45 @@ export type GuideSelectRow = {
   avatar_url: string | null;
 };
 
+type ProfileEmbed = {
+  first_name: string | null;
+  last_name: string | null;
+  avatar_url?: string | null;
+} | null;
+
+function oneProfile(raw: unknown): ProfileEmbed {
+  if (raw == null) return null;
+  if (Array.isArray(raw)) {
+    const x = raw[0] as ProfileEmbed | undefined;
+    return x ?? null;
+  }
+  return raw as ProfileEmbed;
+}
+
 /**
- * Loads active guides with profile names — equivalent to:
- * SELECT g.id, p.first_name, p.last_name, p.avatar_url FROM guides g
- * JOIN profiles p ON p.id = g.profile_id WHERE g.is_active = true ORDER BY p.first_name
+ * Active guides with profile names for class forms — one round-trip via FK embed:
+ * guides → profiles(profile_id) as `profile`.
  *
- * Uses two round-trips so RLS/embed quirks on `guides → profiles` do not drop rows.
+ * Dropdown: value = `guides.id`, label = first + last name; classes.guide_id + guide_name on save.
  */
 export async function fetchGuidesForClassSelect(): Promise<{
   data: GuideSelectRow[];
   error: PostgrestError | null;
 }> {
-  const gRes = await supabase.from("guides").select("id, profile_id").eq("is_active", true);
+  const res = await supabase
+    .from("guides")
+    .select("id, profile:profile_id(first_name, last_name, avatar_url)")
+    .eq("is_active", true);
 
-  if (gRes.error) {
-    return { data: [], error: gRes.error };
+  if (res.error) {
+    return { data: [], error: res.error };
   }
 
-  const guideRows = (gRes.data ?? []) as { id: string; profile_id: string }[];
-  if (guideRows.length === 0) {
-    return { data: [], error: null };
-  }
-
-  const profileIds = [...new Set(guideRows.map((r) => r.profile_id).filter(Boolean))];
-  const pRes = await supabase
-    .from("profiles")
-    .select("id, first_name, last_name, avatar_url")
-    .in("id", profileIds);
-
-  if (pRes.error) {
-    return { data: [], error: pRes.error };
-  }
-
-  const pmap = new Map(
-    (pRes.data ?? []).map((p) => [
-      String((p as { id: string }).id),
-      p as { first_name: string | null; last_name: string | null; avatar_url: string | null },
-    ]),
-  );
-
-  const data: GuideSelectRow[] = guideRows.map((g) => {
-    const p = pmap.get(String(g.profile_id));
+  const data: GuideSelectRow[] = (res.data ?? []).map((row) => {
+    const r = row as { id: string; profile?: unknown };
+    const p = oneProfile(r.profile);
     return {
-      guide_id: String(g.id),
+      guide_id: String(r.id),
       first_name: p?.first_name ?? null,
       last_name: p?.last_name ?? null,
       avatar_url: p?.avatar_url ?? null,

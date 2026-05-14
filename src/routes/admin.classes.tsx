@@ -379,7 +379,17 @@ function ClassesPage() {
       return true;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tabFiltered, q, typeFilter, locationFilter, guideFilter, dateFrom, dateTo, occupancyFilter, guideMap]);
+  }, [
+    tabFiltered,
+    q,
+    typeFilter,
+    locationFilter,
+    guideFilter,
+    dateFrom,
+    dateTo,
+    occupancyFilter,
+    guideMap,
+  ]);
 
   const sorted = useMemo(() => {
     const copy = [...filtered];
@@ -404,9 +414,13 @@ function ClassesPage() {
     if (tab === "week") {
       const inRange = entries.filter(([k]) => k >= weekStart && k <= weekEnd);
       const outRange = entries.filter(([k]) => k < weekStart || k > weekEnd);
-      const beforeToday = inRange.filter(([k]) => k < todayKey).sort((a, b) => a[0].localeCompare(b[0]));
+      const beforeToday = inRange
+        .filter(([k]) => k < todayKey)
+        .sort((a, b) => a[0].localeCompare(b[0]));
       const todayEnt = inRange.filter(([k]) => k === todayKey);
-      const afterToday = inRange.filter(([k]) => k > todayKey).sort((a, b) => a[0].localeCompare(b[0]));
+      const afterToday = inRange
+        .filter(([k]) => k > todayKey)
+        .sort((a, b) => a[0].localeCompare(b[0]));
       entries = [...todayEnt, ...afterToday, ...beforeToday, ...outRange];
     } else {
       entries.sort((a, b) => a[0].localeCompare(b[0]));
@@ -572,10 +586,7 @@ function ClassesPage() {
     if (!canManage || selected.size === 0) return;
     setBulkBusy(true);
     const ids = [...selected];
-    const { error } = await supabase
-      .from("classes")
-      .update({ is_cancelled: true })
-      .in("id", ids);
+    const { error } = await supabase.from("classes").update({ is_cancelled: true }).in("id", ids);
     setBulkBusy(false);
     if (error) {
       console.error("bulk cancel failed", error);
@@ -832,10 +843,7 @@ function ClassesPage() {
             <div className="space-y-4">
               {grouped.map(([dayKey, list]) => {
                 const isPastWeekDay =
-                  tab === "week" &&
-                  dayKey < todayKey &&
-                  dayKey >= weekStart &&
-                  dayKey <= weekEnd;
+                  tab === "week" && dayKey < todayKey && dayKey >= weekStart && dayKey <= weekEnd;
                 const collapsed = isPastWeekDay
                   ? collapsedDays[dayKey] !== false
                   : collapsedDays[dayKey] === true;
@@ -871,7 +879,8 @@ function ClassesPage() {
                       <ul className="divide-y divide-border">
                         {list.map((c) => {
                           const guideDisp = resolveGuideDisplay(c);
-                          const typeBadge = TYPE_BADGE_CLASS[c.class_type] ?? "bg-muted text-foreground";
+                          const typeBadge =
+                            TYPE_BADGE_CLASS[c.class_type] ?? "bg-muted text-foreground";
                           const isSelected = selected.has(c.id);
                           const startedPast = new Date(c.starts_at).getTime() < nowMs;
                           const greyRow =
@@ -1112,10 +1121,7 @@ function ClassesPage() {
         </DialogContent>
       </Dialog>
 
-      <AlertDialog
-        open={!!deleteFromDialog}
-        onOpenChange={(o) => !o && setDeleteFromDialog(null)}
-      >
+      <AlertDialog open={!!deleteFromDialog} onOpenChange={(o) => !o && setDeleteFromDialog(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Cancel this class?</AlertDialogTitle>
