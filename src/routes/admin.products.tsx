@@ -15,13 +15,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import {
-  Sheet,
-  SheetContent,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import {
   Select,
   SelectContent,
@@ -158,10 +152,72 @@ function emptyForm() {
 
 type ProductSortKey = "name_asc" | "price_asc" | "price_desc" | "category";
 
+function compareProductName(a: ProductRow, b: ProductRow): number {
+  return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+}
+
+function AdminProductTableRow({
+  product: p,
+  togglingId,
+  onPersistActive,
+  onEdit,
+}: {
+  product: ProductRow;
+  togglingId: string | null;
+  onPersistActive: (id: string, next: boolean) => void;
+  onEdit: (p: ProductRow) => void;
+}) {
+  return (
+    <tr className="border-t border-border">
+      <td className="max-w-[140px] truncate px-4 py-3 font-semibold sm:max-w-xs sm:px-5 md:max-w-md">
+        {p.name}
+      </td>
+      <td className="whitespace-nowrap px-4 py-3 sm:px-5">
+        <span className="inline-flex rounded-full bg-[#e8efe3] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#3d4f36]">
+          {tableCategoryLabel(p.category)}
+        </span>
+      </td>
+      <td className="whitespace-nowrap px-4 py-3 tabular-nums sm:px-5">
+        {formatPriceZar(p.price_zar)}
+      </td>
+      <td className="whitespace-nowrap px-4 py-3 sm:px-5">{creditsDisplay(p.credit_count)}</td>
+      <td className="whitespace-nowrap px-4 py-3 text-muted-foreground sm:px-5">
+        {validityDisplay(p.validity_days)}
+      </td>
+      <td className="px-4 py-3 sm:px-5">
+        <div className="flex items-center gap-2">
+          <Switch
+            checked={p.is_active}
+            disabled={togglingId === p.id}
+            onCheckedChange={(checked) => void onPersistActive(p.id, checked)}
+            className="data-[state=checked]:bg-[#a3b693]"
+            aria-label={p.is_active ? "Deactivate product" : "Activate product"}
+          />
+          <span className="hidden text-xs text-muted-foreground sm:inline">
+            {p.is_active ? "Active" : "Inactive"}
+          </span>
+        </div>
+      </td>
+      <td className="px-4 py-3 text-right sm:px-5">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="gap-1 border-[#c5d4b8] bg-card"
+          onClick={() => onEdit(p)}
+        >
+          <Pencil className="h-3.5 w-3.5" aria-hidden />
+          Edit
+        </Button>
+      </td>
+    </tr>
+  );
+}
+
 function ProductsPage() {
   const [rows, setRows] = useState<ProductRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [sort, setSort] = useState<ProductSortKey>("name_asc");
+  const [sort, setSort] = useState<ProductSortKey>("category");
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -219,25 +275,26 @@ function ProductsPage() {
     void load();
   }, [load]);
 
-  const groupedProductRows = useMemo(() => {
-    return groupProductsByDisplayCategory(rows, (a, b) => {
-      switch (sort) {
-        case "price_asc":
-          return (
-            a.price_zar - b.price_zar ||
-            a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
-          );
-        case "price_desc":
-          return (
-            b.price_zar - a.price_zar ||
-            a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
-          );
-        case "category":
-        case "name_asc":
-        default:
-          return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
-      }
-    });
+  const groupedProductSections = useMemo(
+    () => groupProductsByDisplayCategory(rows, (a, b) => compareProductName(a, b)),
+    [rows],
+  );
+
+  const flatSortedProducts = useMemo(() => {
+    if (sort === "category") return null;
+    const sorted = [...rows];
+    switch (sort) {
+      case "price_asc":
+        sorted.sort((a, b) => a.price_zar - b.price_zar || compareProductName(a, b));
+        break;
+      case "price_desc":
+        sorted.sort((a, b) => b.price_zar - a.price_zar || compareProductName(a, b));
+        break;
+      case "name_asc":
+      default:
+        sorted.sort(compareProductName);
+    }
+    return sorted;
   }, [rows, sort]);
 
   const resetFormToDefaults = useCallback(() => {
@@ -362,7 +419,9 @@ function ProductsPage() {
         .eq("id", editingId);
       if (error) {
         console.error("products update failed", error);
-        toast.error(`Save failed: ${supabaseErrorMessage(error, "Save failed — please try again")}`);
+        toast.error(
+          `Save failed: ${supabaseErrorMessage(error, "Save failed — please try again")}`,
+        );
         setSaving(false);
         return;
       }
@@ -375,7 +434,9 @@ function ProductsPage() {
       });
       if (error) {
         console.error("products insert failed", error);
-        toast.error(`Save failed: ${supabaseErrorMessage(error, "Save failed — please try again")}`);
+        toast.error(
+          `Save failed: ${supabaseErrorMessage(error, "Save failed — please try again")}`,
+        );
         setSaving(false);
         return;
       }
@@ -403,29 +464,41 @@ function ProductsPage() {
         }
       />
 
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-        <Select value={sort} onValueChange={(v) => setSort(v as ProductSortKey)}>
-          <SelectTrigger className="w-full sm:w-64">
-            <SelectValue placeholder="Sort" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="name_asc">Name A–Z</SelectItem>
-            <SelectItem value="price_asc">Price low–high</SelectItem>
-            <SelectItem value="price_desc">Price high–low</SelectItem>
-            <SelectItem value="category">Category</SelectItem>
-          </SelectContent>
-        </Select>
+      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end">
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5 sm:max-w-md">
+          <Select value={sort} onValueChange={(v) => setSort(v as ProductSortKey)}>
+            <SelectTrigger className="w-full sm:w-72">
+              <SelectValue placeholder="Sort" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="category">By category (grouped)</SelectItem>
+              <SelectItem value="name_asc">Name A–Z (full list)</SelectItem>
+              <SelectItem value="price_asc">Price — low to high (full list)</SelectItem>
+              <SelectItem value="price_desc">Price — high to low (full list)</SelectItem>
+            </SelectContent>
+          </Select>
+          {sort === "category" ? (
+            <p className="text-xs text-muted-foreground">
+              Products are grouped by pricing area; A–Z within each group.
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              One list — sorted across every product, regardless of category.
+            </p>
+          )}
+        </div>
       </div>
 
       <div
-        className={cn(
-          "min-w-0 overflow-x-auto rounded-2xl border bg-card shadow-sm",
-          SAGE_BORDER,
-        )}
+        className={cn("min-w-0 overflow-x-auto rounded-2xl border bg-card shadow-sm", SAGE_BORDER)}
       >
         {loading ? (
           <div className="flex justify-center py-16 text-muted-foreground">
-            <Loader2 className="h-8 w-8 animate-spin" style={{ color: SAGE }} aria-label="Loading" />
+            <Loader2
+              className="h-8 w-8 animate-spin"
+              style={{ color: SAGE }}
+              aria-label="Loading"
+            />
           </div>
         ) : (
           <table className="w-full text-sm">
@@ -441,70 +514,46 @@ function ProductsPage() {
               </tr>
             </thead>
             <tbody>
-              {groupedProductRows.map((section) => (
-                <Fragment key={section.label}>
-                  <tr className="border-t border-[#c5d4b8]/80 bg-[#e8efe3]/40">
-                    <td
-                      colSpan={7}
-                      className="px-4 py-2 text-left text-xs font-bold uppercase tracking-wider text-[#3d4f36] sm:px-5"
-                    >
-                      {section.label}
-                    </td>
-                  </tr>
-                  {section.items.map((p) => (
-                    <tr key={p.id} className="border-t border-border">
-                      <td className="max-w-[140px] truncate px-4 py-3 font-semibold sm:max-w-xs sm:px-5 md:max-w-md">
-                        {p.name}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 sm:px-5">
-                        <span className="inline-flex rounded-full bg-[#e8efe3] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#3d4f36]">
-                          {tableCategoryLabel(p.category)}
-                        </span>
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 tabular-nums sm:px-5">
-                        {formatPriceZar(p.price_zar)}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 sm:px-5">{creditsDisplay(p.credit_count)}</td>
-                      <td className="whitespace-nowrap px-4 py-3 text-muted-foreground sm:px-5">
-                        {validityDisplay(p.validity_days)}
-                      </td>
-                      <td className="px-4 py-3 sm:px-5">
-                        <div className="flex items-center gap-2">
-                          <Switch
-                            checked={p.is_active}
-                            disabled={togglingId === p.id}
-                            onCheckedChange={(checked) => void persistActive(p.id, checked)}
-                            className="data-[state=checked]:bg-[#a3b693]"
-                            aria-label={p.is_active ? "Deactivate product" : "Activate product"}
-                          />
-                          <span className="hidden text-xs text-muted-foreground sm:inline">
-                            {p.is_active ? "Active" : "Inactive"}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-right sm:px-5">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="gap-1 border-[#c5d4b8] bg-card"
-                          onClick={() => openEdit(p)}
+              {sort === "category"
+                ? groupedProductSections.map((section) => (
+                    <Fragment key={section.label}>
+                      <tr className="border-t border-[#c5d4b8]/80 bg-[#e8efe3]/40">
+                        <td
+                          colSpan={7}
+                          className="px-4 py-2 text-left text-xs font-bold uppercase tracking-wider text-[#3d4f36] sm:px-5"
                         >
-                          <Pencil className="h-3.5 w-3.5" aria-hidden />
-                          Edit
-                        </Button>
-                      </td>
-                    </tr>
+                          {section.label}
+                        </td>
+                      </tr>
+                      {section.items.map((p) => (
+                        <AdminProductTableRow
+                          key={p.id}
+                          product={p}
+                          togglingId={togglingId}
+                          onPersistActive={persistActive}
+                          onEdit={openEdit}
+                        />
+                      ))}
+                    </Fragment>
+                  ))
+                : (flatSortedProducts ?? []).map((p) => (
+                    <AdminProductTableRow
+                      key={p.id}
+                      product={p}
+                      togglingId={togglingId}
+                      onPersistActive={persistActive}
+                      onEdit={openEdit}
+                    />
                   ))}
-                </Fragment>
-              ))}
             </tbody>
           </table>
         )}
       </div>
 
       {!loading && rows.length === 0 && (
-        <p className="mt-4 text-center text-sm text-muted-foreground">No products yet. Add one to get started.</p>
+        <p className="mt-4 text-center text-sm text-muted-foreground">
+          No products yet. Add one to get started.
+        </p>
       )}
 
       <Sheet open={sheetOpen} onOpenChange={(o) => !o && closeSheet()}>
@@ -513,7 +562,9 @@ function ProductsPage() {
           className="max-h-[92dvh] overflow-y-auto rounded-t-3xl border-t border-[#c5d4b8]/80"
         >
           <SheetHeader>
-            <SheetTitle className="font-display text-xl">{editingId ? "Edit product" : "Add product"}</SheetTitle>
+            <SheetTitle className="font-display text-xl">
+              {editingId ? "Edit product" : "Add product"}
+            </SheetTitle>
           </SheetHeader>
 
           <div className="mt-4 space-y-4 px-1 pb-4">
@@ -615,7 +666,9 @@ function ProductsPage() {
 
             <div>
               <Label>Allowed class types</Label>
-              <p className="mt-0.5 text-xs text-muted-foreground">Optional — restrict which class types this product covers.</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Optional — restrict which class types this product covers.
+              </p>
               <ul className="mt-2 space-y-2 rounded-lg border border-border bg-background p-3">
                 {CLASS_TYPE_OPTIONS.map((opt) => (
                   <li key={opt.value} className="flex items-center gap-2">
@@ -637,7 +690,9 @@ function ProductsPage() {
                 <Label htmlFor="prod-addon" className="text-foreground">
                   Add-on (e.g. mat hire)
                 </Label>
-                <p className="mt-0.5 text-xs text-muted-foreground">Hidden from main pricing grid when off-sale flow uses it.</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Hidden from main pricing grid when off-sale flow uses it.
+                </p>
               </div>
               <Switch
                 id="prod-addon"
@@ -670,7 +725,13 @@ function ProductsPage() {
               onClick={() => void saveProduct()}
               className="bg-[#a3b693] text-white hover:bg-[#8fa67d]"
             >
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : editingId ? "Save changes" : "Create product"}
+              {saving ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : editingId ? (
+                "Save changes"
+              ) : (
+                "Create product"
+              )}
             </Button>
           </SheetFooter>
         </SheetContent>
