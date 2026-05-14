@@ -202,6 +202,8 @@ function ClassesPage() {
   const [role, setRole] = useState<string | null>(null);
   const [rows, setRows] = useState<ClassRow[]>([]);
   const [guides, setGuides] = useState<GuideOption[]>([]);
+  /** Whether `classes.guide_id` stores `guides.id` or legacy `profiles.id`. */
+  const [guideFkTarget, setGuideFkTarget] = useState<"guides" | "profiles">("guides");
   const [loading, setLoading] = useState(true);
   const isGuide = (role ?? "").toLowerCase() === "guide";
   const canManage = !isGuide;
@@ -293,11 +295,20 @@ function ClassesPage() {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    if (!guides.length || !rows.length) return;
+    const sample = rows.find((r) => r.guide_id);
+    if (!sample?.guide_id) return;
+    if (guides.some((g) => g.guide_id === sample.guide_id)) setGuideFkTarget("guides");
+    else if (guides.some((g) => g.profile_id === sample.guide_id)) setGuideFkTarget("profiles");
+  }, [guides, rows]);
+
   const guideMap = useMemo(() => {
     const map = new Map<string, string>();
     for (const g of guides) {
-      const n = guideFullName(g);
-      if (n) map.set(g.guide_id, n);
+      const n = guideFullName(g) || "Guide";
+      map.set(g.guide_id, n);
+      if (g.profile_id) map.set(g.profile_id, n);
     }
     return map;
   }, [guides]);
@@ -360,8 +371,11 @@ function ClassesPage() {
       if (guideFilter !== "all") {
         if (guideFilter === GUIDE_NONE) {
           if (c.guide_id) return false;
-        } else if (c.guide_id !== guideFilter) {
-          return false;
+        } else {
+          const opt = guides.find((g) => g.guide_id === guideFilter);
+          const matchGuidePk = c.guide_id === guideFilter;
+          const matchProfile = opt?.profile_id != null && c.guide_id === opt.profile_id;
+          if (!matchGuidePk && !matchProfile) return false;
         }
       }
       if (dateFrom) {
@@ -389,6 +403,7 @@ function ClassesPage() {
     dateTo,
     occupancyFilter,
     guideMap,
+    guides,
   ]);
 
   const sorted = useMemo(() => {
@@ -469,14 +484,14 @@ function ClassesPage() {
     setEditingId(null);
     resetForm();
     setDialogOpen(true);
+    void loadGuides();
   };
 
-  const openEdit = (c: ClassRow) => {
+  const openEdit = async (c: ClassRow) => {
     setEditingId(c.id);
     setName(c.name);
     setClassType(c.class_type || "yoga");
     setLocation(c.location || "Studio 1");
-    setGuideId(c.guide_id ?? GUIDE_NONE);
     const s = new Date(c.starts_at);
     const e = new Date(c.ends_at);
     setDateStr(toDateInputValue(s));
@@ -485,6 +500,20 @@ function ClassesPage() {
     setCapacity(String(c.capacity));
     setDescription(c.description ?? "");
     setDialogOpen(true);
+    const { data: guideList, error } = await fetchGuidesForClassSelect();
+    if (!error) {
+      setGuides(guideList);
+      const sid = c.guide_id;
+      if (!sid) setGuideId(GUIDE_NONE);
+      else if (guideList.some((g) => g.guide_id === sid)) setGuideId(sid);
+      else {
+        const match = guideList.find((g) => g.profile_id === sid);
+        setGuideId(match?.guide_id ?? GUIDE_NONE);
+      }
+    } else {
+      void loadGuides();
+      setGuideId(c.guide_id ?? GUIDE_NONE);
+    }
   };
 
   const validateForm = (): boolean => {
@@ -513,7 +542,13 @@ function ClassesPage() {
     const start = combineDateTimeLocal(dateStr, startTime);
     const end = combineDateTimeLocal(dateStr, endTime);
     const cap = Math.round(Number(capacity));
-    const gid = guideId === GUIDE_NONE ? null : guideId;
+    const selected = guides.find((g) => g.guide_id === guideId);
+    const gid =
+      guideId === GUIDE_NONE
+        ? null
+        : guideFkTarget === "profiles"
+          ? (selected?.profile_id ?? null)
+          : (selected?.guide_id ?? null);
     const gName = gid ? (guideMap.get(gid) ?? null) : null;
 
     const base = {
@@ -601,7 +636,13 @@ function ClassesPage() {
 
   const bulkReassign = async () => {
     if (!canManage || selected.size === 0) return;
-    const gid = reassignGuideId === GUIDE_NONE ? null : reassignGuideId;
+    const pick = guides.find((g) => g.guide_id === reassignGuideId);
+    const gid =
+      reassignGuideId === GUIDE_NONE
+        ? null
+        : guideFkTarget === "profiles"
+          ? (pick?.profile_id ?? null)
+          : (pick?.guide_id ?? null);
     const gName = gid ? (guideMap.get(gid) ?? null) : null;
     setBulkBusy(true);
     const ids = [...selected];

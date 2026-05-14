@@ -1,9 +1,17 @@
 import type { PostgrestError } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 
-/** Row shape for class guide dropdowns: `guide_id` is `guides.id`. */
+/**
+ * Row for class guide dropdowns.
+ * `guide_id` is **`guides.id`** (matches `classes.guide_id` when that FK targets `guides`,
+ * and matches the check-in embed `guides ( profile_id )`). Legacy DBs may still point
+ * `classes.guide_id` at `profiles.id` — then use `profile_id` on each row for saves if needed.
+ */
 export type GuideSelectRow = {
+  /** `guides.id` for the class FK / dropdown value */
   guide_id: string;
+  /** `profiles.id` — same as `guides.profile_id` */
+  profile_id: string;
   first_name: string | null;
   last_name: string | null;
   avatar_url: string | null;
@@ -24,39 +32,100 @@ function oneProfile(raw: unknown): ProfileEmbed {
   return raw as ProfileEmbed;
 }
 
+/** PostgREST may return the FK embed under `profiles`, aliased `profile`, or (legacy) nested on `profile_id`. */
+function profilesFromGuideRow(row: Record<string, unknown>): ProfileEmbed {
+  const nested =
+    typeof row.profile_id === "object" && row.profile_id !== null && !Array.isArray(row.profile_id)
+      ? row.profile_id
+      : null;
+  return oneProfile(row.profiles ?? row.profile ?? nested);
+}
+
+const LOG = "[guidesForSelect]";
+
 /**
- * Active guides with profile names for class forms — one round-trip via FK embed:
- * guides → profiles(profile_id) as `profile`.
- *
- * Dropdown: value = `guides.id`, label = first + last name; classes.guide_id + guide_name on save.
+ * Active guides with profile names for class forms.
+ * Uses `guides` + embedded `profiles` (and falls back to a direct profiles query if embed names are empty).
  */
 export async function fetchGuidesForClassSelect(): Promise<{
   data: GuideSelectRow[];
   error: PostgrestError | null;
 }> {
+  const selectStr = "id, profile_id, profiles(first_name, last_name, avatar_url)";
+
   const res = await supabase
     .from("guides")
-    .select("id, profile:profile_id(first_name, last_name, avatar_url)")
-    .eq("is_active", true);
+    .select(selectStr)
+    .or("is_active.eq.true,is_active.is.null");
+
+  console.log(LOG, "supabase guides response", {
+    select: selectStr,
+    error: res.error,
+    rowCount: res.data?.length ?? 0,
+    firstRow: res.data?.[0] ?? null,
+  });
 
   if (res.error) {
+    console.error(LOG, "guides query failed", res.error);
     return { data: [], error: res.error };
   }
 
-  const data: GuideSelectRow[] = (res.data ?? []).map((row) => {
-    const r = row as { id: string; profile?: unknown };
-    const p = oneProfile(r.profile);
+  const rawRows = (res.data ?? []) as Record<string, unknown>[];
+
+  let mapped: GuideSelectRow[] = rawRows.map((row) => {
+    const guidesTableId = row.id != null ? String(row.id) : "";
+    const profileId = row.profile_id != null ? String(row.profile_id) : "";
+    const p = profilesFromGuideRow(row);
     return {
-      guide_id: String(r.id),
+      guide_id: guidesTableId,
+      profile_id: profileId,
       first_name: p?.first_name ?? null,
       last_name: p?.last_name ?? null,
       avatar_url: p?.avatar_url ?? null,
     };
   });
 
-  data.sort((a, b) =>
+  const needsNames = mapped.filter((m) => m.profile_id && !guideLabel(m)).map((m) => m.profile_id);
+  if (needsNames.length > 0) {
+    const { data: profs, error: pErr } = await supabase
+      .from("profiles")
+      .select("id, first_name, last_name, avatar_url")
+      .in("id", [...new Set(needsNames)]);
+    console.log(LOG, "profiles fallback for names", {
+      error: pErr,
+      requested: needsNames.length,
+      returned: profs?.length ?? 0,
+    });
+    if (!pErr && profs?.length) {
+      const byId = new Map(profs.map((p) => [String(p.id), p]));
+      mapped = mapped.map((m) => {
+        if (guideLabel(m)) return m;
+        const p = byId.get(m.profile_id);
+        if (!p) return m;
+        return {
+          ...m,
+          first_name: p.first_name ?? null,
+          last_name: p.last_name ?? null,
+          avatar_url: p.avatar_url ?? null,
+        };
+      });
+    }
+  }
+
+  mapped = mapped.filter((m) => m.guide_id.length > 0);
+
+  mapped.sort((a, b) =>
     (a.first_name ?? "").localeCompare(b.first_name ?? "", undefined, { sensitivity: "base" }),
   );
 
-  return { data, error: null };
+  console.log(LOG, "mapped guide options", {
+    count: mapped.length,
+    sample: mapped.slice(0, 5),
+  });
+
+  return { data: mapped, error: null };
+}
+
+function guideLabel(g: Pick<GuideSelectRow, "first_name" | "last_name">): string {
+  return [g.first_name, g.last_name].filter(Boolean).join(" ").trim();
 }
