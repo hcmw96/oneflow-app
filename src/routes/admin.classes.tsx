@@ -243,19 +243,6 @@ function ClassesPage() {
   const [reassignGuideId, setReassignGuideId] = useState<string>(GUIDE_NONE);
   const [bulkBusy, setBulkBusy] = useState(false);
 
-  useEffect(() => {
-    void (async () => {
-      const user = await getUser();
-      if (!user) return;
-      const { data } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("id", user.id)
-        .maybeSingle();
-      setRole((data?.role as string | null) ?? null);
-    })();
-  }, []);
-
   const loadGuides = useCallback(async () => {
     const { data, error } = await fetchGuidesForClassSelect();
     if (error) {
@@ -265,6 +252,18 @@ function ClassesPage() {
     }
     setGuides(data);
   }, []);
+
+  useEffect(() => {
+    void (async () => {
+      const user = await getUser();
+      if (!user) return;
+      const [{ data }] = await Promise.all([
+        supabase.from("profiles").select("role").eq("id", user.id).maybeSingle(),
+        loadGuides(),
+      ]);
+      setRole((data?.role as string | null) ?? null);
+    })();
+  }, [loadGuides]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -286,10 +285,6 @@ function ClassesPage() {
     setRows((data ?? []) as ClassRow[]);
     setLoading(false);
   }, []);
-
-  useEffect(() => {
-    void loadGuides();
-  }, [loadGuides]);
 
   useEffect(() => {
     void load();
@@ -1212,7 +1207,17 @@ function ClassesPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <Dialog open={reassignOpen} onOpenChange={setReassignOpen}>
+      <Dialog
+        modal={false}
+        open={reassignOpen}
+        onOpenChange={(open) => {
+          setReassignOpen(open);
+          if (open) {
+            setReassignGuideId(GUIDE_NONE);
+            void loadGuides();
+          }
+        }}
+      >
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Reassign guide for {selected.size} classes</DialogTitle>
@@ -1223,7 +1228,7 @@ function ClassesPage() {
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className="z-[100]">
                 <SelectItem value={GUIDE_NONE}>No guide</SelectItem>
                 {guides.map((g) => (
                   <SelectItem key={g.guide_id} value={g.guide_id}>
