@@ -90,28 +90,17 @@ type ClassRow = {
 
 type GuideOption = GuideSelectRow;
 
-/** Flat option for guide `<Select>`s: `value` matches `classes.guide_id` storage (`guides` vs `profiles`). */
+/** Flat option for toolbar / reassign (value follows `guideFkTarget`). */
 type GuideSelectOption = { value: string; label: string; key: string };
 
 type TabKey = "today" | "week" | "upcoming";
 
-/** Map a class row’s `guide_id` to the `<Select>` value used in the UI for the given FK mode. */
-function guideSelectStoredValue(
-  sid: string | null,
-  list: GuideOption[],
-  fk: "guides" | "profiles",
-): string {
+/** Resolve `classes.guide_id` to `guides.id` when options use guides PK as `SelectItem` value. */
+function guidesTableIdForClassGuideId(sid: string | null, list: GuideOption[]): string {
   if (!sid) return GUIDE_NONE;
-  if (fk === "profiles") {
-    const byProfile = list.find((g) => g.profile_id === sid);
-    if (byProfile) return byProfile.profile_id;
-    const byGuide = list.find((g) => g.guide_id === sid);
-    return byGuide?.profile_id ?? GUIDE_NONE;
-  }
-  const byGuide = list.find((g) => g.guide_id === sid);
-  if (byGuide) return byGuide.guide_id;
-  const byProfile = list.find((g) => g.profile_id === sid);
-  return byProfile?.guide_id ?? GUIDE_NONE;
+  if (list.some((g) => g.guide_id === sid)) return sid;
+  const m = list.find((g) => g.profile_id === sid);
+  return m?.guide_id ?? GUIDE_NONE;
 }
 
 function guideFullName(g: Pick<GuideOption, "first_name" | "last_name">) {
@@ -366,7 +355,7 @@ function ClassesPage() {
     const token = `${editingId}|${guideFkTarget}|${guides.length}`;
     if (editGuideSelectSyncRef.current === token) return;
     editGuideSelectSyncRef.current = token;
-    setGuideId(guideSelectStoredValue(c.guide_id, guides, guideFkTarget));
+    setGuideId(guidesTableIdForClassGuideId(c.guide_id, guides));
   }, [dialogOpen, editingId, guides, guideFkTarget, rows]);
 
   useEffect(() => {
@@ -380,6 +369,22 @@ function ClassesPage() {
       key: g.guide_id,
     }));
   }, [guides, guideFkTarget]);
+
+  const editingClass = useMemo(
+    () => (editingId ? (rows.find((r) => r.id === editingId) ?? null) : null),
+    [editingId, rows],
+  );
+
+  /** Edit dialog only: every option value is `guides.id` (see on-screen debug). */
+  const guideOptions = useMemo(
+    () =>
+      guides.map((g) => ({
+        guide_id: g.guide_id,
+        value: g.guide_id,
+        label: guideFullName(g) || "Guide",
+      })),
+    [guides],
+  );
 
   const guideMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -575,7 +580,7 @@ function ClassesPage() {
     setDescription(c.description ?? "");
     setDialogOpen(true);
     const sid = c.guide_id;
-    setGuideId(guideSelectStoredValue(sid, guides, guideFkTarget));
+    setGuideId(guidesTableIdForClassGuideId(sid, guides));
   };
 
   const validateForm = (): boolean => {
@@ -1127,15 +1132,40 @@ function ClassesPage() {
             </div>
             <div>
               <Label>Guide</Label>
-              <Select value={guideId} onValueChange={setGuideId} disabled={!canManage}>
+              {editingClass && (
+                <div style={{ fontSize: 10, color: "red" }}>
+                  guide_id: {editingClass.guide_id} | options: {guideOptions?.length} | match:{" "}
+                  {guideOptions?.find(
+                    (g) =>
+                      g.value === editingClass.guide_id || g.guide_id === editingClass.guide_id,
+                  )?.label || "NO MATCH"}
+                </div>
+              )}
+              <Select
+                value={
+                  editingClass ? editingClass.guide_id || "" : guideId === GUIDE_NONE ? "" : guideId
+                }
+                onValueChange={(v) => setGuideId(v === "" ? GUIDE_NONE : v)}
+                disabled={!canManage}
+              >
                 <SelectTrigger>
-                  <SelectValue placeholder={guideId === GUIDE_NONE ? "No guide" : undefined} />
+                  <SelectValue
+                    placeholder={
+                      editingClass
+                        ? editingClass.guide_id
+                          ? undefined
+                          : "No guide"
+                        : guideId === GUIDE_NONE
+                          ? "No guide"
+                          : undefined
+                    }
+                  />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={GUIDE_NONE}>No guide</SelectItem>
-                  {guideSelectOptions.map((opt) => (
-                    <SelectItem key={opt.key} value={opt.value}>
-                      {opt.label}
+                  <SelectItem value="">No guide</SelectItem>
+                  {guideOptions.map((g) => (
+                    <SelectItem key={g.guide_id} value={g.guide_id}>
+                      {g.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
