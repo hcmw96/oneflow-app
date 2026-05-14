@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Calendar, MapPin, QrCode, Sparkles, Ticket } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -75,12 +75,20 @@ function HomeSkeleton() {
   );
 }
 
+type UserCreditHomeRow = {
+  id: string;
+  credits_remaining: number | null;
+  is_unlimited: boolean | null;
+  expires_at: string | null;
+  product_name: string | null;
+};
+
 function HomePage() {
   const navigate = useNavigate();
   const { user, authReady } = useAuth();
   const [loading, setLoading] = useState(true);
   const [firstName, setFirstName] = useState<string | null>(null);
-  const [credits, setCredits] = useState(0);
+  const [creditRows, setCreditRows] = useState<UserCreditHomeRow[]>([]);
   const [completed, setCompleted] = useState(0);
   const [points, setPoints] = useState(0);
   const [weeklyGoal, setWeeklyGoal] = useState(3);
@@ -100,6 +108,25 @@ function HomePage() {
   const goalPct = weeklyGoal > 0 ? Math.min(100, (weeklyDone / weeklyGoal) * 100) : 0;
   const remaining = Math.max(0, weeklyGoal - weeklyDone);
 
+  const { hasUnlimited, totalCredits } = useMemo(() => {
+    const credits = creditRows;
+    const now = new Date();
+    /** Matches "active" credits: null expiry never expires. */
+    const notExpired = (expires_at: string | null) =>
+      expires_at == null || new Date(expires_at) > now;
+
+    const hasUnlimited = (credits ?? []).some(
+      (c) => Boolean(c.is_unlimited) && notExpired(c.expires_at),
+    );
+    const totalCredits = (credits ?? [])
+      .filter((c) => !c.is_unlimited && notExpired(c.expires_at))
+      .reduce((sum, c) => {
+        const n = Number(c.credits_remaining);
+        return sum + (Number.isFinite(n) ? n : 0);
+      }, 0);
+    return { hasUnlimited, totalCredits };
+  }, [creditRows]);
+
   useEffect(() => {
     if (!authReady) return;
 
@@ -107,7 +134,7 @@ function HomePage() {
 
     async function load() {
       setLoading(true);
-      setCredits(0);
+      setCreditRows([]);
       setCompleted(0);
       setPoints(0);
       setFirstName(null);
@@ -127,7 +154,7 @@ function HomePage() {
 
       const [
         { data: profile },
-        { data: creditRows },
+        { data: fetchedUserCredits },
         { count: attendedCount, error: attendedErr },
         { count: weeklyAttended, error: weeklyErr },
         { data: bookingRows },
@@ -140,7 +167,7 @@ function HomePage() {
           .maybeSingle(),
         supabase
           .from("user_credits")
-          .select("credits_remaining, is_unlimited")
+          .select("id, credits_remaining, is_unlimited, expires_at, product_name")
           .eq("profile_id", uid),
         supabase
           .from("bookings")
@@ -174,14 +201,8 @@ function HomePage() {
       if (attendedErr) console.error(attendedErr);
       if (weeklyErr) console.error(weeklyErr);
 
-      const creditSum = (creditRows ?? []).reduce((acc, row) => {
-        if (row.is_unlimited) return acc;
-        const n = Number(row.credits_remaining);
-        return acc + (Number.isFinite(n) ? n : 0);
-      }, 0);
-
       setFirstName(profile?.first_name?.trim() || null);
-      setCredits(creditSum);
+      setCreditRows((fetchedUserCredits ?? []) as UserCreditHomeRow[]);
       setCompleted(attendedCount ?? 0);
       const wgRaw = (profile as { weekly_goal?: number | null } | null)?.weekly_goal;
       const wg =
@@ -374,15 +395,26 @@ function HomePage() {
 
           <div className="flex items-end justify-between">
             <div>
-              <p className="font-display text-5xl leading-none font-extrabold tracking-tight text-foreground">
-                {credits}
-              </p>
-              <p className="mt-1.5 text-sm text-muted-foreground">
-                {credits === 1 ? "credit remaining" : "credits remaining"}
-              </p>
+              {hasUnlimited ? (
+                <>
+                  <p className="font-display text-5xl font-extrabold leading-none tracking-tight text-foreground">
+                    ∞
+                  </p>
+                  <p className="mt-1.5 text-sm text-muted-foreground">unlimited credits</p>
+                </>
+              ) : (
+                <>
+                  <p className="font-display text-5xl font-extrabold leading-none tracking-tight text-foreground">
+                    {totalCredits}
+                  </p>
+                  <p className="mt-1.5 text-sm text-muted-foreground">
+                    {totalCredits === 1 ? "credit remaining" : "credits remaining"}
+                  </p>
+                </>
+              )}
             </div>
 
-            {credits === 0 && (
+            {!hasUnlimited && totalCredits === 0 && (
               <span className="rounded-full bg-orange-100 px-3 py-1 text-xs font-semibold text-orange-700">
                 Out of credits
               </span>
