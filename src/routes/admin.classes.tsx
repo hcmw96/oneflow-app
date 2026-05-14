@@ -18,7 +18,7 @@ import { PageHeader } from "@/components/admin/PageHeader";
 import { StatCard } from "@/components/admin/StatCard";
 import { getUser, supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
-import { fetchGuidesForClassSelect, type GuideSelectRow } from "@/lib/guidesForSelect";
+import type { GuideSelectRow } from "@/lib/guidesForSelect";
 import { displayClassType } from "@/types/studio";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -89,6 +89,9 @@ type ClassRow = {
 };
 
 type GuideOption = GuideSelectRow;
+
+/** Flat list for every guide `<Select>` in this page (id = `guides.id`). */
+type ClassGuideOption = { id: string; name: string };
 
 type TabKey = "today" | "week" | "upcoming";
 
@@ -201,7 +204,9 @@ const TYPE_BADGE_CLASS: Record<string, string> = {
 function ClassesPage() {
   const [role, setRole] = useState<string | null>(null);
   const [rows, setRows] = useState<ClassRow[]>([]);
+  /** Same fetch as `guideOptions`; used only for save/reassign/filter lookups (unchanged logic). */
   const [guides, setGuides] = useState<GuideOption[]>([]);
+  const [guideOptions, setGuideOptions] = useState<ClassGuideOption[]>([]);
   /** Whether `classes.guide_id` stores `guides.id` or legacy `profiles.id`. */
   const [guideFkTarget, setGuideFkTarget] = useState<"guides" | "profiles">("guides");
   const [loading, setLoading] = useState(true);
@@ -243,14 +248,60 @@ function ClassesPage() {
   const [reassignGuideId, setReassignGuideId] = useState<string>(GUIDE_NONE);
   const [bulkBusy, setBulkBusy] = useState(false);
 
-  const loadGuides = useCallback(async () => {
-    const { data, error } = await fetchGuidesForClassSelect();
+  const loadGuideOptions = useCallback(async () => {
+    const { data: guidesData, error } = await supabase
+      .from("guides")
+      .select(
+        `
+      id,
+      profile_id,
+      profiles!guides_profile_id_fkey (
+        first_name,
+        last_name
+      )
+    `,
+      )
+      .eq("is_active", true);
+
     if (error) {
       console.error(error);
       toast.error(supabaseErrorMessage(error, "Could not load guides"));
+      setGuideOptions([]);
+      setGuides([]);
       return;
     }
-    setGuides(data);
+
+    const opts = (guidesData ?? []).map((g) => {
+      const raw = g.profiles as unknown;
+      const p = (Array.isArray(raw) ? raw[0] : raw) as {
+        first_name?: string | null;
+        last_name?: string | null;
+      } | null;
+      const first = p?.first_name ?? "";
+      const last = p?.last_name ?? "";
+      return {
+        id: String(g.id),
+        name: `${first} ${last}`.trim(),
+      };
+    });
+
+    const metaRows: GuideOption[] = (guidesData ?? []).map((g) => {
+      const raw = g.profiles as unknown;
+      const pr = (Array.isArray(raw) ? raw[0] : raw) as {
+        first_name?: string | null;
+        last_name?: string | null;
+      } | null;
+      return {
+        guide_id: String(g.id),
+        profile_id: String((g as { profile_id: string }).profile_id ?? ""),
+        first_name: pr?.first_name ?? null,
+        last_name: pr?.last_name ?? null,
+        avatar_url: null,
+      };
+    });
+
+    setGuideOptions(opts);
+    setGuides(metaRows);
   }, []);
 
   useEffect(() => {
@@ -259,11 +310,11 @@ function ClassesPage() {
       if (!user) return;
       const [{ data }] = await Promise.all([
         supabase.from("profiles").select("role").eq("id", user.id).maybeSingle(),
-        loadGuides(),
+        loadGuideOptions(),
       ]);
       setRole((data?.role as string | null) ?? null);
     })();
-  }, [loadGuides]);
+  }, [loadGuideOptions]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -479,10 +530,9 @@ function ClassesPage() {
     setEditingId(null);
     resetForm();
     setDialogOpen(true);
-    void loadGuides();
   };
 
-  const openEdit = async (c: ClassRow) => {
+  const openEdit = (c: ClassRow) => {
     setEditingId(c.id);
     setName(c.name);
     setClassType(c.class_type || "yoga");
@@ -495,19 +545,12 @@ function ClassesPage() {
     setCapacity(String(c.capacity));
     setDescription(c.description ?? "");
     setDialogOpen(true);
-    const { data: guideList, error } = await fetchGuidesForClassSelect();
-    if (!error) {
-      setGuides(guideList);
-      const sid = c.guide_id;
-      if (!sid) setGuideId(GUIDE_NONE);
-      else if (guideList.some((g) => g.guide_id === sid)) setGuideId(sid);
-      else {
-        const match = guideList.find((g) => g.profile_id === sid);
-        setGuideId(match?.guide_id ?? GUIDE_NONE);
-      }
-    } else {
-      void loadGuides();
-      setGuideId(c.guide_id ?? GUIDE_NONE);
+    const sid = c.guide_id;
+    if (!sid) setGuideId(GUIDE_NONE);
+    else if (guides.some((g) => g.guide_id === sid)) setGuideId(sid);
+    else {
+      const match = guides.find((g) => g.profile_id === sid);
+      setGuideId(match?.guide_id ?? GUIDE_NONE);
     }
   };
 
@@ -797,9 +840,9 @@ function ClassesPage() {
             <SelectContent>
               <SelectItem value="all">All guides</SelectItem>
               <SelectItem value={GUIDE_NONE}>No guide assigned</SelectItem>
-              {guides.map((g) => (
-                <SelectItem key={g.guide_id} value={g.guide_id}>
-                  {guideFullName(g) || "Guide"}
+              {guideOptions.map((opt) => (
+                <SelectItem key={opt.id} value={opt.id}>
+                  {opt.name || "Guide"}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -1060,9 +1103,9 @@ function ClassesPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value={GUIDE_NONE}>No guide</SelectItem>
-                  {guides.map((g) => (
-                    <SelectItem key={g.guide_id} value={g.guide_id}>
-                      {guideFullName(g) || "Guide"}
+                  {guideOptions.map((opt) => (
+                    <SelectItem key={opt.id} value={opt.id}>
+                      {opt.name || "Guide"}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -1214,7 +1257,6 @@ function ClassesPage() {
           setReassignOpen(open);
           if (open) {
             setReassignGuideId(GUIDE_NONE);
-            void loadGuides();
           }
         }}
       >
@@ -1230,9 +1272,9 @@ function ClassesPage() {
               </SelectTrigger>
               <SelectContent className="z-[100]">
                 <SelectItem value={GUIDE_NONE}>No guide</SelectItem>
-                {guides.map((g) => (
-                  <SelectItem key={g.guide_id} value={g.guide_id}>
-                    {guideFullName(g) || "Guide"}
+                {guideOptions.map((opt) => (
+                  <SelectItem key={opt.id} value={opt.id}>
+                    {opt.name || "Guide"}
                   </SelectItem>
                 ))}
               </SelectContent>
