@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CalendarDays,
   ChevronDown,
@@ -90,10 +90,29 @@ type ClassRow = {
 
 type GuideOption = GuideSelectRow;
 
-/** Flat list for every guide `<Select>` in this page (id = `guides.id`). */
-type ClassGuideOption = { id: string; name: string };
+/** Flat option for guide `<Select>`s: `value` matches `classes.guide_id` storage (`guides` vs `profiles`). */
+type GuideSelectOption = { value: string; label: string; key: string };
 
 type TabKey = "today" | "week" | "upcoming";
+
+/** Map a class row’s `guide_id` to the `<Select>` value used in the UI for the given FK mode. */
+function guideSelectStoredValue(
+  sid: string | null,
+  list: GuideOption[],
+  fk: "guides" | "profiles",
+): string {
+  if (!sid) return GUIDE_NONE;
+  if (fk === "profiles") {
+    const byProfile = list.find((g) => g.profile_id === sid);
+    if (byProfile) return byProfile.profile_id;
+    const byGuide = list.find((g) => g.guide_id === sid);
+    return byGuide?.profile_id ?? GUIDE_NONE;
+  }
+  const byGuide = list.find((g) => g.guide_id === sid);
+  if (byGuide) return byGuide.guide_id;
+  const byProfile = list.find((g) => g.profile_id === sid);
+  return byProfile?.guide_id ?? GUIDE_NONE;
+}
 
 function guideFullName(g: Pick<GuideOption, "first_name" | "last_name">) {
   return [g.first_name, g.last_name].filter(Boolean).join(" ").trim() || "";
@@ -204,9 +223,8 @@ const TYPE_BADGE_CLASS: Record<string, string> = {
 function ClassesPage() {
   const [role, setRole] = useState<string | null>(null);
   const [rows, setRows] = useState<ClassRow[]>([]);
-  /** Same fetch as `guideOptions`; used only for save/reassign/filter lookups (unchanged logic). */
+  /** Loaded once; paired with `guideSelectOptions` for display. */
   const [guides, setGuides] = useState<GuideOption[]>([]);
-  const [guideOptions, setGuideOptions] = useState<ClassGuideOption[]>([]);
   /** Whether `classes.guide_id` stores `guides.id` or legacy `profiles.id`. */
   const [guideFkTarget, setGuideFkTarget] = useState<"guides" | "profiles">("guides");
   const [loading, setLoading] = useState(true);
@@ -248,6 +266,8 @@ function ClassesPage() {
   const [reassignGuideId, setReassignGuideId] = useState<string>(GUIDE_NONE);
   const [bulkBusy, setBulkBusy] = useState(false);
 
+  const editGuideSelectSyncRef = useRef<string | null>(null);
+
   const loadGuideOptions = useCallback(async () => {
     const { data: guidesData, error } = await supabase
       .from("guides")
@@ -266,24 +286,9 @@ function ClassesPage() {
     if (error) {
       console.error(error);
       toast.error(supabaseErrorMessage(error, "Could not load guides"));
-      setGuideOptions([]);
       setGuides([]);
       return;
     }
-
-    const opts = (guidesData ?? []).map((g) => {
-      const raw = g.profiles as unknown;
-      const p = (Array.isArray(raw) ? raw[0] : raw) as {
-        first_name?: string | null;
-        last_name?: string | null;
-      } | null;
-      const first = p?.first_name ?? "";
-      const last = p?.last_name ?? "";
-      return {
-        id: String(g.id),
-        name: `${first} ${last}`.trim(),
-      };
-    });
 
     const metaRows: GuideOption[] = (guidesData ?? []).map((g) => {
       const raw = g.profiles as unknown;
@@ -300,7 +305,6 @@ function ClassesPage() {
       };
     });
 
-    setGuideOptions(opts);
     setGuides(metaRows);
   }, []);
 
@@ -343,11 +347,39 @@ function ClassesPage() {
 
   useEffect(() => {
     if (!guides.length || !rows.length) return;
-    const sample = rows.find((r) => r.guide_id);
-    if (!sample?.guide_id) return;
-    if (guides.some((g) => g.guide_id === sample.guide_id)) setGuideFkTarget("guides");
-    else if (guides.some((g) => g.profile_id === sample.guide_id)) setGuideFkTarget("profiles");
+    let sawGuidePk = false;
+    let sawProfileId = false;
+    for (const r of rows) {
+      if (!r.guide_id) continue;
+      if (guides.some((g) => g.guide_id === r.guide_id)) sawGuidePk = true;
+      if (guides.some((g) => g.profile_id === r.guide_id)) sawProfileId = true;
+    }
+    if (sawProfileId && !sawGuidePk) setGuideFkTarget("profiles");
+    else if (sawGuidePk) setGuideFkTarget("guides");
   }, [guides, rows]);
+
+  /** Align edit-dialog guide `<Select>` value with `classes.guide_id` when guides / FK mode first become usable (avoids wiping user picks: token includes class id only). */
+  useEffect(() => {
+    if (!dialogOpen || !editingId || guides.length === 0) return;
+    const c = rows.find((r) => r.id === editingId);
+    if (!c) return;
+    const token = `${editingId}|${guideFkTarget}|${guides.length}`;
+    if (editGuideSelectSyncRef.current === token) return;
+    editGuideSelectSyncRef.current = token;
+    setGuideId(guideSelectStoredValue(c.guide_id, guides, guideFkTarget));
+  }, [dialogOpen, editingId, guides, guideFkTarget, rows]);
+
+  useEffect(() => {
+    if (!dialogOpen) editGuideSelectSyncRef.current = null;
+  }, [dialogOpen]);
+
+  const guideSelectOptions = useMemo((): GuideSelectOption[] => {
+    return guides.map((g) => ({
+      value: guideFkTarget === "profiles" ? g.profile_id : g.guide_id,
+      label: guideFullName(g) || "Guide",
+      key: g.guide_id,
+    }));
+  }, [guides, guideFkTarget]);
 
   const guideMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -418,10 +450,7 @@ function ClassesPage() {
         if (guideFilter === GUIDE_NONE) {
           if (c.guide_id) return false;
         } else {
-          const opt = guides.find((g) => g.guide_id === guideFilter);
-          const matchGuidePk = c.guide_id === guideFilter;
-          const matchProfile = opt?.profile_id != null && c.guide_id === opt.profile_id;
-          if (!matchGuidePk && !matchProfile) return false;
+          if (c.guide_id !== guideFilter) return false;
         }
       }
       if (dateFrom) {
@@ -546,12 +575,7 @@ function ClassesPage() {
     setDescription(c.description ?? "");
     setDialogOpen(true);
     const sid = c.guide_id;
-    if (!sid) setGuideId(GUIDE_NONE);
-    else if (guides.some((g) => g.guide_id === sid)) setGuideId(sid);
-    else {
-      const match = guides.find((g) => g.profile_id === sid);
-      setGuideId(match?.guide_id ?? GUIDE_NONE);
-    }
+    setGuideId(guideSelectStoredValue(sid, guides, guideFkTarget));
   };
 
   const validateForm = (): boolean => {
@@ -580,13 +604,15 @@ function ClassesPage() {
     const start = combineDateTimeLocal(dateStr, startTime);
     const end = combineDateTimeLocal(dateStr, endTime);
     const cap = Math.round(Number(capacity));
-    const selected = guides.find((g) => g.guide_id === guideId);
+    const selected = guides.find((g) => g.guide_id === guideId || g.profile_id === guideId);
     const gid =
       guideId === GUIDE_NONE
         ? null
-        : guideFkTarget === "profiles"
-          ? (selected?.profile_id ?? null)
-          : (selected?.guide_id ?? null);
+        : selected
+          ? guideFkTarget === "profiles"
+            ? selected.profile_id
+            : selected.guide_id
+          : null;
     const gName = gid ? (guideMap.get(gid) ?? null) : null;
 
     const base = {
@@ -674,13 +700,17 @@ function ClassesPage() {
 
   const bulkReassign = async () => {
     if (!canManage || selected.size === 0) return;
-    const pick = guides.find((g) => g.guide_id === reassignGuideId);
+    const pick = guides.find(
+      (g) => g.guide_id === reassignGuideId || g.profile_id === reassignGuideId,
+    );
     const gid =
       reassignGuideId === GUIDE_NONE
         ? null
-        : guideFkTarget === "profiles"
-          ? (pick?.profile_id ?? null)
-          : (pick?.guide_id ?? null);
+        : pick
+          ? guideFkTarget === "profiles"
+            ? pick.profile_id
+            : pick.guide_id
+          : null;
     const gName = gid ? (guideMap.get(gid) ?? null) : null;
     setBulkBusy(true);
     const ids = [...selected];
@@ -840,9 +870,9 @@ function ClassesPage() {
             <SelectContent>
               <SelectItem value="all">All guides</SelectItem>
               <SelectItem value={GUIDE_NONE}>No guide assigned</SelectItem>
-              {guideOptions.map((opt) => (
-                <SelectItem key={opt.id} value={opt.id}>
-                  {opt.name || "Guide"}
+              {guideSelectOptions.map((opt) => (
+                <SelectItem key={opt.key} value={opt.value}>
+                  {opt.label}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -1099,13 +1129,13 @@ function ClassesPage() {
               <Label>Guide</Label>
               <Select value={guideId} onValueChange={setGuideId} disabled={!canManage}>
                 <SelectTrigger>
-                  <SelectValue placeholder="No guide" />
+                  <SelectValue placeholder={guideId === GUIDE_NONE ? "No guide" : undefined} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value={GUIDE_NONE}>No guide</SelectItem>
-                  {guideOptions.map((opt) => (
-                    <SelectItem key={opt.id} value={opt.id}>
-                      {opt.name || "Guide"}
+                  {guideSelectOptions.map((opt) => (
+                    <SelectItem key={opt.key} value={opt.value}>
+                      {opt.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -1268,13 +1298,15 @@ function ClassesPage() {
             <Label>Guide</Label>
             <Select value={reassignGuideId} onValueChange={setReassignGuideId}>
               <SelectTrigger>
-                <SelectValue />
+                <SelectValue
+                  placeholder={reassignGuideId === GUIDE_NONE ? "No guide" : undefined}
+                />
               </SelectTrigger>
               <SelectContent className="z-[100]">
                 <SelectItem value={GUIDE_NONE}>No guide</SelectItem>
-                {guideOptions.map((opt) => (
-                  <SelectItem key={opt.id} value={opt.id}>
-                    {opt.name || "Guide"}
+                {guideSelectOptions.map((opt) => (
+                  <SelectItem key={opt.key} value={opt.value}>
+                    {opt.label}
                   </SelectItem>
                 ))}
               </SelectContent>
