@@ -44,6 +44,8 @@ interface Props {
   session: ClassRow | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Called after a booking is confirmed so the schedule can mark the class as booked without waiting for refetch. */
+  onBookingConfirmed?: (classId: string) => void;
 }
 
 type FriendOption = {
@@ -63,7 +65,7 @@ function friendInitials(f: FriendOption): string {
   return (a + b).toUpperCase();
 }
 
-export function BookingSheet({ session, open, onOpenChange }: Props) {
+export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }: Props) {
   const [credits, setCredits] = useState<Credit[]>([]);
   const [selectedCredit, setSelectedCredit] = useState<string | null>(null);
   const [flowPoints, setFlowPoints] = useState(0);
@@ -241,7 +243,10 @@ export function BookingSheet({ session, open, onOpenChange }: Props) {
           await supabase.from("bookings").delete().eq("id", booking.id);
           toast.error(
             creditReadErr
-              ? supabaseErrorMessage(creditReadErr, "Could not verify your pass — booking was cancelled.")
+              ? supabaseErrorMessage(
+                  creditReadErr,
+                  "Could not verify your pass — booking was cancelled.",
+                )
               : "Could not find your pass to deduct a credit — booking was cancelled.",
           );
           setLoading(false);
@@ -339,6 +344,7 @@ export function BookingSheet({ session, open, onOpenChange }: Props) {
       description: `${session.name} · ${dateLine} at ${timeLine}`,
     });
     setLoading(false);
+    onBookingConfirmed?.(session.id);
     onOpenChange(false);
   };
 
@@ -371,7 +377,9 @@ export function BookingSheet({ session, open, onOpenChange }: Props) {
     if (finErr) {
       toast.error(finErr.message ?? "Invite created but notification failed.");
     } else {
-      toast.success("Invite sent", { description: "Your friend was notified by email and in the app." });
+      toast.success("Invite sent", {
+        description: "Your friend was notified by email and in the app.",
+      });
     }
     setInviteBusy(false);
     setInviteOpen(false);
@@ -434,261 +442,265 @@ export function BookingSheet({ session, open, onOpenChange }: Props) {
 
   return (
     <>
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="bottom"
-        className="max-h-[92vh] overflow-y-auto rounded-t-3xl border-0 bg-background p-0"
-      >
-        <div className="px-6 pb-8 pt-6">
-          <SheetHeader className="text-center">
-            <SheetTitle className="font-display text-2xl font-bold">{session.name}</SheetTitle>
-            <SheetDescription className="text-sm text-muted-foreground">
-              {dateLine} at {timeLine}
-            </SheetDescription>
-            {session.description?.trim() ? (
-              <p className="mt-3 text-left text-sm leading-relaxed text-foreground/90">
-                {session.description.trim()}
-              </p>
-            ) : null}
-          </SheetHeader>
+      <Sheet open={open} onOpenChange={onOpenChange}>
+        <SheetContent
+          side="bottom"
+          className="max-h-[92vh] overflow-y-auto rounded-t-3xl border-0 bg-background p-0"
+        >
+          <div className="px-6 pb-8 pt-6">
+            <SheetHeader className="text-center">
+              <SheetTitle className="font-display text-2xl font-bold">{session.name}</SheetTitle>
+              <SheetDescription className="text-sm text-muted-foreground">
+                {dateLine} at {timeLine}
+              </SheetDescription>
+              {session.description?.trim() ? (
+                <p className="mt-3 text-left text-sm leading-relaxed text-foreground/90">
+                  {session.description.trim()}
+                </p>
+              ) : null}
+            </SheetHeader>
 
-          <ul className="mt-6 space-y-2.5 text-sm text-muted-foreground">
-            <li className="flex items-center gap-2.5">
-              <Clock className="h-4 w-4" /> {durationMin} minutes
-            </li>
-            <li className="flex items-center gap-2.5">
-              <MapPin className="h-4 w-4" /> {session.location}
-            </li>
-            <li className="flex items-center gap-2.5">
-              <Users className="h-4 w-4" /> {spots} spots available
-            </li>
-          </ul>
+            <ul className="mt-6 space-y-2.5 text-sm text-muted-foreground">
+              <li className="flex items-center gap-2.5">
+                <Clock className="h-4 w-4" /> {durationMin} minutes
+              </li>
+              <li className="flex items-center gap-2.5">
+                <MapPin className="h-4 w-4" /> {session.location}
+              </li>
+              <li className="flex items-center gap-2.5">
+                <Users className="h-4 w-4" /> {spots} spots available
+              </li>
+            </ul>
 
-          {isMayChallenge && isMay && (
-            <div className="mt-4 flex items-center gap-2 rounded-xl bg-primary/10 px-3 py-2.5 text-xs font-medium">
-              <Sparkles className="h-3.5 w-3.5 text-primary" />
-              Counts toward 31 Days of Movement
-            </div>
-          )}
+            {isMayChallenge && isMay && (
+              <div className="mt-4 flex items-center gap-2 rounded-xl bg-primary/10 px-3 py-2.5 text-xs font-medium">
+                <Sparkles className="h-3.5 w-3.5 text-primary" />
+                Counts toward 31 Days of Movement
+              </div>
+            )}
 
-          {credits.length === 0 ? (
-            <div className="mt-6 rounded-2xl border border-dashed border-border bg-card p-4 text-center text-sm text-muted-foreground">
-              No eligible credits for this class.{" "}
-              <Link to="/pricing" className="text-primary underline">
-                Buy a pass
-              </Link>
-            </div>
-          ) : (
-            <>
-              <p className="mt-6 text-sm font-semibold">Select credit to use:</p>
-              <div className="mt-2 space-y-2">
-                {credits.map((c) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => {
-                      setSelectedCredit(c.id);
-                      setUsePoints(false);
-                    }}
-                    className={cn(
-                      "flex w-full items-start gap-3 rounded-2xl border bg-card px-4 py-3.5 text-left transition-colors",
-                      selectedCredit === c.id && !usePoints ? "border-primary" : "border-border",
-                    )}
-                  >
-                    <span
+            {credits.length === 0 ? (
+              <div className="mt-6 rounded-2xl border border-dashed border-border bg-card p-4 text-center text-sm text-muted-foreground">
+                No eligible credits for this class.{" "}
+                <Link to="/pricing" className="text-primary underline">
+                  Buy a pass
+                </Link>
+              </div>
+            ) : (
+              <>
+                <p className="mt-6 text-sm font-semibold">Select credit to use:</p>
+                <div className="mt-2 space-y-2">
+                  {credits.map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedCredit(c.id);
+                        setUsePoints(false);
+                      }}
                       className={cn(
-                        "mt-1 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2",
-                        selectedCredit === c.id && !usePoints
-                          ? "border-primary"
-                          : "border-muted-foreground/40",
+                        "flex w-full items-start gap-3 rounded-2xl border bg-card px-4 py-3.5 text-left transition-colors",
+                        selectedCredit === c.id && !usePoints ? "border-primary" : "border-border",
                       )}
                     >
-                      {selectedCredit === c.id && !usePoints && (
-                        <span className="h-2 w-2 rounded-full bg-primary" />
-                      )}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-semibold">{c.product_name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {c.is_unlimited ? "Unlimited" : `${c.credits_remaining} remaining`}
-                        {c.expires_at &&
-                          ` · Expires ${new Date(c.expires_at).toLocaleDateString("en-ZA")}`}
-                      </p>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
-
-          {flowPoints >= 100 && (
-            <button
-              type="button"
-              onClick={() => {
-                setUsePoints(true);
-                setSelectedCredit(null);
-              }}
-              className={cn(
-                "mt-2 flex w-full items-start gap-3 rounded-2xl border bg-card px-4 py-3.5 text-left transition-colors",
-                usePoints ? "border-primary" : "border-border",
-              )}
-            >
-              <span
-                className={cn(
-                  "mt-1 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2",
-                  usePoints ? "border-primary" : "border-muted-foreground/40",
-                )}
-              >
-                {usePoints && <span className="h-2 w-2 rounded-full bg-primary" />}
-              </span>
-              <div>
-                <p className="text-sm font-semibold">Flow Points</p>
-                <p className="text-xs text-muted-foreground">
-                  {flowPoints} pts · Worth R{pointsValue}
-                </p>
-              </div>
-            </button>
-          )}
-
-          <p className="mt-6 text-sm font-semibold">Add-ons:</p>
-          <div className="mt-2 flex gap-2">
-            <button
-              type="button"
-              onClick={() => setMatAddon((v) => !v)}
-              className={cn(
-                "flex-1 rounded-xl border py-2.5 text-sm font-semibold transition-colors",
-                matAddon ? "border-primary bg-primary/10" : "border-border bg-card",
-              )}
-            >
-              🧘 Mat
-            </button>
-            <button
-              type="button"
-              onClick={() => setTowelAddon((v) => !v)}
-              className={cn(
-                "flex-1 rounded-xl border py-2.5 text-sm font-semibold transition-colors",
-                towelAddon ? "border-primary bg-primary/10" : "border-border bg-card",
-              )}
-            >
-              🏷️ Towel
-            </button>
-          </div>
-
-          {acceptedFriends.length > 0 ? (
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedFriendId(acceptedFriends[0]?.id ?? null);
-                setInviteOpen(true);
-              }}
-              className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl border border-[#a3b693]/50 bg-card py-3.5 text-sm font-semibold text-[#4a6b3c] transition-colors hover:bg-muted/50"
-            >
-              <UserPlus className="h-4 w-4" />
-              Invite a friend
-            </button>
-          ) : null}
-
-          <button
-            type="button"
-            onClick={() => void confirm()}
-            disabled={loading}
-            className="mt-6 w-full rounded-xl bg-primary py-3.5 text-sm font-semibold text-primary-foreground transition-opacity active:opacity-90 disabled:opacity-50"
-          >
-            {loading ? "Confirming…" : "Confirm Booking"}
-          </button>
-          <button
-            type="button"
-            onClick={() => onOpenChange(false)}
-            className="mt-2 w-full rounded-xl border border-border bg-card py-3.5 text-sm font-semibold"
-          >
-            Cancel
-          </button>
-        </div>
-      </SheetContent>
-    </Sheet>
-
-    <Sheet open={inviteOpen} onOpenChange={setInviteOpen}>
-      <SheetContent
-        side="bottom"
-        className="max-h-[85vh] overflow-y-auto rounded-t-3xl border-0 bg-background p-0"
-      >
-        <div className="px-6 pb-8 pt-6">
-          <SheetHeader className="text-left">
-            <SheetTitle className="font-display text-xl font-bold">Invite to this class</SheetTitle>
-            <SheetDescription className="text-sm text-muted-foreground">
-              Choose a friend. They&apos;ll get an in-app notification and email.
-            </SheetDescription>
-          </SheetHeader>
-
-          <div className="mt-4 space-y-2">
-            {acceptedFriends.map((f) => (
-              <button
-                key={f.id}
-                type="button"
-                onClick={() => setSelectedFriendId(f.id)}
-                className={cn(
-                  "flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-colors",
-                  selectedFriendId === f.id ? "border-primary bg-primary/5" : "border-border bg-card",
-                )}
-              >
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary-soft text-sm font-semibold">
-                  {f.avatar_url?.trim() ? (
-                    <img src={f.avatar_url} alt="" className="h-full w-full object-cover" />
-                  ) : (
-                    friendInitials(f)
-                  )}
+                      <span
+                        className={cn(
+                          "mt-1 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2",
+                          selectedCredit === c.id && !usePoints
+                            ? "border-primary"
+                            : "border-muted-foreground/40",
+                        )}
+                      >
+                        {selectedCredit === c.id && !usePoints && (
+                          <span className="h-2 w-2 rounded-full bg-primary" />
+                        )}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold">{c.product_name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {c.is_unlimited ? "Unlimited" : `${c.credits_remaining} remaining`}
+                          {c.expires_at &&
+                            ` · Expires ${new Date(c.expires_at).toLocaleDateString("en-ZA")}`}
+                        </p>
+                      </div>
+                    </button>
+                  ))}
                 </div>
-                <p className="min-w-0 flex-1 truncate text-sm font-semibold">{friendLabel(f)}</p>
-              </button>
-            ))}
-          </div>
-
-          <button
-            type="button"
-            disabled={!selectedFriendId || inviteBusy}
-            onClick={() => void runInviteOnly()}
-            className="mt-6 w-full rounded-xl border border-border bg-card py-3.5 text-sm font-semibold transition-opacity disabled:opacity-50"
-          >
-            {inviteBusy ? (
-              <span className="inline-flex items-center justify-center gap-2">
-                <Loader2 className="h-4 w-4 animate-spin" /> Working…
-              </span>
-            ) : (
-              "Invite only (they pay)"
+              </>
             )}
-          </button>
 
-          <button
-            type="button"
-            disabled={!selectedFriendId || inviteBusy}
-            onClick={() => void runPayForFriend()}
-            className="mt-2 w-full rounded-xl bg-primary py-3.5 text-sm font-semibold text-primary-foreground transition-opacity disabled:opacity-50"
-          >
-            {inviteBusy ? (
-              payCheckoutSlow ? (
+            {flowPoints >= 100 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setUsePoints(true);
+                  setSelectedCredit(null);
+                }}
+                className={cn(
+                  "mt-2 flex w-full items-start gap-3 rounded-2xl border bg-card px-4 py-3.5 text-left transition-colors",
+                  usePoints ? "border-primary" : "border-border",
+                )}
+              >
+                <span
+                  className={cn(
+                    "mt-1 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2",
+                    usePoints ? "border-primary" : "border-muted-foreground/40",
+                  )}
+                >
+                  {usePoints && <span className="h-2 w-2 rounded-full bg-primary" />}
+                </span>
+                <div>
+                  <p className="text-sm font-semibold">Flow Points</p>
+                  <p className="text-xs text-muted-foreground">
+                    {flowPoints} pts · Worth R{pointsValue}
+                  </p>
+                </div>
+              </button>
+            )}
+
+            <p className="mt-6 text-sm font-semibold">Add-ons:</p>
+            <div className="mt-2 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setMatAddon((v) => !v)}
+                className={cn(
+                  "flex-1 rounded-xl border py-2.5 text-sm font-semibold transition-colors",
+                  matAddon ? "border-primary bg-primary/10" : "border-border bg-card",
+                )}
+              >
+                🧘 Mat
+              </button>
+              <button
+                type="button"
+                onClick={() => setTowelAddon((v) => !v)}
+                className={cn(
+                  "flex-1 rounded-xl border py-2.5 text-sm font-semibold transition-colors",
+                  towelAddon ? "border-primary bg-primary/10" : "border-border bg-card",
+                )}
+              >
+                🏷️ Towel
+              </button>
+            </div>
+
+            {acceptedFriends.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedFriendId(acceptedFriends[0]?.id ?? null);
+                  setInviteOpen(true);
+                }}
+                className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl border border-[#a3b693]/50 bg-card py-3.5 text-sm font-semibold text-[#4a6b3c] transition-colors hover:bg-muted/50"
+              >
+                <UserPlus className="h-4 w-4" />
+                Invite a friend
+              </button>
+            ) : null}
+
+            <button
+              type="button"
+              onClick={() => void confirm()}
+              disabled={loading}
+              className="mt-6 w-full rounded-xl bg-primary py-3.5 text-sm font-semibold text-primary-foreground transition-opacity active:opacity-90 disabled:opacity-50"
+            >
+              {loading ? "Confirming…" : "Confirm Booking"}
+            </button>
+            <button
+              type="button"
+              onClick={() => onOpenChange(false)}
+              className="mt-2 w-full rounded-xl border border-border bg-card py-3.5 text-sm font-semibold"
+            >
+              Cancel
+            </button>
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      <Sheet open={inviteOpen} onOpenChange={setInviteOpen}>
+        <SheetContent
+          side="bottom"
+          className="max-h-[85vh] overflow-y-auto rounded-t-3xl border-0 bg-background p-0"
+        >
+          <div className="px-6 pb-8 pt-6">
+            <SheetHeader className="text-left">
+              <SheetTitle className="font-display text-xl font-bold">
+                Invite to this class
+              </SheetTitle>
+              <SheetDescription className="text-sm text-muted-foreground">
+                Choose a friend. They&apos;ll get an in-app notification and email.
+              </SheetDescription>
+            </SheetHeader>
+
+            <div className="mt-4 space-y-2">
+              {acceptedFriends.map((f) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => setSelectedFriendId(f.id)}
+                  className={cn(
+                    "flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-colors",
+                    selectedFriendId === f.id
+                      ? "border-primary bg-primary/5"
+                      : "border-border bg-card",
+                  )}
+                >
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary-soft text-sm font-semibold">
+                    {f.avatar_url?.trim() ? (
+                      <img src={f.avatar_url} alt="" className="h-full w-full object-cover" />
+                    ) : (
+                      friendInitials(f)
+                    )}
+                  </div>
+                  <p className="min-w-0 flex-1 truncate text-sm font-semibold">{friendLabel(f)}</p>
+                </button>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              disabled={!selectedFriendId || inviteBusy}
+              onClick={() => void runInviteOnly()}
+              className="mt-6 w-full rounded-xl border border-border bg-card py-3.5 text-sm font-semibold transition-opacity disabled:opacity-50"
+            >
+              {inviteBusy ? (
                 <span className="inline-flex items-center justify-center gap-2">
-                  <Loader2 className="h-4 w-4 animate-spin" /> Still opening Yoco…
+                  <Loader2 className="h-4 w-4 animate-spin" /> Working…
                 </span>
               ) : (
-                <span className="inline-flex items-center justify-center gap-2">
-                  <Loader2 className="h-4 w-4 animate-spin" /> Payment…
-                </span>
-              )
-            ) : (
-              "Pay for them (Yoco)"
-            )}
-          </button>
+                "Invite only (they pay)"
+              )}
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setInviteOpen(false)}
-            className="mt-2 w-full rounded-xl py-3 text-sm font-medium text-muted-foreground"
-          >
-            Close
-          </button>
-        </div>
-      </SheetContent>
-    </Sheet>
+            <button
+              type="button"
+              disabled={!selectedFriendId || inviteBusy}
+              onClick={() => void runPayForFriend()}
+              className="mt-2 w-full rounded-xl bg-primary py-3.5 text-sm font-semibold text-primary-foreground transition-opacity disabled:opacity-50"
+            >
+              {inviteBusy ? (
+                payCheckoutSlow ? (
+                  <span className="inline-flex items-center justify-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Still opening Yoco…
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center justify-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Payment…
+                  </span>
+                )
+              ) : (
+                "Pay for them (Yoco)"
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setInviteOpen(false)}
+              className="mt-2 w-full rounded-xl py-3 text-sm font-medium text-muted-foreground"
+            >
+              Close
+            </button>
+          </div>
+        </SheetContent>
+      </Sheet>
     </>
   );
 }

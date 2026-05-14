@@ -25,9 +25,15 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { getUser, supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
-import { AssignPackageDialog, type AssignPackageTarget } from "@/components/admin/AssignPackageDialog";
+import {
+  AssignPackageDialog,
+  type AssignPackageTarget,
+} from "@/components/admin/AssignPackageDialog";
 import { GuideActivePackagePills } from "@/components/admin/GuideActivePackagePills";
-import { fetchActiveUserCreditsByProfileIds, type GuideCreditPillRow } from "@/lib/activeUserCredits";
+import {
+  fetchActiveUserCreditsByProfileIds,
+  type GuideCreditPillRow,
+} from "@/lib/activeUserCredits";
 
 export const Route = createFileRoute("/admin/guides")({
   head: () => ({
@@ -79,7 +85,6 @@ type GuideDbRow = {
   id: string;
   profile_id: string;
   bio: string | null;
-  photo_url: string | null;
   disciplines: unknown;
   is_active: boolean | null;
 };
@@ -205,9 +210,7 @@ function GuidesPage() {
 
     const [viewerRoleRes, guidesRes, classesRes] = await Promise.all([
       supabase.from("profiles").select("role").eq("id", user.id).maybeSingle(),
-      supabase
-        .from("guides")
-        .select("id, profile_id, bio, photo_url, disciplines, is_active"),
+      supabase.from("guides").select("id, profile_id, bio, disciplines, is_active"),
       supabase
         .from("classes")
         .select("guide_name")
@@ -289,7 +292,7 @@ function GuidesPage() {
         avatarUrl: p.avatar_url ?? null,
         profileRole: p.role ?? null,
         bio: g.bio ?? null,
-        photoUrl: g.photo_url ?? null,
+        photoUrl: null,
         fullName,
         disciplines: normalizeDisciplines(g.disciplines),
         active: g.is_active !== false,
@@ -342,8 +345,7 @@ function GuidesPage() {
     return list;
   }, [rows, sort]);
 
-  const guidesFilterCount =
-    Number(activeListFilter !== "all") + disciplineFilters.length;
+  const guidesFilterCount = Number(activeListFilter !== "all") + disciplineFilters.length;
 
   const clearGuidesFilters = () => {
     setActiveListFilter("all");

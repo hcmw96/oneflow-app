@@ -15,9 +15,7 @@ import { displayClassType } from "@/types/studio";
 function uuidOrUndefined(v: unknown): string | undefined {
   if (typeof v !== "string") return undefined;
   const s = v.trim();
-  if (
-    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s)
-  ) {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s)) {
     return undefined;
   }
   return s;
@@ -104,7 +102,8 @@ export default function SchedulePage() {
   const [loading, setLoading] = useState(true);
   const [revalidating, setRevalidating] = useState(false);
   const [bookingFor, setBookingFor] = useState<ClassRow | null>(null);
-  const [userBookings, setUserBookings] = useState<string[]>([]);
+  /** Confirmed booking `class_id`s for this user (any day — not filtered by booking `created_at`). */
+  const [bookedClassIds, setBookedClassIds] = useState<Set<string>>(() => new Set());
   const [pendingOpenClassId, setPendingOpenClassId] = useState<string | null>(null);
   const classesCacheRef = useRef(new Map<string, ClassRow[]>());
 
@@ -146,17 +145,14 @@ export default function SchedulePage() {
         .lte("starts_at", isoEnd)
         .eq("is_cancelled", false)
         .order("starts_at"),
-      supabase
-        .from("bookings")
-        .select("class_id")
-        .eq("profile_id", uid)
-        .eq("status", "confirmed")
-        .gte("created_at", isoStart)
-        .lte("created_at", isoEnd),
+      supabase.from("bookings").select("class_id").eq("profile_id", uid).eq("status", "confirmed"),
     ]);
 
     if (error) {
       console.error(error);
+    }
+    if (bookingsRes.error) {
+      console.error(bookingsRes.error);
     }
 
     const now = new Date();
@@ -183,7 +179,12 @@ export default function SchedulePage() {
 
     classesCacheRef.current.set(key, visible);
     setClasses(visible);
-    setUserBookings((bookingsRes.data ?? []).map((b) => (b as { class_id: string }).class_id));
+    const nextBooked = new Set<string>();
+    for (const b of bookingsRes.data ?? []) {
+      const cid = (b as { class_id?: string | null }).class_id;
+      if (cid) nextBooked.add(String(cid));
+    }
+    setBookedClassIds(nextBooked);
     setLoading(false);
     setRevalidating(false);
   }, []);
@@ -245,9 +246,12 @@ export default function SchedulePage() {
 
     setPendingOpenClassId(null);
     void navigate({ to: "/schedule", search: { class: undefined }, replace: true });
-    toast.info("That class isn’t on this day’s list — find it on the day it runs or pick another.", {
-      duration: 6000,
-    });
+    toast.info(
+      "That class isn’t on this day’s list — find it on the day it runs or pick another.",
+      {
+        duration: 6000,
+      },
+    );
   }, [pendingOpenClassId, loading, revalidating, classes, navigate, user?.id]);
 
   const weekStartSunday = useMemo(() => startOfWeekSunday(selectedDay), [selectedDay]);
@@ -412,7 +416,7 @@ export default function SchedulePage() {
                 <ScheduleRow
                   key={c.id}
                   session={c}
-                  alreadyBooked={userBookings.includes(c.id)}
+                  alreadyBooked={bookedClassIds.has(c.id)}
                   greyPast={greyPast}
                   onReserve={() => setBookingFor(c)}
                 />
@@ -425,6 +429,9 @@ export default function SchedulePage() {
       <BookingSheet
         session={bookingFor}
         open={bookingFor !== null}
+        onBookingConfirmed={(classId) => {
+          setBookedClassIds((prev) => new Set(prev).add(classId));
+        }}
         onOpenChange={(o) => {
           if (!o) {
             setBookingFor(null);
@@ -543,7 +550,7 @@ function ScheduleRow({
         className={cn(
           "mt-4 w-full rounded-xl py-3 text-sm font-semibold transition-opacity",
           alreadyBooked
-            ? "bg-muted text-muted-foreground"
+            ? "cursor-not-allowed bg-muted text-muted-foreground"
             : full
               ? "bg-muted text-muted-foreground"
               : "bg-primary text-primary-foreground active:opacity-90",

@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { Clock, MapPin, X } from "lucide-react";
 import { toast } from "sonner";
@@ -12,7 +12,20 @@ import { cn } from "@/lib/utils";
 import { getUser, supabase } from "@/lib/supabase";
 import { displayClassType, type ClassType } from "@/types/studio";
 
+function uuidOrUndefined(v: unknown): string | undefined {
+  if (typeof v !== "string") return undefined;
+  const s = v.trim();
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s)) {
+    return undefined;
+  }
+  return s;
+}
+
 export const Route = createFileRoute("/bookings")({
+  validateSearch: (raw: Record<string, unknown>) => ({
+    /** When set (e.g. from home “Upcoming”), scroll to this booking and show its check-in QR. */
+    booking: uuidOrUndefined(raw.booking),
+  }),
   component: BookingsPage,
 });
 
@@ -54,6 +67,11 @@ function guideFirstFromClass(cls: ClassJoin | null): string | null {
 }
 
 function BookingsPage() {
+  const search = Route.useSearch();
+  const bookingHighlightId = search.booking;
+  const highlightedRef = useRef<HTMLElement | null>(null);
+  const didScrollToBookingRef = useRef(false);
+
   const [tab, setTab] = useState<"upcoming" | "past">("upcoming");
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<BookingListRow[]>([]);
@@ -104,14 +122,41 @@ function BookingsPage() {
     setLoading(false);
   }, []);
 
+  const upcoming = useMemo(
+    () => rows.filter((r) => r.status === "confirmed" && r.startsAt.getTime() >= Date.now()),
+    [rows],
+  );
+  const past = useMemo(() => rows.filter((r) => r.status === "attended"), [rows]);
+
   useEffect(() => {
     void load();
   }, [load]);
 
-  const upcoming = rows.filter(
-    (r) => r.status === "confirmed" && r.startsAt.getTime() >= Date.now(),
-  );
-  const past = rows.filter((r) => r.status === "attended");
+  useEffect(() => {
+    didScrollToBookingRef.current = false;
+  }, [bookingHighlightId]);
+
+  useEffect(() => {
+    if (!bookingHighlightId) {
+      return;
+    }
+    setTab("upcoming");
+  }, [bookingHighlightId]);
+
+  useEffect(() => {
+    if (!bookingHighlightId || loading || didScrollToBookingRef.current) return;
+    const inUpcoming = upcoming.some((b) => b.id === bookingHighlightId);
+    if (!inUpcoming) {
+      didScrollToBookingRef.current = true;
+      return;
+    }
+    const el = highlightedRef.current;
+    if (!el) return;
+    didScrollToBookingRef.current = true;
+    requestAnimationFrame(() => {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  }, [bookingHighlightId, loading, rows, upcoming]);
 
   const cancelBooking = async (bookingId: string) => {
     const confirmText = `Please read carefully:
@@ -174,7 +219,16 @@ Are you sure you want to cancel?`;
             )}
             {tab === "upcoming" &&
               upcoming.map((b) => (
-                <article key={b.id} className="rounded-2xl border border-border bg-card p-4">
+                <article
+                  key={b.id}
+                  ref={bookingHighlightId === b.id ? highlightedRef : undefined}
+                  className={cn(
+                    "rounded-2xl border bg-card p-4",
+                    bookingHighlightId === b.id
+                      ? "border-[#a3b693] shadow-md ring-2 ring-[#a3b693]/40"
+                      : "border-border",
+                  )}
+                >
                   <div className="mb-1 flex items-center gap-2">
                     <TypeBadge type={b.classType} />
                   </div>

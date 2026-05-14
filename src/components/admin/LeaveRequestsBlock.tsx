@@ -53,7 +53,6 @@ function fullName(p: { first_name?: string | null; last_name?: string | null } |
 }
 
 const DEEDS_EMAIL = "deeds@oneflow.co.za";
-const LEAVE_REVIEW_URL = "https://oneflow1.netlify.app/admin/timesheets?tab=leave-requests";
 
 type StaffProfile = { first_name: string | null; last_name: string | null; email: string | null };
 

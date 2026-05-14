@@ -9,26 +9,47 @@ const SAGE_PILL = "#a3b693";
 const pillClass =
   "inline-flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white";
 
-/** Single query: profile IDs with The Sage credit (credits left or unlimited). */
-export async function fetchTheSageCreditProfileIds(
-  client: SupabaseClient,
-): Promise<Set<string>> {
-  const { data, error } = await client
-    .from("user_credits")
-    .select("profile_id")
-    .eq("product_id", THE_SAGE_PRODUCT_ID)
-    .or("is_unlimited.eq.true,credits_remaining.gt.0");
+type SageCreditRow = {
+  profile_id: string | null;
+  credits_remaining: number | null;
+  is_unlimited: boolean | null;
+  expires_at: string | null;
+};
 
-  if (error) {
-    console.error(error);
-    return new Set();
+function isActiveSageCredit(row: SageCreditRow, nowMs: number): boolean {
+  if (row.expires_at) {
+    const t = new Date(row.expires_at).getTime();
+    if (Number.isFinite(t) && t <= nowMs) return false;
   }
+  if (row.is_unlimited) return true;
+  const rem = Number(row.credits_remaining);
+  return Number.isFinite(rem) && rem > 0;
+}
 
-  return new Set(
-    (data ?? [])
-      .map((r) => (r as { profile_id: string | null }).profile_id)
-      .filter((id): id is string => Boolean(id)),
-  );
+/** Profile IDs with an active Sage café credit (`product_id` or `product_name ILIKE '%sage%'`). */
+export async function fetchTheSageCreditProfileIds(client: SupabaseClient): Promise<Set<string>> {
+  const nowMs = Date.now();
+  const [byId, byName] = await Promise.all([
+    client
+      .from("user_credits")
+      .select("profile_id, credits_remaining, is_unlimited, expires_at")
+      .eq("product_id", THE_SAGE_PRODUCT_ID),
+    client
+      .from("user_credits")
+      .select("profile_id, credits_remaining, is_unlimited, expires_at")
+      .ilike("product_name", "%sage%"),
+  ]);
+
+  if (byId.error) console.error(byId.error);
+  if (byName.error) console.error(byName.error);
+
+  const out = new Set<string>();
+  for (const raw of [...(byId.data ?? []), ...(byName.data ?? [])]) {
+    const row = raw as SageCreditRow;
+    if (!row.profile_id || !isActiveSageCredit(row, nowMs)) continue;
+    out.add(String(row.profile_id));
+  }
+  return out;
 }
 
 export function RosterAddonPills({

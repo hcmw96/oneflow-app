@@ -6,11 +6,12 @@ export type GuideSelectRow = {
   guide_id: string;
   first_name: string | null;
   last_name: string | null;
+  avatar_url: string | null;
 };
 
 /**
  * Loads active guides with profile names — equivalent to:
- * SELECT g.id, p.first_name, p.last_name FROM guides g
+ * SELECT g.id, p.first_name, p.last_name, p.avatar_url FROM guides g
  * JOIN profiles p ON p.id = g.profile_id WHERE g.is_active = true ORDER BY p.first_name
  *
  * Uses two round-trips so RLS/embed quirks on `guides → profiles` do not drop rows.
@@ -33,7 +34,7 @@ export async function fetchGuidesForClassSelect(): Promise<{
   const profileIds = [...new Set(guideRows.map((r) => r.profile_id).filter(Boolean))];
   const pRes = await supabase
     .from("profiles")
-    .select("id, first_name, last_name")
+    .select("id, first_name, last_name, avatar_url")
     .in("id", profileIds);
 
   if (pRes.error) {
@@ -41,7 +42,10 @@ export async function fetchGuidesForClassSelect(): Promise<{
   }
 
   const pmap = new Map(
-    (pRes.data ?? []).map((p) => [String((p as { id: string }).id), p as { first_name: string | null; last_name: string | null }]),
+    (pRes.data ?? []).map((p) => [
+      String((p as { id: string }).id),
+      p as { first_name: string | null; last_name: string | null; avatar_url: string | null },
+    ]),
   );
 
   const data: GuideSelectRow[] = guideRows.map((g) => {
@@ -50,6 +54,7 @@ export async function fetchGuidesForClassSelect(): Promise<{
       guide_id: String(g.id),
       first_name: p?.first_name ?? null,
       last_name: p?.last_name ?? null,
+      avatar_url: p?.avatar_url ?? null,
     };
   });
 
@@ -59,4 +64,3 @@ export async function fetchGuidesForClassSelect(): Promise<{
 
   return { data, error: null };
 }
-

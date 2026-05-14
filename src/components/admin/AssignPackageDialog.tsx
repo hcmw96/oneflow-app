@@ -55,6 +55,11 @@ type PackageAssignFailure = {
   reason: string;
 };
 
+function isUuidProfileId(id: string): boolean {
+  const s = id.trim();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s);
+}
+
 function recordPackageAssignFailure(
   target: AssignPackageTarget,
   context: string,
@@ -62,18 +67,23 @@ function recordPackageAssignFailure(
   failures: PackageAssignFailure[],
 ): void {
   const reason = supabaseErrorMessage(error, "Unknown error");
+  const code =
+    error && typeof error === "object" && "code" in error
+      ? String((error as { code?: string }).code ?? "").trim()
+      : "";
+  const reasonWithCode = code && !reason.includes(code) ? `${reason} [${code}]` : reason;
   console.error(`[AssignPackageDialog] ${context}`, {
     profileId: target.profileId,
     displayName: target.displayName,
     email: target.email,
-    reason,
+    reason: reasonWithCode,
     error,
   });
   failures.push({
     displayName: target.displayName,
     profileId: target.profileId,
     email: target.email,
-    reason,
+    reason: reasonWithCode,
   });
 }
 
@@ -83,7 +93,10 @@ function summarizePackageFailures(failures: PackageAssignFailure[]): string {
     const f = failures[0]!;
     return `${f.displayName} (${f.profileId}): ${f.reason}`;
   }
-  return failures.map((f) => `• ${f.displayName} (${f.profileId}): ${f.reason}`).join("\n").slice(0, 2500);
+  return failures
+    .map((f) => `• ${f.displayName} (${f.profileId}): ${f.reason}`)
+    .join("\n")
+    .slice(0, 2500);
 }
 
 type ProductPick = {
@@ -179,7 +192,12 @@ export function AssignPackageDialog({
   }, [bulkTargets, target]);
 
   const assigneeKey = useMemo(
-    () => assignees.map((a) => a.profileId).slice().sort().join("|"),
+    () =>
+      assignees
+        .map((a) => a.profileId)
+        .slice()
+        .sort()
+        .join("|"),
     [assignees],
   );
 
@@ -327,7 +345,48 @@ export function AssignPackageDialog({
 
     setSubmitting(true);
     const failures: PackageAssignFailure[] = [];
+
+    const profileIds = [...new Set(assignees.map((a) => a.profileId.trim()))].filter(
+      isUuidProfileId,
+    );
+    let existingProfileSet = new Set<string>();
+    if (profileIds.length > 0) {
+      const { data: existingProfiles, error: profilesLookupErr } = await supabase
+        .from("profiles")
+        .select("id")
+        .in("id", profileIds);
+      if (profilesLookupErr) {
+        console.error(
+          "[AssignPackageDialog] profiles pre-check (existing product)",
+          profilesLookupErr,
+        );
+      }
+      existingProfileSet = new Set(
+        (existingProfiles ?? []).map((r) => String((r as { id: string }).id)),
+      );
+    }
+
+    const purchasedAt = new Date().toISOString();
+
     for (const t of assignees) {
+      if (!isUuidProfileId(t.profileId)) {
+        recordPackageAssignFailure(
+          t,
+          "user_credits insert (existing product)",
+          new Error("Invalid profile id — cannot attach credits"),
+          failures,
+        );
+        continue;
+      }
+      if (!existingProfileSet.has(t.profileId.trim())) {
+        recordPackageAssignFailure(
+          t,
+          "user_credits insert (existing product)",
+          new Error("No profile row for this member — cannot attach credits"),
+          failures,
+        );
+        continue;
+      }
       const { data: inserted, error } = await supabase
         .from("user_credits")
         .insert({
@@ -345,6 +404,7 @@ export function AssignPackageDialog({
             ? new Date(Date.now() + Math.trunc(product.validity_days) * 86400000).toISOString()
             : null,
           yoco_payment_id: "manual_assignment",
+          purchased_at: purchasedAt,
         })
         .select("id, product_name, credits_remaining, credits_total, is_unlimited, expires_at")
         .maybeSingle();
@@ -358,8 +418,7 @@ export function AssignPackageDialog({
         onCreditInserted?.(row, t.profileId);
       }
 
-      const first =
-        (t.firstName?.trim() || t.displayName.split(/\s+/)[0] || "there") as string;
+      const first = (t.firstName?.trim() || t.displayName.split(/\s+/)[0] || "there") as string;
       await sendPackageEmail(
         t.email,
         first,
@@ -421,7 +480,48 @@ export function AssignPackageDialog({
 
     setSubmitting(true);
     const failures: PackageAssignFailure[] = [];
+
+    const profileIds = [...new Set(assignees.map((a) => a.profileId.trim()))].filter(
+      isUuidProfileId,
+    );
+    let existingProfileSet = new Set<string>();
+    if (profileIds.length > 0) {
+      const { data: existingProfiles, error: profilesLookupErr } = await supabase
+        .from("profiles")
+        .select("id")
+        .in("id", profileIds);
+      if (profilesLookupErr) {
+        console.error(
+          "[AssignPackageDialog] profiles pre-check (custom package)",
+          profilesLookupErr,
+        );
+      }
+      existingProfileSet = new Set(
+        (existingProfiles ?? []).map((r) => String((r as { id: string }).id)),
+      );
+    }
+
+    const purchasedAt = new Date().toISOString();
+
     for (const t of assignees) {
+      if (!isUuidProfileId(t.profileId)) {
+        recordPackageAssignFailure(
+          t,
+          "user_credits insert (custom package)",
+          new Error("Invalid profile id — cannot attach credits"),
+          failures,
+        );
+        continue;
+      }
+      if (!existingProfileSet.has(t.profileId.trim())) {
+        recordPackageAssignFailure(
+          t,
+          "user_credits insert (custom package)",
+          new Error("No profile row for this member — cannot attach credits"),
+          failures,
+        );
+        continue;
+      }
       const { data: inserted, error } = await supabase
         .from("user_credits")
         .insert({
@@ -435,6 +535,7 @@ export function AssignPackageDialog({
           is_unlimited: isUnlimited,
           expires_at: expiresAt,
           yoco_payment_id: "manual_assignment",
+          purchased_at: purchasedAt,
         })
         .select("id, product_name, credits_remaining, credits_total, is_unlimited, expires_at")
         .maybeSingle();
@@ -500,7 +601,9 @@ export function AssignPackageDialog({
   const customConfirmCopy = useMemo(() => {
     const name = customName.trim();
     if (!name || !primaryAssignee) return "";
-    const totalLabel = customUnlimited ? "Unlimited" : `${Math.trunc(Number(customCredits) || 0)} credits`;
+    const totalLabel = customUnlimited
+      ? "Unlimited"
+      : `${Math.trunc(Number(customCredits) || 0)} credits`;
     const who =
       assignees.length === 1
         ? primaryAssignee.displayName
@@ -551,253 +654,252 @@ export function AssignPackageDialog({
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent
           className="max-h-[90vh] max-w-lg overflow-y-auto"
-        onPointerDownOutside={(e) => {
-          const t = e.target as HTMLElement;
-          if (t.closest("[data-radix-select-content]") || t.closest('[role="listbox"]')) {
-            e.preventDefault();
-          }
-        }}
-        onInteractOutside={(e) => {
-          const t = e.target as HTMLElement;
-          if (t.closest("[data-radix-select-content]") || t.closest('[role="listbox"]')) {
-            e.preventDefault();
-          }
-        }}
-      >
-        <DialogHeader>
-          <DialogTitle>Assign package</DialogTitle>
-          <p className="text-left text-sm text-muted-foreground">
-            {assignees.length > 1 ? (
-              <>
-                <span className="font-medium text-foreground">{assignees.length} members selected</span>
-                <span className="mt-1 block text-xs font-normal text-muted-foreground">
-                  {assignees
-                    .map((a) => a.displayName)
-                    .join(", ")
-                    .slice(0, 140)}
-                  {assignees.map((a) => a.displayName).join(", ").length > 140 ? "…" : ""}
-                </span>
-              </>
-            ) : (
-              primaryAssignee.displayName
-            )}
-            <span className="block text-xs">No payment — manual credit grant</span>
-          </p>
-        </DialogHeader>
+          onPointerDownOutside={(e) => {
+            const t = e.target as HTMLElement;
+            if (t.closest("[data-radix-select-content]") || t.closest('[role="listbox"]')) {
+              e.preventDefault();
+            }
+          }}
+          onInteractOutside={(e) => {
+            const t = e.target as HTMLElement;
+            if (t.closest("[data-radix-select-content]") || t.closest('[role="listbox"]')) {
+              e.preventDefault();
+            }
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>Assign package</DialogTitle>
+            <p className="text-left text-sm text-muted-foreground">
+              {assignees.length > 1 ? (
+                <>
+                  <span className="font-medium text-foreground">
+                    {assignees.length} members selected
+                  </span>
+                  <span className="mt-1 block text-xs font-normal text-muted-foreground">
+                    {assignees
+                      .map((a) => a.displayName)
+                      .join(", ")
+                      .slice(0, 140)}
+                    {assignees.map((a) => a.displayName).join(", ").length > 140 ? "…" : ""}
+                  </span>
+                </>
+              ) : (
+                primaryAssignee.displayName
+              )}
+              <span className="block text-xs">No payment — manual credit grant</span>
+            </p>
+          </DialogHeader>
 
-        {!canAssign ? (
-          <p className="text-sm text-muted-foreground">
-            Only directors and management can assign packages.
-          </p>
-        ) : (
-          <Tabs value={tab} onValueChange={(v) => setTab(v as "existing" | "custom")}>
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger type="button" value="existing">
-                Existing package
-              </TabsTrigger>
-              <TabsTrigger type="button" value="custom">
-                Custom package
-              </TabsTrigger>
-            </TabsList>
+          {!canAssign ? (
+            <p className="text-sm text-muted-foreground">
+              Only directors and management can assign packages.
+            </p>
+          ) : (
+            <Tabs value={tab} onValueChange={(v) => setTab(v as "existing" | "custom")}>
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger type="button" value="existing">
+                  Existing package
+                </TabsTrigger>
+                <TabsTrigger type="button" value="custom">
+                  Custom package
+                </TabsTrigger>
+              </TabsList>
 
-            <TabsContent value="existing" className="space-y-4 pt-2">
-              <div className="grid gap-2">
-                <Label>Category</Label>
-                {productsLoading ? (
-                  <p className="text-sm text-muted-foreground">Loading products…</p>
-                ) : (
+              <TabsContent value="existing" className="space-y-4 pt-2">
+                <div className="grid gap-2">
+                  <Label>Category</Label>
+                  {productsLoading ? (
+                    <p className="text-sm text-muted-foreground">Loading products…</p>
+                  ) : (
+                    <Select
+                      value={existingCategory || undefined}
+                      onValueChange={(v) => {
+                        setExistingCategory(v);
+                        setSelectedProductId("");
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select category" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {existingCategoryOptions.map((slug) => (
+                          <SelectItem key={slug} value={slug}>
+                            {PRODUCT_CATEGORY_SLUG_LABEL[slug] ?? slug}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+                <div className="grid gap-2">
+                  <Label>Product</Label>
+                  {productsLoading ? (
+                    <p className="text-sm text-muted-foreground">Loading products…</p>
+                  ) : !existingCategory ? (
+                    <p className="text-sm text-muted-foreground">Choose a category first.</p>
+                  ) : productsInSelectedCategory.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No products in this category.</p>
+                  ) : (
+                    <Select value={selectedProductId} onValueChange={setSelectedProductId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a product" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {productsInSelectedCategory.map((p) => {
+                          const cc =
+                            p.credit_count == null
+                              ? "—"
+                              : p.credit_count >= UNLIMITED_PRODUCT_THRESHOLD
+                                ? "Unlimited"
+                                : String(p.credit_count);
+                          return (
+                            <SelectItem key={p.id} value={p.id}>
+                              {p.name} · {cc} credits
+                            </SelectItem>
+                          );
+                        })}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="assign-existing-note">Optional note</Label>
+                  <Textarea
+                    id="assign-existing-note"
+                    value={existingNote}
+                    onChange={(e) => setExistingNote(e.target.value)}
+                    rows={2}
+                    placeholder="Shown in the member email if provided"
+                  />
+                </div>
+                <DialogFooter className="gap-2 sm:gap-0">
+                  <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    disabled={
+                      submitting || productsLoading || !existingCategory || !selectedProductId
+                    }
+                    className="bg-[#a3b693] text-white hover:bg-[#8fa67d]"
+                    onClick={() => openAssignConfirm("existing")}
+                  >
+                    {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                    Assign
+                  </Button>
+                </DialogFooter>
+              </TabsContent>
+
+              <TabsContent value="custom" className="space-y-4 pt-2">
+                <div className="grid gap-2">
+                  <Label htmlFor="assign-custom-name">Package name</Label>
+                  <Input
+                    id="assign-custom-name"
+                    value={customName}
+                    onChange={(e) => setCustomName(e.target.value)}
+                    placeholder="e.g. Guest pass"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label>Category</Label>
                   <Select
-                    value={existingCategory || undefined}
-                    onValueChange={(v) => {
-                      setExistingCategory(v);
-                      setSelectedProductId("");
-                    }}
+                    value={customCategory}
+                    onValueChange={(v) => setCustomCategory(v as CreditCategoryOrdered)}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Select category" />
+                      <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {existingCategoryOptions.map((slug) => (
-                        <SelectItem key={slug} value={slug}>
-                          {PRODUCT_CATEGORY_SLUG_LABEL[slug] ?? slug}
+                      {CUSTOM_CATEGORY_ITEMS.map((c) => (
+                        <SelectItem key={c.value} value={c.value}>
+                          {c.label}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
-                )}
-              </div>
-              <div className="grid gap-2">
-                <Label>Product</Label>
-                {productsLoading ? (
-                  <p className="text-sm text-muted-foreground">Loading products…</p>
-                ) : !existingCategory ? (
-                  <p className="text-sm text-muted-foreground">Choose a category first.</p>
-                ) : productsInSelectedCategory.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No products in this category.</p>
-                ) : (
-                  <Select value={selectedProductId} onValueChange={setSelectedProductId}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select a product" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {productsInSelectedCategory.map((p) => {
-                        const cc =
-                          p.credit_count == null
-                            ? "—"
-                            : p.credit_count >= UNLIMITED_PRODUCT_THRESHOLD
-                              ? "Unlimited"
-                              : String(p.credit_count);
-                        return (
-                          <SelectItem key={p.id} value={p.id}>
-                            {p.name} · {cc} credits
-                          </SelectItem>
-                        );
-                      })}
-                    </SelectContent>
-                  </Select>
-                )}
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="assign-existing-note">Optional note</Label>
-                <Textarea
-                  id="assign-existing-note"
-                  value={existingNote}
-                  onChange={(e) => setExistingNote(e.target.value)}
-                  rows={2}
-                  placeholder="Shown in the member email if provided"
-                />
-              </div>
-              <DialogFooter className="gap-2 sm:gap-0">
-                <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-                  Cancel
-                </Button>
-                <Button
-                  type="button"
-                  disabled={
-                    submitting ||
-                    productsLoading ||
-                    !existingCategory ||
-                    !selectedProductId
-                  }
-                  className="bg-[#a3b693] text-white hover:bg-[#8fa67d]"
-                  onClick={() => openAssignConfirm("existing")}
-                >
-                  {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                  Assign
-                </Button>
-              </DialogFooter>
-            </TabsContent>
-
-            <TabsContent value="custom" className="space-y-4 pt-2">
-              <div className="grid gap-2">
-                <Label htmlFor="assign-custom-name">Package name</Label>
-                <Input
-                  id="assign-custom-name"
-                  value={customName}
-                  onChange={(e) => setCustomName(e.target.value)}
-                  placeholder="e.g. Guest pass"
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label>Category</Label>
-                <Select
-                  value={customCategory}
-                  onValueChange={(v) => setCustomCategory(v as CreditCategoryOrdered)}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {CUSTOM_CATEGORY_ITEMS.map((c) => (
-                      <SelectItem key={c.value} value={c.value}>
-                        {c.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border p-3">
-                <div className="grid flex-1 gap-2">
-                  <Label htmlFor="assign-custom-credits">Number of credits</Label>
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border p-3">
+                  <div className="grid flex-1 gap-2">
+                    <Label htmlFor="assign-custom-credits">Number of credits</Label>
+                    <Input
+                      id="assign-custom-credits"
+                      type="number"
+                      min={1}
+                      disabled={customUnlimited}
+                      value={customCredits}
+                      onChange={(e) => setCustomCredits(e.target.value)}
+                    />
+                  </div>
+                  <div className="flex items-center gap-2 pt-6">
+                    <Switch
+                      id="assign-custom-unlimited"
+                      checked={customUnlimited}
+                      onCheckedChange={setCustomUnlimited}
+                    />
+                    <Label htmlFor="assign-custom-unlimited" className="cursor-pointer text-sm">
+                      Unlimited
+                    </Label>
+                  </div>
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="assign-custom-validity">Validity days (optional)</Label>
                   <Input
-                    id="assign-custom-credits"
+                    id="assign-custom-validity"
                     type="number"
                     min={1}
-                    disabled={customUnlimited}
-                    value={customCredits}
-                    onChange={(e) => setCustomCredits(e.target.value)}
+                    placeholder="Leave blank for no expiry"
+                    value={customValidityDays}
+                    onChange={(e) => setCustomValidityDays(e.target.value)}
                   />
                 </div>
-                <div className="flex items-center gap-2 pt-6">
-                  <Switch
-                    id="assign-custom-unlimited"
-                    checked={customUnlimited}
-                    onCheckedChange={setCustomUnlimited}
+                <div className="grid gap-2">
+                  <Label>Allowed class types</Label>
+                  <div className="grid gap-2 rounded-lg border border-border p-3">
+                    {CLASS_TYPE_OPTIONS.map((opt) => (
+                      <label
+                        key={opt.value}
+                        className="flex cursor-pointer items-center gap-2 text-sm"
+                      >
+                        <Checkbox
+                          checked={customClassTypes.includes(opt.value)}
+                          onCheckedChange={() => {
+                            toggleClassType(opt.value);
+                          }}
+                        />
+                        {opt.label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="assign-custom-note">Optional note</Label>
+                  <Textarea
+                    id="assign-custom-note"
+                    value={customNote}
+                    onChange={(e) => setCustomNote(e.target.value)}
+                    rows={2}
+                    placeholder="Shown in the member email if provided"
                   />
-                  <Label htmlFor="assign-custom-unlimited" className="cursor-pointer text-sm">
-                    Unlimited
-                  </Label>
                 </div>
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="assign-custom-validity">Validity days (optional)</Label>
-                <Input
-                  id="assign-custom-validity"
-                  type="number"
-                  min={1}
-                  placeholder="Leave blank for no expiry"
-                  value={customValidityDays}
-                  onChange={(e) => setCustomValidityDays(e.target.value)}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label>Allowed class types</Label>
-                <div className="grid gap-2 rounded-lg border border-border p-3">
-                  {CLASS_TYPE_OPTIONS.map((opt) => (
-                    <label
-                      key={opt.value}
-                      className="flex cursor-pointer items-center gap-2 text-sm"
-                    >
-                      <Checkbox
-                        checked={customClassTypes.includes(opt.value)}
-                        onCheckedChange={() => {
-                          toggleClassType(opt.value);
-                        }}
-                      />
-                      {opt.label}
-                    </label>
-                  ))}
-                </div>
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="assign-custom-note">Optional note</Label>
-                <Textarea
-                  id="assign-custom-note"
-                  value={customNote}
-                  onChange={(e) => setCustomNote(e.target.value)}
-                  rows={2}
-                  placeholder="Shown in the member email if provided"
-                />
-              </div>
-              <DialogFooter className="gap-2 sm:gap-0">
-                <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-                  Cancel
-                </Button>
-                <Button
-                  type="button"
-                  disabled={submitting}
-                  className="bg-[#a3b693] text-white hover:bg-[#8fa67d]"
-                  onClick={() => openAssignConfirm("custom")}
-                >
-                  {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                  Assign
-                </Button>
-              </DialogFooter>
-            </TabsContent>
-          </Tabs>
-        )}
-      </DialogContent>
-    </Dialog>
+                <DialogFooter className="gap-2 sm:gap-0">
+                  <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    disabled={submitting}
+                    className="bg-[#a3b693] text-white hover:bg-[#8fa67d]"
+                    onClick={() => openAssignConfirm("custom")}
+                  >
+                    {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                    Assign
+                  </Button>
+                </DialogFooter>
+              </TabsContent>
+            </Tabs>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>
