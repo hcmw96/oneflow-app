@@ -14,6 +14,8 @@ type SageCreditRow = {
   credits_remaining: number | null;
   is_unlimited: boolean | null;
   expires_at: string | null;
+  product_id?: string | null;
+  product_name?: string | null;
 };
 
 function isActiveSageCredit(row: SageCreditRow, nowMs: number): boolean {
@@ -26,17 +28,17 @@ function isActiveSageCredit(row: SageCreditRow, nowMs: number): boolean {
   return Number.isFinite(rem) && rem > 0;
 }
 
-/** Profile IDs with an active Sage café credit (`product_id` or `product_name ILIKE '%sage%'`). */
+/** Profile IDs with an active Sage café credit (product_id OR product_name ILIKE '%sage%'). */
 export async function fetchTheSageCreditProfileIds(client: SupabaseClient): Promise<Set<string>> {
   const nowMs = Date.now();
   const [byId, byName] = await Promise.all([
     client
       .from("user_credits")
-      .select("profile_id, credits_remaining, is_unlimited, expires_at")
+      .select("profile_id, credits_remaining, is_unlimited, expires_at, product_id, product_name")
       .eq("product_id", THE_SAGE_PRODUCT_ID),
     client
       .from("user_credits")
-      .select("profile_id, credits_remaining, is_unlimited, expires_at")
+      .select("profile_id, credits_remaining, is_unlimited, expires_at, product_id, product_name")
       .ilike("product_name", "%sage%"),
   ]);
 

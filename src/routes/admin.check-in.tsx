@@ -30,7 +30,10 @@ import {
   RosterAddonPills,
 } from "@/components/admin/RosterAddonPills";
 import { GuideActivePackagePills } from "@/components/admin/GuideActivePackagePills";
-import { fetchActiveUserCreditsByProfileIds, type GuideCreditPillRow } from "@/lib/activeUserCredits";
+import {
+  fetchActiveUserCreditsByProfileIds,
+  type GuideCreditPillRow,
+} from "@/lib/activeUserCredits";
 import {
   bookingConfirmationEmailData,
   bookingConfirmationTemplateForClassType,
@@ -112,6 +115,18 @@ function initials(name: string) {
     .toUpperCase();
 }
 
+/** Normalize mat/towel flags from PostgREST (boolean, 0/1, or legacy string). */
+function addonTruthy(v: unknown): boolean {
+  if (v === true) return true;
+  if (v === false || v == null) return false;
+  if (typeof v === "number") return v === 1;
+  if (typeof v === "string") {
+    const s = v.trim().toLowerCase();
+    return s === "true" || s === "t" || s === "1" || s === "yes";
+  }
+  return false;
+}
+
 function formatClassTime(iso: string) {
   return new Date(iso)
     .toLocaleTimeString("en-ZA", { hour: "numeric", minute: "2-digit", hour12: true })
@@ -128,6 +143,13 @@ function normalizeBooking(raw: BookingRow, sageProfileIds: Set<string>): RosterR
   if (!cls) return null;
   const status = raw.status as BookingStatus;
   if (!["attended", "confirmed", "cancelled", "no-show"].includes(status)) return null;
+  const matV = (raw as Record<string, unknown>).mat_addon;
+  const towelV = (raw as Record<string, unknown>).towel_addon;
+  const matAddon = addonTruthy(matV);
+  const towelAddon = addonTruthy(towelV);
+  if (import.meta.env.DEV && (matAddon || towelAddon)) {
+    console.log("[check-in] booking addons", raw.id, "mat_addon=", matV, "towel_addon=", towelV);
+  }
   return {
     id: raw.id,
     status,
@@ -138,8 +160,8 @@ function normalizeBooking(raw: BookingRow, sageProfileIds: Set<string>): RosterR
     classStartsAt: cls.starts_at,
     startsAtLabel: `Today · ${formatClassTime(cls.starts_at)}`,
     creditLabel: raw.payment_method?.replace(/_/g, " ") ?? "—",
-    matAddon: Boolean(raw.mat_addon),
-    towelAddon: Boolean(raw.towel_addon),
+    matAddon,
+    towelAddon,
     hasSageCredit: sageProfileIds.has(raw.profile_id),
   };
 }
@@ -154,7 +176,9 @@ function CheckInPage() {
   const [activeSession, setActiveSession] = useState<string>("all");
   const [walkInOpen, setWalkInOpen] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [guideCreditMap, setGuideCreditMap] = useState(() => new Map<string, GuideCreditPillRow[]>());
+  const [guideCreditMap, setGuideCreditMap] = useState(
+    () => new Map<string, GuideCreditPillRow[]>(),
+  );
   const qrDedupeRef = useRef<string | null>(null);
   const qrDedupeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -205,7 +229,9 @@ function CheckInPage() {
     });
     setTodayClasses(classes);
 
-    const guideProfileIds = classes.map((c) => c.guide_profile_id).filter((id): id is string => Boolean(id));
+    const guideProfileIds = classes
+      .map((c) => c.guide_profile_id)
+      .filter((id): id is string => Boolean(id));
     const creditMap = await fetchActiveUserCreditsByProfileIds(guideProfileIds);
     setGuideCreditMap(creditMap);
     const classIds = classes.map((c) => c.id);
@@ -318,14 +344,7 @@ function CheckInPage() {
       if (filterTowelAddon && !b.towelAddon) return false;
       return true;
     });
-  }, [
-    roster,
-    activeSession,
-    query,
-    rosterCheckFilter,
-    filterMatAddon,
-    filterTowelAddon,
-  ]);
+  }, [roster, activeSession, query, rosterCheckFilter, filterMatAddon, filterTowelAddon]);
 
   const checkedInCount = roster.filter((r) => r.status === "attended").length;
   const totalCapacity = sessions.reduce((s, x) => s + x.capacity, 0);
@@ -832,9 +851,7 @@ function WalkInSheet({
 
       if (createErr || !created?.id) {
         console.error("walk-in profile create failed", createErr);
-        toast.error(
-          supabaseErrorMessage(createErr, "Could not create profile — please try again"),
-        );
+        toast.error(supabaseErrorMessage(createErr, "Could not create profile — please try again"));
         setSaving(false);
         return;
       }
