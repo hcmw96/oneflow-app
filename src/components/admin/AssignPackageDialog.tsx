@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
@@ -7,7 +7,15 @@ import {
   allowedClassTypeCheckboxOptions,
   defaultAllowedClassTypesForCreditCategory,
 } from "@/lib/allowedClassTypes";
-import { buildProductCreditRows } from "@/lib/multiCreditProducts";
+import {
+  BUNDLE_COMPONENT_OPTIONS,
+  buildBundleComponentCreditRow,
+  buildProductCreditRows,
+  isMultiCreditBundleProduct,
+  resolveBundlePackageTitle,
+  type BundleComponentKind,
+  type UserCreditInsertRow,
+} from "@/lib/multiCreditProducts";
 import { USER_CREDIT_ADMIN_SELECT } from "@/lib/userCreditAdmin";
 import {
   CREDIT_CATEGORY_ORDERED,
@@ -125,6 +133,29 @@ const CLASS_TYPE_OPTIONS = allowedClassTypeCheckboxOptions();
 const UNLIMITED_PRODUCT_THRESHOLD = 999;
 const UNLIMITED_MANUAL_TOTAL = 999_999;
 
+type BundleExtraDraft = {
+  id: string;
+  kind: BundleComponentKind;
+  credits: string;
+  unlimited: boolean;
+};
+
+function newBundleExtraDraft(kind: BundleComponentKind = "cafe"): BundleExtraDraft {
+  return {
+    id: crypto.randomUUID(),
+    kind,
+    credits: kind === "cafe" ? "10" : "10",
+    unlimited: kind === "mat" || kind === "towel",
+  };
+}
+
+function bundleRowSummary(row: UserCreditInsertRow): string {
+  if (row.mat_access && !row.is_unlimited) return "Mat access";
+  if (row.towel_access && !row.is_unlimited) return "Towel access";
+  if (row.is_unlimited) return "Unlimited";
+  return `${row.credits_remaining} credits`;
+}
+
 function normalizeClassTypes(raw: unknown): string[] {
   if (!Array.isArray(raw)) return [];
   return raw.map((x) => String(x)).filter(Boolean);
@@ -201,6 +232,7 @@ export function AssignPackageDialog({
   const [assignResultOpen, setAssignResultOpen] = useState(false);
   const [assignResultRows, setAssignResultRows] = useState<AssignedCreditRow[]>([]);
   const [assignResultMemberName, setAssignResultMemberName] = useState("");
+  const [bundleExtras, setBundleExtras] = useState<BundleExtraDraft[]>([]);
   const prevOpenRef = useRef(false);
 
   const assignees = useMemo(() => {
@@ -304,6 +336,94 @@ export function AssignPackageDialog({
       .filter((p) => normalizeProductCategoryKey(p.category) === existingCategory)
       .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
   }, [products, existingCategory]);
+
+  const selectedProduct = useMemo(
+    () => products.find((p) => p.id === selectedProductId) ?? null,
+    [products, selectedProductId],
+  );
+
+  const isBundleAssign = Boolean(
+    selectedProduct &&
+      isMultiCreditBundleProduct(selectedProduct.id, selectedProduct.name),
+  );
+
+  const bundlePreviewRows = useMemo((): UserCreditInsertRow[] => {
+    if (!selectedProduct || !isBundleAssign) return [];
+    const rawCount =
+      typeof selectedProduct.credit_count === "number"
+        ? selectedProduct.credit_count
+        : Number(selectedProduct.credit_count ?? 0);
+    const isUnlimited = rawCount >= UNLIMITED_PRODUCT_THRESHOLD;
+    const total = isUnlimited ? rawCount : Math.trunc(rawCount);
+    const validityDays = selectedProduct.validity_days;
+    const expiresAt = validityDays
+      ? new Date(Date.now() + Math.trunc(validityDays) * 86400000).toISOString()
+      : null;
+    return buildProductCreditRows({
+      productName: selectedProduct.name,
+      profileId: "00000000-0000-4000-8000-000000000000",
+      productId: selectedProduct.id,
+      expiresAt,
+      paymentId: "preview",
+      category: selectedProduct.category ?? "yoga",
+      allowedClassTypes: selectedProduct.allowed_class_types?.length
+        ? selectedProduct.allowed_class_types
+        : [...defaultAllowedClassTypesForCreditCategory(selectedProduct.category)],
+      creditsTotal: total,
+      creditsRemaining: total,
+      isUnlimited,
+    });
+  }, [selectedProduct, isBundleAssign]);
+
+  useEffect(() => {
+    setBundleExtras([]);
+  }, [selectedProductId]);
+
+  const buildBundleExtraInsertRows = (
+    product: ProductPick,
+    profileId: string,
+    expiresAt: string | null,
+    purchasedAt: string,
+  ): UserCreditInsertRow[] => {
+    if (bundleExtras.length === 0) return [];
+    const title = resolveBundlePackageTitle(product.id, bundlePreviewRows);
+    const rows: UserCreditInsertRow[] = [];
+    for (const extra of bundleExtras) {
+      const accessOnly = extra.kind === "mat" || extra.kind === "towel";
+      const unlimited = extra.unlimited || accessOnly;
+      let total = unlimited ? UNLIMITED_PRODUCT_THRESHOLD : Math.trunc(Number(extra.credits));
+      if (!unlimited && (!Number.isFinite(total) || total < 1)) continue;
+      if (accessOnly && !extra.unlimited) total = 1;
+      rows.push(
+        buildBundleComponentCreditRow({
+          profileId,
+          productId: product.id,
+          bundleTitle: title,
+          component: extra.kind,
+          creditsTotal: total,
+          creditsRemaining: total,
+          isUnlimited: unlimited,
+          expiresAt,
+          paymentId: "manual_component",
+          purchasedAt,
+        }),
+      );
+    }
+    return rows;
+  };
+
+  const validateBundleExtras = (): boolean => {
+    for (const extra of bundleExtras) {
+      const accessOnly = extra.kind === "mat" || extra.kind === "towel";
+      if (extra.unlimited || accessOnly) continue;
+      const n = Math.trunc(Number(extra.credits));
+      if (!Number.isFinite(n) || n < 1) {
+        toast.error(`Enter at least 1 credit for extra ${BUNDLE_COMPONENT_OPTIONS.find((o) => o.value === extra.kind)?.label ?? extra.kind}.`);
+        return false;
+      }
+    }
+    return true;
+  };
 
   const toggleClassType = (value: string) => {
     setCustomClassTypes((prev) =>
@@ -409,7 +529,7 @@ export function AssignPackageDialog({
       const expiresAt = product.validity_days
         ? new Date(Date.now() + Math.trunc(product.validity_days) * 86400000).toISOString()
         : null;
-      const creditRows = buildProductCreditRows({
+      const baseCreditRows = buildProductCreditRows({
         productName: product.name,
         profileId: t.profileId,
         productId: product.id,
@@ -424,6 +544,8 @@ export function AssignPackageDialog({
         creditsRemaining: total,
         isUnlimited,
       });
+      const extraCreditRows = buildBundleExtraInsertRows(product, t.profileId, expiresAt, purchasedAt);
+      const creditRows = [...baseCreditRows, ...extraCreditRows];
 
       const { data: inserted, error } = await supabase
         .from("user_credits")
@@ -646,8 +768,12 @@ export function AssignPackageDialog({
       assignees.length === 1
         ? primaryAssignee.displayName
         : `${primaryAssignee.displayName} and ${assignees.length - 1} other ${assignees.length === 2 ? "member" : "members"}`;
-    return `This will add ${product.name} (${creditsPart}) to ${who} at no charge.`;
-  }, [products, selectedProductId, assignees, primaryAssignee]);
+    const extraPart =
+      bundleExtras.length > 0
+        ? ` plus ${bundleExtras.length} extra component${bundleExtras.length === 1 ? "" : "s"}`
+        : "";
+    return `This will add ${product.name} (${creditsPart}${extraPart}) to ${who} at no charge.`;
+  }, [products, selectedProductId, assignees, primaryAssignee, bundleExtras.length]);
 
   const customConfirmCopy = useMemo(() => {
     const name = customName.trim();
@@ -672,6 +798,7 @@ export function AssignPackageDialog({
         toast.error("Select a product.");
         return;
       }
+      if (!validateBundleExtras()) return;
     } else {
       const name = customName.trim();
       if (!name) {
@@ -813,6 +940,144 @@ export function AssignPackageDialog({
                     </Select>
                   )}
                 </div>
+                {isBundleAssign && selectedProduct ? (
+                  <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-3">
+                    <div>
+                      <p className="text-sm font-medium">Included with this package</p>
+                      <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
+                        {bundlePreviewRows.map((row) => (
+                          <li key={row.product_name}>
+                            <span className="font-medium text-foreground">{row.product_name}</span>
+                            {" · "}
+                            {bundleRowSummary(row)}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div className="border-t border-border pt-3">
+                      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-sm font-medium">Extra components (optional)</p>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-8 gap-1 text-xs"
+                          onClick={() =>
+                            setBundleExtras((prev) => [...prev, newBundleExtraDraft("cafe")])
+                          }
+                        >
+                          <Plus className="h-3 w-3 shrink-0" aria-hidden />
+                          Add component
+                        </Button>
+                      </div>
+                      {bundleExtras.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">
+                          e.g. +10 café credits, extra Wellzone, mat or towel on top of the bundle.
+                        </p>
+                      ) : (
+                        <ul className="space-y-2">
+                          {bundleExtras.map((extra) => {
+                            const accessOnly = extra.kind === "mat" || extra.kind === "towel";
+                            return (
+                              <li
+                                key={extra.id}
+                                className="grid gap-2 rounded-md border border-border bg-background/80 p-2 sm:grid-cols-[1fr_88px_auto_auto]"
+                              >
+                                <Select
+                                  value={extra.kind}
+                                  onValueChange={(v) => {
+                                    const kind = v as BundleComponentKind;
+                                    setBundleExtras((prev) =>
+                                      prev.map((row) =>
+                                        row.id === extra.id
+                                          ? {
+                                              ...row,
+                                              kind,
+                                              unlimited:
+                                                kind === "mat" ||
+                                                kind === "towel" ||
+                                                row.unlimited,
+                                            }
+                                          : row,
+                                      ),
+                                    );
+                                  }}
+                                >
+                                  <SelectTrigger className="h-9">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {BUNDLE_COMPONENT_OPTIONS.map((opt) => (
+                                      <SelectItem key={opt.value} value={opt.value}>
+                                        {opt.label}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                {!accessOnly && !extra.unlimited ? (
+                                  <Input
+                                    type="number"
+                                    min={1}
+                                    className="h-9"
+                                    value={extra.credits}
+                                    onChange={(e) =>
+                                      setBundleExtras((prev) =>
+                                        prev.map((row) =>
+                                          row.id === extra.id
+                                            ? { ...row, credits: e.target.value }
+                                            : row,
+                                        ),
+                                      )
+                                    }
+                                    aria-label="Credits"
+                                  />
+                                ) : (
+                                  <span className="flex h-9 items-center text-xs text-muted-foreground">
+                                    {accessOnly ? "Access" : "∞"}
+                                  </span>
+                                )}
+                                <div className="flex items-center gap-1.5">
+                                  <Switch
+                                    id={`extra-unlimited-${extra.id}`}
+                                    checked={extra.unlimited || accessOnly}
+                                    disabled={accessOnly}
+                                    onCheckedChange={(v) =>
+                                      setBundleExtras((prev) =>
+                                        prev.map((row) =>
+                                          row.id === extra.id ? { ...row, unlimited: v } : row,
+                                        ),
+                                      )
+                                    }
+                                  />
+                                  <Label
+                                    htmlFor={`extra-unlimited-${extra.id}`}
+                                    className="text-xs"
+                                  >
+                                    Unlimited
+                                  </Label>
+                                </div>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-9 w-9 shrink-0 text-destructive"
+                                  aria-label="Remove extra component"
+                                  onClick={() =>
+                                    setBundleExtras((prev) =>
+                                      prev.filter((row) => row.id !== extra.id),
+                                    )
+                                  }
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
+                    </div>
+                  </div>
+                ) : null}
                 <div className="grid gap-2">
                   <Label htmlFor="assign-existing-note">Optional note</Label>
                   <Textarea
