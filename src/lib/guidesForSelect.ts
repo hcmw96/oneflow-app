@@ -47,18 +47,23 @@ const LOG = "[guidesForSelect]";
  * Active guides with profile names for class forms.
  * Uses `guides` + embedded `profiles` (and falls back to a direct profiles query if embed names are empty).
  */
-export async function fetchGuidesForClassSelect(): Promise<{
+export async function fetchGuidesForClassSelect(
+  client: SupabaseClient = supabase,
+): Promise<{
   data: GuideSelectRow[];
   error: PostgrestError | null;
 }> {
-  const selectStr = "id, profile_id, profiles(first_name, last_name, avatar_url)";
+  console.log(LOG, "fetchGuidesForClassSelect start");
 
-  const res = await supabase
+  const selectStr =
+    "id, profile_id, profiles!guides_profile_id_fkey(first_name, last_name, avatar_url)";
+
+  const res = await client
     .from("guides")
     .select(selectStr)
     .or("is_active.eq.true,is_active.is.null");
 
-  console.log(LOG, "supabase guides response", {
+  console.log(LOG, "fetchGuidesForClassSelect after supabase", {
     select: selectStr,
     error: res.error,
     rowCount: res.data?.length ?? 0,
@@ -87,7 +92,7 @@ export async function fetchGuidesForClassSelect(): Promise<{
 
   const needsNames = mapped.filter((m) => m.profile_id && !guideLabel(m)).map((m) => m.profile_id);
   if (needsNames.length > 0) {
-    const { data: profs, error: pErr } = await supabase
+    const { data: profs, error: pErr } = await client
       .from("profiles")
       .select("id, first_name, last_name, avatar_url")
       .in("id", [...new Set(needsNames)]);

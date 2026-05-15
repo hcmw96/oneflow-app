@@ -18,7 +18,7 @@ import { PageHeader } from "@/components/admin/PageHeader";
 import { StatCard } from "@/components/admin/StatCard";
 import { getUser, supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
-import type { GuideSelectRow } from "@/lib/guidesForSelect";
+import { fetchGuidesForClassSelect, type GuideSelectRow } from "@/lib/guidesForSelect";
 import { allowedClassTypeCheckboxOptions } from "@/lib/allowedClassTypes";
 import { displayClassType } from "@/types/studio";
 import { cn } from "@/lib/utils";
@@ -259,35 +259,44 @@ function ClassesPage() {
   const editGuideSelectSyncRef = useRef<string | null>(null);
 
   const loadGuideOptions = useCallback(async () => {
-    const { data: guidesData, error } = await supabase
+    const result = await fetchGuidesForClassSelect(supabase);
+    console.log("fetchGuidesForClassSelect result:", result);
+
+    if (result.error) {
+      console.error("fetchGuidesForClassSelect error:", result.error);
+      toast.error(supabaseErrorMessage(result.error, "Could not load guides"));
+    }
+
+    if (result.data.length > 0) {
+      setGuides(result.data);
+      return;
+    }
+
+    console.error("No guides loaded - checking direct query...");
+    const { data, error } = await supabase
       .from("guides")
-      .select(
-        `
-      id,
-      profile_id,
-      profiles!guides_profile_id_fkey (
-        first_name,
-        last_name
-      )
-    `,
-      )
-      .eq("is_active", true);
+      .select("id, profile_id, profile:profiles!guides_profile_id_fkey(first_name, last_name)")
+      .or("is_active.eq.true,is_active.is.null");
+
+    console.log("direct guides query:", data, error);
 
     if (error) {
-      console.error(error);
-      toast.error(supabaseErrorMessage(error, "Could not load guides"));
+      console.error("direct guides query failed:", error);
+      if (!result.error) {
+        toast.error(supabaseErrorMessage(error, "Could not load guides"));
+      }
       setGuides([]);
       return;
     }
 
-    const metaRows: GuideOption[] = (guidesData ?? []).map((g) => {
-      const raw = g.profiles as unknown;
+    const metaRows: GuideOption[] = (data ?? []).map((g) => {
+      const raw = (g as { profile?: unknown }).profile;
       const pr = (Array.isArray(raw) ? raw[0] : raw) as {
         first_name?: string | null;
         last_name?: string | null;
       } | null;
       return {
-        guide_id: String(g.id),
+        guide_id: String((g as { id: string }).id),
         profile_id: String((g as { profile_id: string }).profile_id ?? ""),
         first_name: pr?.first_name ?? null,
         last_name: pr?.last_name ?? null,
