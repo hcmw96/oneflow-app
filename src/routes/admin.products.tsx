@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { PageHeader } from "@/components/admin/PageHeader";
 import { supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
+import { allowedClassTypeCheckboxOptions } from "@/lib/allowedClassTypes";
 import {
   CREDIT_CATEGORY_ORDERED,
   groupProductsByDisplayCategory,
@@ -66,12 +67,7 @@ const CATEGORY_OPTIONS: { value: CreditCategory; label: string }[] = CREDIT_CATE
   (value) => ({ value, label: PRODUCT_CATEGORY_SLUG_LABEL[value] }),
 );
 
-const CLASS_TYPE_OPTIONS = [
-  { value: "yoga", label: "Yoga" },
-  { value: "sculpt", label: "Sculpt" },
-  { value: "wellzone", label: "Wellzone" },
-  { value: "sauna_journey", label: "Sauna journey" },
-] as const;
+const CLASS_TYPE_OPTIONS = allowedClassTypeCheckboxOptions();
 
 function formatPriceZar(zar: number) {
   const n = Number(zar);

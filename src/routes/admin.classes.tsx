@@ -19,6 +19,7 @@ import { StatCard } from "@/components/admin/StatCard";
 import { getUser, supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import type { GuideSelectRow } from "@/lib/guidesForSelect";
+import { allowedClassTypeCheckboxOptions } from "@/lib/allowedClassTypes";
 import { displayClassType } from "@/types/studio";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -67,13 +68,7 @@ const GUIDE_DIALOG_NONE = "none";
 
 const LOCATIONS = ["Studio 1", "Studio 2", "Wellzone", "Sauna"] as const;
 
-const CLASS_TYPES = [
-  { value: "yoga", label: "Yoga" },
-  { value: "sculpt", label: "Sculpt" },
-  { value: "pilates", label: "Pilates" },
-  { value: "wellzone", label: "Wellzone" },
-  { value: "sauna_journey", label: "Sauna journey" },
-] as const;
+const CLASS_TYPES = allowedClassTypeCheckboxOptions();
 
 type ClassRow = {
   id: string;
@@ -206,9 +201,13 @@ function endOfWeekJhbDayKey(): string {
 const TYPE_BADGE_CLASS: Record<string, string> = {
   yoga: "bg-[#e8efe3] text-[#3d4f36]",
   sculpt: "bg-amber-100 text-amber-800",
-  pilates: "bg-violet-100 text-violet-800",
+  power: "bg-stone-200 text-stone-900",
   wellzone: "bg-sky-100 text-sky-800",
   sauna_journey: "bg-orange-100 text-orange-800",
+  beginner: "bg-emerald-100 text-emerald-900",
+  beginner_sculpt: "bg-teal-100 text-teal-900",
+  event: "bg-purple-100 text-purple-900",
+  pilates: "bg-violet-100 text-violet-800",
 };
 
 function ClassesPage() {

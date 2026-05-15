@@ -7,6 +7,10 @@ const styles: Record<ClassType, string> = {
   Power: "bg-foreground text-background",
   Wellzone: "bg-secondary text-secondary-foreground",
   "Sauna Journey": "bg-warning/30 text-warning-foreground",
+  Beginner: "bg-emerald-100 text-emerald-900",
+  "Beginner sculpt": "bg-teal-100 text-teal-900",
+  Event: "bg-purple-100 text-purple-900",
+  Pilates: "bg-violet-100 text-violet-800",
 };
 
 export function TypeBadge({ type, className }: { type: ClassType; className?: string }) {

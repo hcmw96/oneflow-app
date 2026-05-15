@@ -6,7 +6,17 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const DISCIPLINE_OPTIONS = new Set(["Yoga", "Sculpt", "Pilates", "Wellzone", "Sauna Journey"]);
+const DISCIPLINE_OPTIONS = new Set([
+  "Yoga",
+  "Sculpt",
+  "Wellzone",
+  "Sauna Journey",
+  "Power",
+  "Beginner",
+  "Beginner sculpt",
+  "Event",
+  "Pilates",
+]);
 
 function normalizeDisciplines(raw: unknown): string[] {
   if (!Array.isArray(raw)) return [];
@@ -16,6 +26,7 @@ function normalizeDisciplines(raw: unknown): string[] {
     .map((value) => {
       const lower = value.toLowerCase();
       if (lower === "sauna_journey") return "Sauna Journey";
+      if (lower === "beginner_sculpt" || lower === "beginner sculpt") return "Beginner sculpt";
       return value;
     })
     .filter((value) => DISCIPLINE_OPTIONS.has(value))

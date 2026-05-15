@@ -1,12 +1,17 @@
-/** Display labels for class types (matches TypeBadge styles). */
-export type ClassType = "Yoga" | "Sculpt" | "Power" | "Wellzone" | "Sauna Journey";
+import {
+  CLASS_TYPE_SLUG_LABEL,
+  type AllowedClassTypeSlug,
+  isAllowedClassTypeSlug,
+} from "@/lib/allowedClassTypes";
 
-const DB_TO_DISPLAY: Record<string, ClassType> = {
-  yoga: "Yoga",
-  sculpt: "Sculpt",
-  power: "Power",
-  wellzone: "Wellzone",
-  sauna_journey: "Sauna Journey",
+/** Display labels for class types (matches TypeBadge styles). */
+export type ClassType =
+  | (typeof CLASS_TYPE_SLUG_LABEL)[AllowedClassTypeSlug]
+  /** Legacy DB rows */
+  | "Pilates";
+
+const LEGACY_SLUG_TO_DISPLAY: Record<string, ClassType> = {
+  pilates: "Pilates",
 };
 
 export function displayClassType(raw: string | null | undefined): ClassType {
@@ -14,7 +19,8 @@ export function displayClassType(raw: string | null | undefined): ClassType {
     .toLowerCase()
     .trim()
     .replace(/\s+/g, "_");
-  return DB_TO_DISPLAY[key] ?? "Yoga";
+  if (isAllowedClassTypeSlug(key)) return CLASS_TYPE_SLUG_LABEL[key];
+  return LEGACY_SLUG_TO_DISPLAY[key] ?? "Yoga";
 }
 
 export type ChallengeType = "Yoga" | "Sauna Journey";

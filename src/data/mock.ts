@@ -2,8 +2,7 @@
 // Replace with backend wiring later. All times are local Africa/Johannesburg.
 
 import { addDays, startOfDay } from "@/lib/format";
-
-export type ClassType = "Yoga" | "Sculpt" | "Power" | "Wellzone" | "Sauna Journey";
+import { type ClassType } from "@/types/studio";
 export type Location = "Studio 1" | "Studio 2" | "Wellzone";
 
 export interface Guide {
@@ -71,28 +70,156 @@ const make = (
 
 // 7 days of plausible classes
 export const classes: ClassSession[] = [
-  make(0, 6, 30, { name: "Sunrise Vinyasa", type: "Yoga", durationMin: 60, location: "Studio 1", guideId: "g1", capacity: 20, booked: 14 }),
-  make(0, 9, 0, { name: "Sculpt & Tone", type: "Sculpt", durationMin: 50, location: "Studio 2", guideId: "g2", capacity: 16, booked: 15 }),
-  make(0, 17, 30, { name: "Slow Flow", type: "Yoga", durationMin: 60, location: "Studio 1", guideId: "g3", capacity: 20, booked: 8 }),
-  make(0, 18, 30, { name: "Sauna Journey", type: "Sauna Journey", durationMin: 75, location: "Wellzone", guideId: "g4", capacity: 12, booked: 10 }),
+  make(0, 6, 30, {
+    name: "Sunrise Vinyasa",
+    type: "Yoga",
+    durationMin: 60,
+    location: "Studio 1",
+    guideId: "g1",
+    capacity: 20,
+    booked: 14,
+  }),
+  make(0, 9, 0, {
+    name: "Sculpt & Tone",
+    type: "Sculpt",
+    durationMin: 50,
+    location: "Studio 2",
+    guideId: "g2",
+    capacity: 16,
+    booked: 15,
+  }),
+  make(0, 17, 30, {
+    name: "Slow Flow",
+    type: "Yoga",
+    durationMin: 60,
+    location: "Studio 1",
+    guideId: "g3",
+    capacity: 20,
+    booked: 8,
+  }),
+  make(0, 18, 30, {
+    name: "Sauna Journey",
+    type: "Sauna Journey",
+    durationMin: 75,
+    location: "Wellzone",
+    guideId: "g4",
+    capacity: 12,
+    booked: 10,
+  }),
 
-  make(1, 6, 30, { name: "Power Yoga", type: "Power", durationMin: 60, location: "Studio 1", guideId: "g5", capacity: 20, booked: 6 }),
-  make(1, 12, 0, { name: "Lunch Sculpt", type: "Sculpt", durationMin: 45, location: "Studio 2", guideId: "g2", capacity: 16, booked: 4 }),
-  make(1, 18, 0, { name: "Wellzone Open", type: "Wellzone", durationMin: 90, location: "Wellzone", guideId: "g4", capacity: 25, booked: 12 }),
+  make(1, 6, 30, {
+    name: "Power Yoga",
+    type: "Power",
+    durationMin: 60,
+    location: "Studio 1",
+    guideId: "g5",
+    capacity: 20,
+    booked: 6,
+  }),
+  make(1, 12, 0, {
+    name: "Lunch Sculpt",
+    type: "Sculpt",
+    durationMin: 45,
+    location: "Studio 2",
+    guideId: "g2",
+    capacity: 16,
+    booked: 4,
+  }),
+  make(1, 18, 0, {
+    name: "Wellzone Open",
+    type: "Wellzone",
+    durationMin: 90,
+    location: "Wellzone",
+    guideId: "g4",
+    capacity: 25,
+    booked: 12,
+  }),
 
-  make(2, 6, 30, { name: "Sunrise Vinyasa", type: "Yoga", durationMin: 60, location: "Studio 1", guideId: "g1", capacity: 20, booked: 9 }),
-  make(2, 17, 30, { name: "Yin & Restore", type: "Yoga", durationMin: 75, location: "Studio 1", guideId: "g3", capacity: 20, booked: 17 }),
+  make(2, 6, 30, {
+    name: "Sunrise Vinyasa",
+    type: "Yoga",
+    durationMin: 60,
+    location: "Studio 1",
+    guideId: "g1",
+    capacity: 20,
+    booked: 9,
+  }),
+  make(2, 17, 30, {
+    name: "Yin & Restore",
+    type: "Yoga",
+    durationMin: 75,
+    location: "Studio 1",
+    guideId: "g3",
+    capacity: 20,
+    booked: 17,
+  }),
 
-  make(3, 7, 0, { name: "Power Yoga", type: "Power", durationMin: 60, location: "Studio 1", guideId: "g5", capacity: 20, booked: 11 }),
-  make(3, 18, 30, { name: "Sauna Journey", type: "Sauna Journey", durationMin: 75, location: "Wellzone", guideId: "g4", capacity: 12, booked: 12 }),
+  make(3, 7, 0, {
+    name: "Power Yoga",
+    type: "Power",
+    durationMin: 60,
+    location: "Studio 1",
+    guideId: "g5",
+    capacity: 20,
+    booked: 11,
+  }),
+  make(3, 18, 30, {
+    name: "Sauna Journey",
+    type: "Sauna Journey",
+    durationMin: 75,
+    location: "Wellzone",
+    guideId: "g4",
+    capacity: 12,
+    booked: 12,
+  }),
 
-  make(4, 6, 30, { name: "Sunrise Vinyasa", type: "Yoga", durationMin: 60, location: "Studio 1", guideId: "g1", capacity: 20, booked: 5 }),
-  make(4, 9, 0, { name: "Sculpt & Tone", type: "Sculpt", durationMin: 50, location: "Studio 2", guideId: "g2", capacity: 16, booked: 13 }),
+  make(4, 6, 30, {
+    name: "Sunrise Vinyasa",
+    type: "Yoga",
+    durationMin: 60,
+    location: "Studio 1",
+    guideId: "g1",
+    capacity: 20,
+    booked: 5,
+  }),
+  make(4, 9, 0, {
+    name: "Sculpt & Tone",
+    type: "Sculpt",
+    durationMin: 50,
+    location: "Studio 2",
+    guideId: "g2",
+    capacity: 16,
+    booked: 13,
+  }),
 
-  make(5, 8, 0, { name: "Saturday Slow Flow", type: "Yoga", durationMin: 75, location: "Studio 1", guideId: "g3", capacity: 22, booked: 18 }),
-  make(5, 10, 0, { name: "Sculpt Express", type: "Sculpt", durationMin: 40, location: "Studio 2", guideId: "g2", capacity: 16, booked: 7 }),
+  make(5, 8, 0, {
+    name: "Saturday Slow Flow",
+    type: "Yoga",
+    durationMin: 75,
+    location: "Studio 1",
+    guideId: "g3",
+    capacity: 22,
+    booked: 18,
+  }),
+  make(5, 10, 0, {
+    name: "Sculpt Express",
+    type: "Sculpt",
+    durationMin: 40,
+    location: "Studio 2",
+    guideId: "g2",
+    capacity: 16,
+    booked: 7,
+  }),
 
-  make(6, 9, 0, { name: "Sunday Restore", type: "Yoga", durationMin: 90, location: "Studio 1", guideId: "g1", capacity: 22, booked: 6 }),
+  make(6, 9, 0, {
+    name: "Sunday Restore",
+    type: "Yoga",
+    durationMin: 90,
+    location: "Studio 1",
+    guideId: "g1",
+    capacity: 22,
+    booked: 6,
+  }),
 ];
 
 export const bookings: Booking[] = [
@@ -102,23 +229,94 @@ export const bookings: Booking[] = [
   { id: "b4", classId: "past-2", status: "attended" },
 ];
 
-export const pastClasses: Record<string, { name: string; type: ClassType; startsAt: Date; guideId: string }> = {
+export const pastClasses: Record<
+  string,
+  { name: string; type: ClassType; startsAt: Date; guideId: string }
+> = {
   "past-1": { name: "Slow Flow", type: "Yoga", startsAt: addDays(today, -2), guideId: "g3" },
   "past-2": { name: "Sculpt & Tone", type: "Sculpt", startsAt: addDays(today, -5), guideId: "g2" },
 };
 
 export const packs: Pack[] = [
-  { id: "p1", name: "6 Class Pack", category: "Class Packs", description: "Six classes, valid 3 months.", priceCents: 90000 },
-  { id: "p2", name: "12 Class Pack", category: "Class Packs", description: "Twelve classes, valid 6 months.", priceCents: 168000, badge: "Popular" },
-  { id: "p3", name: "Digital Nomad", category: "Class Packs", description: "Unlimited 30 days.", priceCents: 220000 },
-  { id: "p4", name: "Mat & Towel Pack", category: "Class Packs", description: "Mat + towel for 10 classes.", priceCents: 35000 },
-  { id: "p5", name: "Wellzone Unlimited", category: "Wellzone", description: "Unlimited Wellzone access, 30 days.", priceCents: 120000 },
-  { id: "p6", name: "Sauna Journey", category: "Wellzone", description: "Single guided journey.", priceCents: 28000 },
-  { id: "p7", name: "Wellzone Drop-In", category: "Wellzone", description: "Single Wellzone session.", priceCents: 18000 },
-  { id: "p8", name: "Double Flow", category: "Power Packs", description: "Yoga + Wellzone, 30 days unlimited.", priceCents: 240000 },
-  { id: "p9", name: "Seeker", category: "Power Packs", description: "All studio classes, monthly.", priceCents: 195000 },
-  { id: "p10", name: "Sage", category: "Power Packs", description: "All Access including Wellzone.", priceCents: 295000, badge: "Best value" },
-  { id: "p11", name: "All Access", category: "Power Packs", description: "Everything One Flow offers.", priceCents: 395000 },
+  {
+    id: "p1",
+    name: "6 Class Pack",
+    category: "Class Packs",
+    description: "Six classes, valid 3 months.",
+    priceCents: 90000,
+  },
+  {
+    id: "p2",
+    name: "12 Class Pack",
+    category: "Class Packs",
+    description: "Twelve classes, valid 6 months.",
+    priceCents: 168000,
+    badge: "Popular",
+  },
+  {
+    id: "p3",
+    name: "Digital Nomad",
+    category: "Class Packs",
+    description: "Unlimited 30 days.",
+    priceCents: 220000,
+  },
+  {
+    id: "p4",
+    name: "Mat & Towel Pack",
+    category: "Class Packs",
+    description: "Mat + towel for 10 classes.",
+    priceCents: 35000,
+  },
+  {
+    id: "p5",
+    name: "Wellzone Unlimited",
+    category: "Wellzone",
+    description: "Unlimited Wellzone access, 30 days.",
+    priceCents: 120000,
+  },
+  {
+    id: "p6",
+    name: "Sauna Journey",
+    category: "Wellzone",
+    description: "Single guided journey.",
+    priceCents: 28000,
+  },
+  {
+    id: "p7",
+    name: "Wellzone Drop-In",
+    category: "Wellzone",
+    description: "Single Wellzone session.",
+    priceCents: 18000,
+  },
+  {
+    id: "p8",
+    name: "Double Flow",
+    category: "Power Packs",
+    description: "Yoga + Wellzone, 30 days unlimited.",
+    priceCents: 240000,
+  },
+  {
+    id: "p9",
+    name: "Seeker",
+    category: "Power Packs",
+    description: "All studio classes, monthly.",
+    priceCents: 195000,
+  },
+  {
+    id: "p10",
+    name: "Sage",
+    category: "Power Packs",
+    description: "All Access including Wellzone.",
+    priceCents: 295000,
+    badge: "Best value",
+  },
+  {
+    id: "p11",
+    name: "All Access",
+    category: "Power Packs",
+    description: "Everything One Flow offers.",
+    priceCents: 395000,
+  },
 ];
 
 export const pointsHistory: PointsEntry[] = [

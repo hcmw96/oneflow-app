@@ -41,6 +41,11 @@ import {
   bookingConfirmationTemplateForClassType,
 } from "@/lib/bookingConfirmationEmail";
 import {
+  ALLOWED_CLASS_TYPE_SLUGS,
+  CLASS_TYPE_SLUG_LABEL,
+  isAllowedClassTypeSlug,
+} from "@/lib/allowedClassTypes";
+import {
   fetchTheSageCreditProfileIds,
   RosterAddonPills,
 } from "@/components/admin/RosterAddonPills";
@@ -124,10 +129,7 @@ function shortMemberName(first: string, last: string) {
   return L ? `${f} ${L}.` : f;
 }
 
-function normalizeBooking(
-  raw: BookingRowRaw,
-  sageProfileIds: Set<string>,
-): AdminBookingRow | null {
+function normalizeBooking(raw: BookingRowRaw, sageProfileIds: Set<string>): AdminBookingRow | null {
   const prof = one(raw.profiles);
   const fn = prof?.first_name?.trim() ?? "";
   const ln = prof?.last_name?.trim() ?? "";
@@ -230,11 +232,9 @@ const SESSION_LOCATIONS = ["Studio 1", "Studio 2", "Wellzone", "Sauna"] as const
 function sessionMatchesClassTypeFilter(classType: string, filter: string): boolean {
   if (filter === "all") return true;
   const c = classType.trim().toLowerCase();
-  if (filter === "sauna") return c.includes("sauna");
+  if (filter === "sauna") return c.includes("sauna") || c === "sauna_journey";
   if (filter === "pilates") return c === "pilates";
-  if (filter === "yoga") return c === "yoga";
-  if (filter === "sculpt") return c === "sculpt";
-  if (filter === "wellzone") return c === "wellzone";
+  if (isAllowedClassTypeSlug(filter)) return c === filter;
   return c === filter.toLowerCase();
 }
 
@@ -442,8 +442,7 @@ function BookingsPage() {
     });
   }, [daySessionsFiltered, bookingsByClass, qNorm, bookingsSort]);
 
-  const bookingsFilterBadgeCount =
-    sessionFilterCount + (qNorm ? 1 : 0);
+  const bookingsFilterBadgeCount = sessionFilterCount + (qNorm ? 1 : 0);
 
   const exportCsv = () => {
     const header = ["Class", "Time", "Member", "Short name", "Status", "Credit"];
@@ -688,11 +687,13 @@ function BookingsPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All types</SelectItem>
-                <SelectItem value="yoga">Yoga</SelectItem>
-                <SelectItem value="sculpt">Sculpt</SelectItem>
-                <SelectItem value="pilates">Pilates</SelectItem>
-                <SelectItem value="wellzone">Wellzone</SelectItem>
+                {ALLOWED_CLASS_TYPE_SLUGS.map((slug) => (
+                  <SelectItem key={slug} value={slug}>
+                    {CLASS_TYPE_SLUG_LABEL[slug]}
+                  </SelectItem>
+                ))}
                 <SelectItem value="sauna">Sauna</SelectItem>
+                <SelectItem value="pilates">Pilates (legacy)</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -1024,9 +1025,7 @@ function WalkInSheet({
 
       if (createErr || !created?.id) {
         console.error("walk-in profile create failed", createErr);
-        toast.error(
-          supabaseErrorMessage(createErr, "Could not create profile — please try again"),
-        );
+        toast.error(supabaseErrorMessage(createErr, "Could not create profile — please try again"));
         setSaving(false);
         return;
       }

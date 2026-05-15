@@ -34,6 +34,11 @@ import {
   fetchActiveUserCreditsByProfileIds,
   type GuideCreditPillRow,
 } from "@/lib/activeUserCredits";
+import {
+  ALLOWED_CLASS_TYPE_SLUGS,
+  CLASS_TYPE_SLUG_LABEL,
+  GUIDE_DISCIPLINE_LABELS,
+} from "@/lib/allowedClassTypes";
 
 export const Route = createFileRoute("/admin/guides")({
   head: () => ({
@@ -45,17 +50,18 @@ export const Route = createFileRoute("/admin/guides")({
 const SAGE = "#a3b693";
 const SAGE_BORDER = "border-[#c5d4b8]/80";
 
-const DISCIPLINE_OPTIONS = ["Yoga", "Sculpt", "Pilates", "Wellzone", "Sauna Journey"] as const;
+const DISCIPLINE_OPTIONS = GUIDE_DISCIPLINE_LABELS;
 
 const DISCIPLINE_FILTER_KEYS = [
-  { key: "yoga", label: "Yoga" },
-  { key: "sculpt", label: "Sculpt" },
-  { key: "pilates", label: "Pilates" },
-  { key: "wellzone", label: "Wellzone" },
-  { key: "sauna", label: "Sauna" },
+  ...ALLOWED_CLASS_TYPE_SLUGS.map((key) => ({
+    key,
+    label: CLASS_TYPE_SLUG_LABEL[key],
+  })),
+  { key: "sauna" as const, label: "Sauna" },
+  { key: "pilates" as const, label: "Pilates (legacy)" },
 ] as const;
 
-type Discipline = (typeof DISCIPLINE_OPTIONS)[number];
+type Discipline = (typeof GUIDE_DISCIPLINE_LABELS)[number];
 type RoleType = "director" | "management" | "guide" | "customer" | "other";
 
 type GuideSortKey = "name_asc" | "name_desc" | "joined_asc" | "active_first";
@@ -103,6 +109,7 @@ type GuideProfileJoin = {
 function normalizeDisciplineValue(value: string): string {
   const v = value.trim().toLowerCase();
   if (v === "sauna journey" || v === "sauna_journey") return "Sauna Journey";
+  if (v === "beginner sculpt" || v === "beginner_sculpt") return "Beginner sculpt";
   return value.trim();
 }
 
@@ -121,6 +128,10 @@ function guideRowDisciplineKeys(disciplines: string[]): Set<string> {
     if (d === "yoga") out.add("yoga");
     else if (d === "sculpt") out.add("sculpt");
     else if (d === "pilates") out.add("pilates");
+    else if (d === "power") out.add("power");
+    else if (d === "beginner") out.add("beginner");
+    else if (d === "beginner sculpt" || d === "beginner_sculpt") out.add("beginner_sculpt");
+    else if (d === "event") out.add("event");
     else if (d === "wellzone") out.add("wellzone");
     else if (d.includes("sauna")) out.add("sauna");
   }

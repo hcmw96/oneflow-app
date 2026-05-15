@@ -4,6 +4,10 @@ import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import {
+  allowedClassTypeCheckboxOptions,
+  defaultAllowedClassTypesForCreditCategory,
+} from "@/lib/allowedClassTypes";
+import {
   CREDIT_CATEGORY_ORDERED,
   PRODUCT_CATEGORY_SLUG_LABEL,
   normalizeProductCategoryKey,
@@ -114,13 +118,7 @@ const CUSTOM_CATEGORY_ITEMS: { value: CreditCategoryOrdered; label: string }[] =
     label: PRODUCT_CATEGORY_SLUG_LABEL[value],
   }));
 
-const CLASS_TYPE_OPTIONS = [
-  { value: "yoga", label: "Yoga" },
-  { value: "sculpt", label: "Sculpt" },
-  { value: "pilates", label: "Pilates" },
-  { value: "wellzone", label: "Wellzone" },
-  { value: "sauna_journey", label: "Sauna journey" },
-] as const;
+const CLASS_TYPE_OPTIONS = allowedClassTypeCheckboxOptions();
 
 const UNLIMITED_PRODUCT_THRESHOLD = 999;
 const UNLIMITED_MANUAL_TOTAL = 999_999;
@@ -211,7 +209,7 @@ export function AssignPackageDialog({
     setCustomCredits("10");
     setCustomUnlimited(false);
     setCustomValidityDays("");
-    setCustomClassTypes([]);
+    setCustomClassTypes([...defaultAllowedClassTypesForCreditCategory("yoga")]);
     setCustomNote("");
     setConfirmOpen(false);
   }, []);
@@ -396,7 +394,7 @@ export function AssignPackageDialog({
           category: product.category ?? "yoga",
           allowed_class_types: product.allowed_class_types?.length
             ? product.allowed_class_types
-            : [],
+            : [...defaultAllowedClassTypesForCreditCategory(product.category)],
           credits_total: total,
           credits_remaining: total,
           is_unlimited: isUnlimited,
@@ -804,7 +802,11 @@ export function AssignPackageDialog({
                   <Label>Category</Label>
                   <Select
                     value={customCategory}
-                    onValueChange={(v) => setCustomCategory(v as CreditCategoryOrdered)}
+                    onValueChange={(v) => {
+                      const next = v as CreditCategoryOrdered;
+                      setCustomCategory(next);
+                      setCustomClassTypes([...defaultAllowedClassTypesForCreditCategory(next)]);
+                    }}
                   >
                     <SelectTrigger>
                       <SelectValue />
