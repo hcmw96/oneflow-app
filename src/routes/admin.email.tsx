@@ -42,6 +42,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  fetchCampaignRecipientEmails,
+  type CampaignRecipientFilter,
+} from "@/lib/campaignRecipients";
 import { getUser, supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 
@@ -115,6 +119,11 @@ function EmailPage() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [confirmSendOpen, setConfirmSendOpen] = useState(false);
   const [recipientCount, setRecipientCount] = useState<number | null>(null);
+  const [sendProgress, setSendProgress] = useState<{
+    done: number;
+    total: number;
+    failed: number;
+  } | null>(null);
   const editorRef = useRef<HTMLDivElement | null>(null);
 
   // Detail dialog
@@ -155,57 +164,32 @@ function EmailPage() {
     exec("createLink", url);
   };
 
-  const queryRecipients = useCallback(async (): Promise<string[]> => {
-    if (recipientType === "all") {
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("email")
-        .eq("role", "customer");
-      if (error) throw error;
-      return (data ?? []).map((r: { email: string | null }) => r.email ?? "").filter(Boolean);
+  const queryRecipients = useCallback(
+    () => fetchCampaignRecipientEmails(recipientType, roleValue),
+    [recipientType, roleValue],
+  );
+
+  const marketingSubject = subject.trim() || "An update from One Flow";
+
+  async function invokeMarketingEmail(to: string): Promise<boolean> {
+    const { data, error } = await supabase.functions.invoke("send-email", {
+      body: {
+        to,
+        template: "marketing",
+        data: { subject: marketingSubject, body_html: bodyHtml },
+      },
+    });
+    if (error) {
+      console.error("send-email invoke failed", { to, error });
+      return false;
     }
-    if (recipientType === "with_credits") {
-      const { data, error } = await supabase
-        .from("user_credits")
-        .select("profile:profile_id(email)")
-        .gt("credits_remaining", 0);
-      if (error) throw error;
-      const emails = new Set<string>();
-      for (const r of (data ?? []) as Record<string, unknown>[]) {
-        const p = (Array.isArray(r.profile) ? r.profile[0] : r.profile) as
-          | { email?: string | null }
-          | null;
-        if (p?.email) emails.add(p.email);
-      }
-      return [...emails];
+    const payload = data as { error?: unknown; success?: boolean } | null;
+    if (payload?.error) {
+      console.error("send-email returned error", { to, error: payload.error });
+      return false;
     }
-    if (recipientType === "active") {
-      const since = new Date();
-      since.setDate(since.getDate() - 30);
-      const { data, error } = await supabase
-        .from("bookings")
-        .select("profile:profile_id(email)")
-        .gte("created_at", since.toISOString());
-      if (error) throw error;
-      const emails = new Set<string>();
-      for (const r of (data ?? []) as Record<string, unknown>[]) {
-        const p = (Array.isArray(r.profile) ? r.profile[0] : r.profile) as
-          | { email?: string | null }
-          | null;
-        if (p?.email) emails.add(p.email);
-      }
-      return [...emails];
-    }
-    if (recipientType === "role") {
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("email")
-        .eq("role", roleValue);
-      if (error) throw error;
-      return (data ?? []).map((r: { email: string | null }) => r.email ?? "").filter(Boolean);
-    }
-    return [];
-  }, [recipientType, roleValue]);
+    return true;
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -272,33 +256,34 @@ function EmailPage() {
 
   const send = async () => {
     setSending(true);
+    setSendProgress(null);
     let recipients: string[] = [];
     try {
       recipients = await queryRecipients();
     } catch (e: unknown) {
       setSending(false);
+      setSendProgress(null);
       console.error("email recipients load failed", e);
       toast.error(supabaseErrorMessage(e, "Could not load recipients"));
       return;
     }
     if (recipients.length === 0) {
       setSending(false);
+      setSendProgress(null);
       toast.error("No recipients matched this filter");
       return;
     }
 
+    setSendProgress({ done: 0, total: recipients.length, failed: 0 });
+
     let success = 0;
     let failed = 0;
-    for (const email of recipients) {
-      const { error } = await supabase.functions.invoke("send-email", {
-        body: {
-          to: email,
-          template: "marketing",
-          data: { subject: subject.trim() || "An update from One Flow", body_html: bodyHtml },
-        },
-      });
-      if (error) failed += 1;
-      else success += 1;
+    for (let i = 0; i < recipients.length; i++) {
+      const email = recipients[i]!;
+      const ok = await invokeMarketingEmail(email);
+      if (ok) success += 1;
+      else failed += 1;
+      setSendProgress({ done: i + 1, total: recipients.length, failed });
     }
 
     const user = await getUser();
@@ -311,13 +296,21 @@ function EmailPage() {
       status: "sent" as const,
       created_by: user?.id ?? null,
     };
-    if (draftId) {
-      await supabase.from("email_campaigns").update(payload).eq("id", draftId);
-    } else {
-      await supabase.from("email_campaigns").insert(payload);
+    const { error: campaignErr } = draftId
+      ? await supabase.from("email_campaigns").update(payload).eq("id", draftId)
+      : await supabase.from("email_campaigns").insert(payload);
+    if (campaignErr) {
+      console.error("email_campaigns save after send", campaignErr);
+      toast.error(
+        supabaseErrorMessage(
+          campaignErr,
+          `Sent ${success} email(s) but could not save campaign record`,
+        ),
+      );
     }
 
     setSending(false);
+    setSendProgress(null);
     setConfirmSendOpen(false);
     if (failed === 0) toast.success(`Sent ${success} email${success === 1 ? "" : "s"}`);
     else toast.warning(`${success} sent, ${failed} failed`);
@@ -667,9 +660,33 @@ function EmailPage() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Send this campaign?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will send to {recipientCount ?? "?"} recipient
-              {recipientCount === 1 ? "" : "s"} ({recipientLabel}). This cannot be undone.
+            <AlertDialogDescription asChild>
+              <div className="space-y-3">
+                <p>
+                  This will send to {recipientCount ?? "?"} recipient
+                  {recipientCount === 1 ? "" : "s"} ({recipientLabel}). Each message goes through
+                  the send-email edge function (Resend). This cannot be undone.
+                </p>
+                {sending && sendProgress ? (
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-foreground">
+                      Sending {sendProgress.done} of {sendProgress.total}
+                      {sendProgress.failed > 0
+                        ? ` · ${sendProgress.failed} failed`
+                        : ""}
+                      …
+                    </p>
+                    <div className="h-2 overflow-hidden rounded-full bg-muted">
+                      <div
+                        className="h-full bg-[#a3b693] transition-all duration-200"
+                        style={{
+                          width: `${Math.round((sendProgress.done / sendProgress.total) * 100)}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                ) : null}
+              </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -683,7 +700,9 @@ function EmailPage() {
               className="bg-[#a3b693] text-white hover:bg-[#8fa67d]"
             >
               {sending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              Send now
+              {sending && sendProgress
+                ? `Sending (${sendProgress.done}/${sendProgress.total})`
+                : "Send now"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
