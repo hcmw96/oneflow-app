@@ -152,6 +152,110 @@ type MemberRow = {
   joinedAt: string | null;
 };
 
+/** Responsive admin customers table — mobile: Name, Plan, Credits, Actions (+ checkbox). */
+const CUSTOMERS_COL = {
+  checkTh: "w-11 min-w-[2.75rem] px-2 py-3",
+  checkTd: "w-11 min-w-[2.75rem] px-2 py-3 align-middle",
+  nameTh:
+    "min-w-[10rem] px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground md:min-w-[10rem]",
+  nameTd: "min-w-[10rem] max-w-[17.5rem] px-3 py-3 md:w-[22%]",
+  emailTh:
+    "hidden min-w-[11.25rem] px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground md:table-cell",
+  emailTd: "hidden min-w-[11.25rem] max-w-[14rem] truncate px-3 py-3 text-muted-foreground md:table-cell",
+  phoneTh:
+    "hidden min-w-[7.5rem] px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground md:table-cell",
+  phoneTd: "hidden min-w-[7.5rem] whitespace-nowrap px-3 py-3 text-muted-foreground md:table-cell",
+  roleTh:
+    "hidden min-w-[6.25rem] px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground md:table-cell",
+  roleTd: "hidden min-w-[6.25rem] px-3 py-3 md:table-cell",
+  planTh:
+    "min-w-[7.5rem] px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground",
+  planTd: "min-w-[7.5rem] max-w-[10rem] truncate px-3 py-3",
+  creditsTh:
+    "min-w-[5rem] whitespace-nowrap px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground",
+  creditsTd: "min-w-[5rem] whitespace-nowrap px-3 py-3 tabular-nums",
+  lastVisitTh:
+    "hidden min-w-[6.25rem] px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground md:table-cell",
+  lastVisitTd: "hidden min-w-[6.25rem] px-3 py-3 text-muted-foreground md:table-cell",
+  statusTh:
+    "hidden min-w-[5rem] px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground md:table-cell",
+  statusTd: "hidden min-w-[5rem] px-3 py-3 md:table-cell",
+  actionsTh:
+    "sticky right-0 z-20 min-w-[6.25rem] bg-muted/40 px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground shadow-[-4px_0_8px_rgba(0,0,0,0.06)]",
+  actionsTd:
+    "sticky right-0 z-10 min-w-[6.25rem] bg-card px-3 py-3 shadow-[-4px_0_8px_rgba(0,0,0,0.06)] group-hover:bg-muted/20",
+} as const;
+
+const CUSTOMERS_TABLE_CLASS = "w-full min-w-[32rem] text-sm md:min-w-[68rem]";
+
+function CustomersTableHead({
+  allFilteredSelected,
+  someFilteredSelected,
+  onToggleSelectAll,
+}: {
+  allFilteredSelected: boolean;
+  someFilteredSelected: boolean;
+  onToggleSelectAll: () => void;
+}) {
+  return (
+    <thead className="bg-muted/40">
+      <tr className="text-left">
+        <th className={CUSTOMERS_COL.checkTh}>
+          <Checkbox
+            checked={allFilteredSelected ? true : someFilteredSelected ? "indeterminate" : false}
+            onCheckedChange={onToggleSelectAll}
+            aria-label="Select all members in this list"
+          />
+        </th>
+        <th className={CUSTOMERS_COL.nameTh}>Name</th>
+        <th className={CUSTOMERS_COL.emailTh}>Email</th>
+        <th className={CUSTOMERS_COL.phoneTh}>Phone</th>
+        <th className={CUSTOMERS_COL.roleTh}>Role</th>
+        <th className={CUSTOMERS_COL.planTh}>Plan</th>
+        <th className={CUSTOMERS_COL.creditsTh}>Credits</th>
+        <th className={CUSTOMERS_COL.lastVisitTh}>Last visit</th>
+        <th className={CUSTOMERS_COL.statusTh}>Status</th>
+        <th className={CUSTOMERS_COL.actionsTh}>Actions</th>
+      </tr>
+    </thead>
+  );
+}
+
+function CustomerRowActions({
+  canManage,
+  onProfile,
+  onAssign,
+}: {
+  canManage: boolean;
+  onProfile: () => void;
+  onAssign: () => void;
+}) {
+  return (
+    <div className="flex flex-nowrap items-center justify-end gap-1">
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="h-8 shrink-0 whitespace-nowrap px-2.5 text-xs"
+        onClick={onProfile}
+      >
+        Profile
+      </Button>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="h-8 shrink-0 whitespace-nowrap px-2.5 text-xs"
+        disabled={!canManage}
+        onClick={onAssign}
+      >
+        <Package className="h-3.5 w-3.5 shrink-0" aria-hidden />
+        Assign
+      </Button>
+    </div>
+  );
+}
+
 function CustomersPage() {
   const navigate = useNavigate();
   const search = Route.useSearch();
@@ -861,55 +965,47 @@ function CustomersPage() {
       </div>
 
       <AdminTableWrap className="mb-4">
-        <div className="rounded-2xl border border-border bg-card">
+        <div className="overflow-hidden rounded-2xl border border-border bg-card">
+          <div className="overflow-x-auto">
           {loading ? (
-            <table className="w-full min-w-[960px] text-sm">
-              <thead className="bg-muted/40">
-                <tr>
-                  <th className="w-12 px-3 py-3" />
-                  <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                    Name
-                  </th>
-                  <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                    Email
-                  </th>
-                  <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                    Phone
-                  </th>
-                  <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                    Role
-                  </th>
-                  <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                    Credits
-                  </th>
-                  <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
+            <table className={CUSTOMERS_TABLE_CLASS}>
+              <CustomersTableHead
+                allFilteredSelected={false}
+                someFilteredSelected={false}
+                onToggleSelectAll={() => {}}
+              />
               <tbody>
                 {Array.from({ length: 5 }).map((_, i) => (
-                  <tr key={i} className="border-t border-border">
-                    <td className="px-3 py-3">
+                  <tr key={i} className="group border-t border-border">
+                    <td className={CUSTOMERS_COL.checkTd}>
                       <Skeleton className="h-4 w-4" />
                     </td>
-                    <td className="px-5 py-3">
+                    <td className={CUSTOMERS_COL.nameTd}>
                       <Skeleton className="h-4 w-32" />
                     </td>
-                    <td className="px-5 py-3">
+                    <td className={CUSTOMERS_COL.emailTd}>
                       <Skeleton className="h-4 w-40" />
                     </td>
-                    <td className="px-5 py-3">
+                    <td className={CUSTOMERS_COL.phoneTd}>
                       <Skeleton className="h-4 w-24" />
                     </td>
-                    <td className="px-5 py-3">
-                      <Skeleton className="h-8 w-[140px]" />
+                    <td className={CUSTOMERS_COL.roleTd}>
+                      <Skeleton className="h-8 w-[100px]" />
                     </td>
-                    <td className="px-5 py-3">
+                    <td className={CUSTOMERS_COL.planTd}>
+                      <Skeleton className="h-4 w-20" />
+                    </td>
+                    <td className={CUSTOMERS_COL.creditsTd}>
                       <Skeleton className="h-4 w-8" />
                     </td>
-                    <td className="px-5 py-3">
-                      <Skeleton className="h-9 w-full max-w-[140px]" />
+                    <td className={CUSTOMERS_COL.lastVisitTd}>
+                      <Skeleton className="h-4 w-16" />
+                    </td>
+                    <td className={CUSTOMERS_COL.statusTd}>
+                      <Skeleton className="h-5 w-14 rounded-full" />
+                    </td>
+                    <td className={CUSTOMERS_COL.actionsTd}>
+                      <Skeleton className="ml-auto h-8 w-[7.5rem]" />
                     </td>
                   </tr>
                 ))}
@@ -932,33 +1028,16 @@ function CustomersPage() {
               </Button>
             </div>
           ) : (
-            <table className="w-full min-w-[960px] text-sm">
-              <thead className="bg-muted/40">
-                <tr className="text-left text-xs uppercase tracking-wider text-muted-foreground">
-                  <th className="w-12 px-3 py-3">
-                    <Checkbox
-                      checked={
-                        allFilteredSelected ? true : someFilteredSelected ? "indeterminate" : false
-                      }
-                      onCheckedChange={() => toggleSelectAllFiltered()}
-                      aria-label="Select all members in this list"
-                    />
-                  </th>
-                  <th className="px-5 py-3 font-medium">Name</th>
-                  <th className="px-5 py-3 font-medium">Email</th>
-                  <th className="px-5 py-3 font-medium">Phone</th>
-                  <th className="px-5 py-3 font-medium">Role</th>
-                  <th className="px-5 py-3 font-medium">Plan</th>
-                  <th className="px-5 py-3 font-medium">Credits</th>
-                  <th className="px-5 py-3 font-medium">Last visit</th>
-                  <th className="px-5 py-3 font-medium">Status</th>
-                  <th className="px-5 py-3 font-medium">Actions</th>
-                </tr>
-              </thead>
+            <table className={CUSTOMERS_TABLE_CLASS}>
+              <CustomersTableHead
+                allFilteredSelected={allFilteredSelected}
+                someFilteredSelected={someFilteredSelected}
+                onToggleSelectAll={toggleSelectAllFiltered}
+              />
               <tbody>
                 {filtered.map((m) => (
-                  <tr key={m.id} className="border-t border-border hover:bg-muted/20">
-                    <td className="px-3 py-3 align-middle">
+                  <tr key={m.id} className="group border-t border-border hover:bg-muted/20">
+                    <td className={CUSTOMERS_COL.checkTd}>
                       <Checkbox
                         checked={selectedSet.has(m.id)}
                         onCheckedChange={(v) => {
@@ -970,27 +1049,21 @@ function CustomersPage() {
                         aria-label={`Select ${m.name}`}
                       />
                     </td>
-                    <td className="max-w-[160px] px-5 py-3 sm:max-w-xs md:max-w-md">
-                      <button
-                        type="button"
-                        className="truncate text-left font-semibold text-primary underline-offset-2 hover:underline"
-                        onClick={() => openProfileSheet(m.id)}
-                      >
-                        {m.name}
-                      </button>
+                    <td className={CUSTOMERS_COL.nameTd}>
+                      <span className="block truncate font-semibold text-foreground">{m.name}</span>
                     </td>
-                    <td className="max-w-[200px] truncate px-5 py-3 text-muted-foreground sm:max-w-xs md:max-w-md">
+                    <td className={CUSTOMERS_COL.emailTd} title={m.email}>
                       {m.email}
                     </td>
-                    <td className="px-5 py-3 text-muted-foreground">{m.phone}</td>
-                    <td className="px-5 py-3" onClick={(e) => e.stopPropagation()}>
+                    <td className={CUSTOMERS_COL.phoneTd}>{m.phone}</td>
+                    <td className={CUSTOMERS_COL.roleTd} onClick={(e) => e.stopPropagation()}>
                       <Select
                         key={`${m.id}-${m.role}`}
                         value={m.role}
                         onValueChange={(v) => onListRoleChange(m.id, m.role, v)}
                         disabled={!canManageCustomers}
                       >
-                        <SelectTrigger className="h-8 w-full max-w-[140px] text-xs sm:w-[140px]">
+                        <SelectTrigger className="h-8 w-full min-w-[5.5rem] max-w-[6.25rem] text-xs">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -1002,12 +1075,16 @@ function CustomersPage() {
                         </SelectContent>
                       </Select>
                     </td>
-                    <td className="px-5 py-3">{m.plan}</td>
-                    <td className="px-5 py-3 tabular-nums">{m.credits >= 999 ? "∞" : m.credits}</td>
-                    <td className="px-5 py-3 text-muted-foreground">{m.lastVisit}</td>
-                    <td className="px-5 py-3">
+                    <td className={CUSTOMERS_COL.planTd} title={m.plan}>
+                      {m.plan}
+                    </td>
+                    <td className={CUSTOMERS_COL.creditsTd}>
+                      {m.credits >= 999 ? "∞" : m.credits}
+                    </td>
+                    <td className={CUSTOMERS_COL.lastVisitTd}>{m.lastVisit}</td>
+                    <td className={CUSTOMERS_COL.statusTd}>
                       <span
-                        className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                        className={`inline-flex whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
                           m.status === "active"
                             ? "bg-success/20 text-success-foreground"
                             : m.status === "trial"
@@ -1018,14 +1095,11 @@ function CustomersPage() {
                         {m.status}
                       </span>
                     </td>
-                    <td className="px-5 py-3">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="w-full gap-1.5 sm:w-auto"
-                        disabled={!canManageCustomers}
-                        onClick={() => {
+                    <td className={CUSTOMERS_COL.actionsTd}>
+                      <CustomerRowActions
+                        canManage={canManageCustomers}
+                        onProfile={() => openProfileSheet(m.id)}
+                        onAssign={() => {
                           const em = m.email.trim() === "—" || !m.email.trim() ? null : m.email;
                           setBulkAssignTargets(null);
                           setAssignTarget({
@@ -1036,16 +1110,14 @@ function CustomersPage() {
                           });
                           setAssignOpen(true);
                         }}
-                      >
-                        <Package className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                        Assign package
-                      </Button>
+                      />
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           )}
+          </div>
         </div>
       </AdminTableWrap>
 
