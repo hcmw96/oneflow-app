@@ -1154,15 +1154,6 @@ function ClassesPage() {
             </div>
             <div>
               <Label>Guide</Label>
-              {editingClass && (
-                <div style={{ fontSize: 10, color: "red" }}>
-                  guide_id: {editingClass.guide_id} | options: {guideOptions?.length} | match:{" "}
-                  {guideOptions?.find(
-                    (g) =>
-                      g.value === editingClass.guide_id || g.guide_id === editingClass.guide_id,
-                  )?.label || "NO MATCH"}
-                </div>
-              )}
               <Select
                 value={
                   !guideId ||
