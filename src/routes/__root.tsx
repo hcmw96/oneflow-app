@@ -91,12 +91,15 @@ function ProtectedOutlet() {
 
   const onboardingDone = profile?.onboarding_complete === true;
   const role = (profile?.role ?? "").toLowerCase();
+  const secondary = (profile?.secondary_roles ?? []).map((r) => String(r).toLowerCase());
   const isStaff =
     role === "director" ||
     role === "management" ||
     role === "guide" ||
     role === "front_desk" ||
-    role === "boh";
+    role === "boh" ||
+    role === "marketing" ||
+    secondary.includes("marketing");
 
   useEffect(() => {
     if (initialRouteResolved.current) return;

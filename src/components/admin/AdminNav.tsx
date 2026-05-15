@@ -21,6 +21,15 @@ import {
   Download,
   type LucideIcon,
 } from "lucide-react";
+import {
+  canAccessMarketingAdmin,
+  canEnterAdminArea,
+  defaultMarketingAdminPath,
+  isMarketingAdminPath,
+  isMarketingScopedStaff,
+  MARKETING_ADMIN_ROUTES,
+  type AdminRoleProfile,
+} from "@/lib/adminMarketingAccess";
 import { cn } from "@/lib/utils";
 
 export interface AdminNavItem {
@@ -59,29 +68,48 @@ export function isPathAllowedForLimitedRole(pathname: string) {
   return LIMITED_ADMIN_ROUTES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
-/** BOH is restricted to timesheets; guide/front_desk use LIMITED_ADMIN_ROUTES. */
-export function isPathAllowedForRestrictedAdmin(role: string | null | undefined, pathname: string) {
+/** BOH is restricted to timesheets; guide/front_desk use LIMITED_ADMIN_ROUTES (+ marketing if allowed). */
+export function isPathAllowedForRestrictedAdmin(
+  profile: AdminRoleProfile,
+  pathname: string,
+) {
+  const role = profile.role;
+  if (canAccessMarketingAdmin(profile) && isMarketingAdminPath(pathname)) {
+    return true;
+  }
   if (isBohRole(role)) {
     return pathname === "/admin/timesheets" || pathname.startsWith("/admin/timesheets/");
   }
   if (isLimitedAdminRole(role)) {
     return isPathAllowedForLimitedRole(pathname);
   }
+  if (isMarketingScopedStaff(profile)) {
+    return isMarketingAdminPath(pathname);
+  }
   return true;
 }
 
-export function navItemsForRole(role: string | null | undefined): AdminNavItem[] {
-  const r = (role ?? "").toLowerCase();
+export function navItemsForRole(profile: AdminRoleProfile): AdminNavItem[] {
+  const r = (profile.role ?? "").toLowerCase();
   if (r === "director" || r === "management") return adminNavItems;
-  if (isBohRole(role)) {
+  if (isBohRole(profile.role)) {
     return adminNavItems.filter((i) => i.to === "/admin/timesheets");
   }
-  if (isLimitedAdminRole(role)) {
+  if (isMarketingScopedStaff(profile) && !isLimitedAdminRole(profile.role)) {
+    const allow = new Set<string>(MARKETING_ADMIN_ROUTES);
+    return adminNavItems.filter((i) => allow.has(i.to));
+  }
+  if (isLimitedAdminRole(profile.role)) {
     const allow = new Set<string>(LIMITED_ADMIN_ROUTES);
+    if (canAccessMarketingAdmin(profile)) {
+      for (const p of MARKETING_ADMIN_ROUTES) allow.add(p);
+    }
     return adminNavItems.filter((i) => allow.has(i.to));
   }
   return adminNavItems;
 }
+
+export { defaultMarketingAdminPath };
 
 export const adminNavItems: AdminNavItem[] = [
   { to: "/admin", label: "Dashboard", icon: LayoutGrid },
@@ -108,14 +136,14 @@ export const adminNavItems: AdminNavItem[] = [
 export function AdminNav({
   collapsed,
   onNavigate,
-  role,
+  profile,
 }: {
   collapsed: boolean;
   onNavigate?: () => void;
-  role?: string | null;
+  profile: AdminRoleProfile;
 }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const items = navItemsForRole(role);
+  const items = navItemsForRole(profile);
 
   return (
     <nav className="flex-1 overflow-y-auto px-2 py-3">

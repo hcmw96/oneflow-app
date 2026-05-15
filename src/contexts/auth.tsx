@@ -5,6 +5,7 @@ import { supabase, syncCachedAuthUser } from "@/lib/supabase";
 type AuthProfile = {
   onboarding_complete: boolean | null;
   role: string | null;
+  secondary_roles: string[] | null;
 };
 
 type AuthState = {
@@ -33,7 +34,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setProfileReady(false);
       const { data, error } = await supabase
         .from("profiles")
-        .select("onboarding_complete, role")
+        .select("onboarding_complete, role, secondary_roles")
         .eq("id", user.id)
         .maybeSingle();
       if (cancelled) return;

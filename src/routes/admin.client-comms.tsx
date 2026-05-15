@@ -17,11 +17,13 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { ensureMarketingAdminAccess } from "@/lib/ensureMarketingAdminAccess";
 import { getUser, supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/admin/client-comms")({
+  beforeLoad: () => ensureMarketingAdminAccess(),
   head: () => ({ meta: [{ title: "Client Comms — One Flow Admin" }] }),
   component: ClientCommsPage,
 });

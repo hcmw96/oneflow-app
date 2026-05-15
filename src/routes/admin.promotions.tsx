@@ -32,11 +32,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { ensureMarketingAdminAccess } from "@/lib/ensureMarketingAdminAccess";
 import { getUser, supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/admin/promotions")({
+  beforeLoad: () => ensureMarketingAdminAccess(),
   head: () => ({ meta: [{ title: "Promotions — One Flow Admin" }] }),
   component: PromotionsPage,
 });

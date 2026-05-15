@@ -1,9 +1,19 @@
 import { createFileRoute, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import * as React from "react";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { AdminShell } from "@/components/admin/AdminShell";
-import { isBohRole, isPathAllowedForRestrictedAdmin } from "@/components/admin/AdminNav";
+import {
+  defaultMarketingAdminPath,
+  isPathAllowedForRestrictedAdmin,
+} from "@/components/admin/AdminNav";
+import {
+  canAccessMarketingAdmin,
+  canEnterAdminArea,
+  isMarketingAdminPath,
+  isMarketingScopedStaff,
+  type AdminRoleProfile,
+} from "@/lib/adminMarketingAccess";
 import { useAuth } from "@/contexts/auth";
 
 export const Route = createFileRoute("/admin")({
@@ -27,34 +37,47 @@ export const Route = createFileRoute("/admin")({
   ),
 });
 
-function isAdminRole(role: string | null | undefined) {
-  const r = (role ?? "").toLowerCase();
-  return (
-    r === "director" ||
-    r === "management" ||
-    r === "guide" ||
-    r === "front_desk" ||
-    r === "boh"
-  );
-}
-
 function AdminLayout() {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { user, authReady, profile, profileReady } = useAuth();
-  const profileRole = profile?.role ?? null;
+  const roleProfile = useMemo<AdminRoleProfile>(
+    () => ({
+      role: profile?.role ?? null,
+      secondary_roles: profile?.secondary_roles ?? null,
+    }),
+    [profile?.role, profile?.secondary_roles],
+  );
 
   useEffect(() => {
     if (!authReady || !user || !profileReady) return;
-    if (!isAdminRole(profileRole)) return;
-    if (!isPathAllowedForRestrictedAdmin(profileRole, pathname)) {
-      const to = isBohRole(profileRole) ? "/admin/timesheets" : "/admin/check-in";
-      navigate({ to, replace: true });
+    if (!canEnterAdminArea(roleProfile)) return;
+
+    if (isMarketingScopedStaff(roleProfile) && pathname === "/admin") {
+      navigate({ to: defaultMarketingAdminPath(), replace: true });
+      return;
     }
-  }, [authReady, user, profileReady, profileRole, pathname, navigate]);
+
+    if (!isPathAllowedForRestrictedAdmin(roleProfile, pathname)) {
+      const to = isMarketingScopedStaff(roleProfile)
+        ? defaultMarketingAdminPath()
+        : (roleProfile.role ?? "").toLowerCase() === "boh"
+          ? "/admin/timesheets"
+          : "/admin/check-in";
+      navigate({ to, replace: true });
+      return;
+    }
+
+    if (
+      isMarketingAdminPath(pathname) &&
+      !canAccessMarketingAdmin(roleProfile)
+    ) {
+      navigate({ to: "/admin/check-in", replace: true });
+    }
+  }, [authReady, user, profileReady, roleProfile, pathname, navigate]);
 
   const loading = !authReady || (!!user && !profileReady);
-  const canAccess = !!user && isAdminRole(profileRole);
+  const canAccess = !!user && canEnterAdminArea(roleProfile);
 
   if (loading) {
     return (

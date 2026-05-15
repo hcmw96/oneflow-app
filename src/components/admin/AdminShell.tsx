@@ -16,6 +16,7 @@ import { AdminGlobalSearch } from "@/components/admin/AdminGlobalSearch";
 type AdminProfile = {
   email: string | null;
   role: string | null;
+  secondary_roles: string[] | null;
 };
 
 export function AdminShell({ children }: { children: ReactNode }) {
@@ -32,7 +33,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
         if (!user || cancelled) return;
         const { data, error } = await supabase
           .from("profiles")
-          .select("email, role")
+          .select("email, role, secondary_roles")
           .eq("id", user.id)
           .maybeSingle();
         if (error) {
@@ -42,11 +43,12 @@ export function AdminShell({ children }: { children: ReactNode }) {
         setProfile({
           email: data?.email ?? user.email ?? null,
           role: data?.role ?? null,
+          secondary_roles: (data?.secondary_roles as string[] | null) ?? null,
         });
       } catch (error) {
         console.error("admin shell init failed", error);
         if (cancelled) return;
-        setProfile((prev) => prev ?? { email: null, role: null });
+        setProfile((prev) => prev ?? { email: null, role: null, secondary_roles: null });
       }
     })();
     return () => {
@@ -101,7 +103,10 @@ export function AdminShell({ children }: { children: ReactNode }) {
     };
   }, [canBadge, refreshPendingLeaveCount]);
 
-  const visibleNav = navItemsForRole(profile?.role);
+  const visibleNav = navItemsForRole({
+    role: profile?.role ?? null,
+    secondary_roles: profile?.secondary_roles ?? null,
+  });
   const currentLabel =
     visibleNav.find(
       (i) =>
@@ -152,7 +157,13 @@ export function AdminShell({ children }: { children: ReactNode }) {
           </div>
         )}
 
-        <AdminNav collapsed={collapsed} role={profile?.role} />
+        <AdminNav
+          collapsed={collapsed}
+          profile={{
+            role: profile?.role ?? null,
+            secondary_roles: profile?.secondary_roles ?? null,
+          }}
+        />
 
         {canBadge ? (
           <div className={cn("border-t border-sidebar-border px-2 py-2", collapsed && "px-0")}>
@@ -258,7 +269,10 @@ export function AdminShell({ children }: { children: ReactNode }) {
               <div className="flex h-[calc(100vh-65px)] flex-col">
                 <AdminNav
                   collapsed={false}
-                  role={profile?.role}
+                  profile={{
+                    role: profile?.role ?? null,
+                    secondary_roles: profile?.secondary_roles ?? null,
+                  }}
                   onNavigate={() => setMobileOpen(false)}
                 />
                 {canBadge ? (

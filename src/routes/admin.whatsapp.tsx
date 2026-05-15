@@ -4,8 +4,10 @@ import { Check, Copy, ExternalLink, MessageCircle } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/admin/PageHeader";
 import { Button } from "@/components/ui/button";
+import { ensureMarketingAdminAccess } from "@/lib/ensureMarketingAdminAccess";
 
 export const Route = createFileRoute("/admin/whatsapp")({
+  beforeLoad: () => ensureMarketingAdminAccess(),
   head: () => ({ meta: [{ title: "WhatsApp — One Flow Admin" }] }),
   component: WhatsAppPage,
 });
