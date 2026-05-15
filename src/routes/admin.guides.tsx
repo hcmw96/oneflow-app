@@ -94,8 +94,6 @@ type GuideProfileJoin = {
   email: string | null;
   phone: string | null;
   avatar_url: string | null;
-  role: string | null;
-  created_at: string | null;
 };
 
 type GuideFetchRow = {
@@ -104,20 +102,9 @@ type GuideFetchRow = {
   bio: string | null;
   disciplines: unknown;
   photo_url: string | null;
-  profile?: GuideProfileJoin | GuideProfileJoin[] | null;
-  profiles?: GuideProfileJoin | GuideProfileJoin[] | null;
+  profile_id: string;
+  profiles: GuideProfileJoin | GuideProfileJoin[] | null;
 };
-
-function profileFromGuideFetchRow(
-  g: GuideFetchRow & Record<string, unknown>,
-): GuideProfileJoin | null {
-  const pid = g.profile_id;
-  if (pid != null && typeof pid === "object" && !Array.isArray(pid)) {
-    return unwrapEmbeddedProfile(pid as GuideProfileJoin | GuideProfileJoin[]);
-  }
-  const raw = g.profile ?? g.profiles;
-  return unwrapEmbeddedProfile(raw ?? null);
-}
 
 function unwrapEmbeddedProfile(
   raw: GuideProfileJoin | GuideProfileJoin[] | null | undefined,
@@ -245,23 +232,7 @@ function GuidesPage() {
       supabase
         .from("guides")
         .select(
-          `
-    id,
-    is_active,
-    bio,
-    disciplines,
-    photo_url,
-    profile:profiles (
-      id,
-      first_name,
-      last_name,
-      email,
-      phone,
-      avatar_url,
-      role,
-      created_at
-    )
-  `.trim(),
+          "id, is_active, bio, disciplines, photo_url, profile_id, profiles(id, first_name, last_name, email, phone, avatar_url)",
         )
         .order("id"),
       supabase
@@ -272,25 +243,26 @@ function GuidesPage() {
         .eq("is_cancelled", false),
     ]);
 
+    const { data: guidesData, error: guidesError } = guidesRes;
+    console.log("guides:", guidesData, guidesError);
+
     if (viewerRoleRes.error) console.error(viewerRoleRes.error);
     setViewerRole(roleType((viewerRoleRes.data as { role?: string | null } | null)?.role));
 
-    if (guidesRes.error) {
-      console.error("guides fetch error:", guidesRes.error);
-      toast.error(supabaseErrorMessage(guidesRes.error, "Could not load guides"));
+    if (guidesError) {
+      console.error("guides fetch error:", guidesError);
+      toast.error(supabaseErrorMessage(guidesError, "Could not load guides"));
       setRows([]);
       setLoading(false);
       return;
     }
-
-    console.log("guides data:", guidesRes.data);
 
     if (classesRes.error) {
       console.error(classesRes.error);
       toast.error(supabaseErrorMessage(classesRes.error, "Could not load weekly classes"));
     }
 
-    const guideRows = (guidesRes.data ?? []) as GuideFetchRow[];
+    const guideRows = (guidesData ?? []) as GuideFetchRow[];
 
     const classCountByGuideName = new Map<string, number>();
     for (const c of (classesRes.data ?? []) as { guide_name: string | null }[]) {
@@ -300,32 +272,34 @@ function GuidesPage() {
     }
 
     const mapped: Omit<GuideRow, "packages">[] = [];
-    for (const g of guideRows) {
-      const p = profileFromGuideFetchRow(g);
-      if (!p) {
-        console.warn(`[admin/guides] guides row ${g.id} has no embedded profile`);
+    for (const guide of guideRows) {
+      const profile = unwrapEmbeddedProfile(guide.profiles);
+      if (!profile) {
+        console.warn(`[admin/guides] guides row ${guide.id} has no embedded profile`);
         continue;
       }
-      const first = titleCase(p.first_name ?? "");
-      const last = titleCase(p.last_name ?? "");
-      const fullName = `${first} ${last}`.trim() || "Guide";
+
+      const firstName = titleCase(profile.first_name ?? "");
+      const lastName = titleCase(profile.last_name ?? "");
+      const fullName = `${firstName} ${lastName}`.trim() || "Guide";
       const classesThisWeek = classCountByGuideName.get(fullName.toLowerCase()) ?? 0;
+
       mapped.push({
-        guideId: String(g.id),
-        id: String(p.id),
-        firstName: first,
-        lastName: last,
-        email: (p.email ?? "").trim(),
-        phone: (p.phone ?? "").trim(),
-        avatarUrl: p.avatar_url ?? null,
-        profileRole: p.role ?? null,
-        bio: g.bio ?? null,
-        photoUrl: g.photo_url ?? null,
+        guideId: String(guide.id),
+        id: String(guide.profile_id),
+        firstName,
+        lastName,
+        email: (profile.email ?? "").trim(),
+        phone: (profile.phone ?? "").trim(),
+        avatarUrl: profile.avatar_url ?? null,
+        profileRole: null,
+        bio: guide.bio ?? null,
+        photoUrl: guide.photo_url ?? null,
         fullName,
-        disciplines: normalizeDisciplines(g.disciplines),
-        active: g.is_active !== false,
+        disciplines: normalizeDisciplines(guide.disciplines),
+        active: guide.is_active !== false,
         classesThisWeek,
-        joinedAt: p.created_at ?? null,
+        joinedAt: null,
       });
     }
 
