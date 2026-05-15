@@ -134,6 +134,17 @@ function productCreditsLine(count: number, unlimited: boolean): string {
   return `${count} credits are now available and ready to use.`;
 }
 
+function formatAssignedCreditSummary(row: AssignedCreditRow): string {
+  const name = row.product_name ?? "Package";
+  const credits = row.is_unlimited
+    ? "Unlimited"
+    : `${row.credits_remaining ?? 0} / ${row.credits_total ?? 0} credits`;
+  const exp = row.expires_at
+    ? ` · expires ${new Date(row.expires_at).toLocaleDateString("en-ZA")}`
+    : "";
+  return `${name}: ${credits}${exp}`;
+}
+
 export type AssignedCreditRow = {
   id: string;
   product_name: string | null;
@@ -182,6 +193,9 @@ export function AssignPackageDialog({
   const [submitting, setSubmitting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmTab, setConfirmTab] = useState<"existing" | "custom">("existing");
+  const [assignResultOpen, setAssignResultOpen] = useState(false);
+  const [assignResultRows, setAssignResultRows] = useState<AssignedCreditRow[]>([]);
+  const [assignResultMemberName, setAssignResultMemberName] = useState("");
   const prevOpenRef = useRef(false);
 
   const assignees = useMemo(() => {
@@ -344,6 +358,7 @@ export function AssignPackageDialog({
 
     setSubmitting(true);
     const failures: PackageAssignFailure[] = [];
+    let insertedForSummary: AssignedCreditRow[] = [];
 
     const profileIds = [...new Set(assignees.map((a) => a.profileId.trim()))].filter(
       isUuidProfileId,
@@ -415,8 +430,11 @@ export function AssignPackageDialog({
         continue;
       }
       const insertedRows = (inserted ?? []) as AssignedCreditRow[];
-      if (insertedRows[0]) {
-        onCreditInserted?.(insertedRows[0]!, t.profileId);
+      for (const row of insertedRows) {
+        onCreditInserted?.(row, t.profileId);
+      }
+      if (assignees.length === 1) {
+        insertedForSummary = insertedRows;
       }
 
       const first = (t.firstName?.trim() || t.displayName.split(/\s+/)[0] || "there") as string;
@@ -435,6 +453,8 @@ export function AssignPackageDialog({
           : `Could not assign to ${failures.length} member(s). Others were saved.`,
         { description: summarizePackageFailures(failures), duration: 16_000 },
       );
+      onOpenChange(false);
+      onAssigned?.();
     } else {
       const names = assignees.map((a) => a.displayName).join(", ");
       toast.success(
@@ -443,9 +463,16 @@ export function AssignPackageDialog({
           : `${product.name} assigned to ${assignees.length} members`,
         { description: assignees.length === 1 ? undefined : names.slice(0, 120) },
       );
+      if (assignees.length === 1 && insertedForSummary.length > 0) {
+        setAssignResultRows(insertedForSummary);
+        setAssignResultMemberName(assignees[0]!.displayName);
+        setAssignResultOpen(true);
+        onOpenChange(false);
+      } else {
+        onOpenChange(false);
+        onAssigned?.();
+      }
     }
-    onOpenChange(false);
-    onAssigned?.();
   };
 
   const assignCustom = async () => {
@@ -478,6 +505,7 @@ export function AssignPackageDialog({
 
     setSubmitting(true);
     const failures: PackageAssignFailure[] = [];
+    let insertedForSummary: AssignedCreditRow[] = [];
 
     const profileIds = [...new Set(assignees.map((a) => a.profileId.trim()))].filter(
       isUuidProfileId,
@@ -542,8 +570,12 @@ export function AssignPackageDialog({
         recordPackageAssignFailure(t, "user_credits insert (custom package)", error, failures);
         continue;
       }
-      if (inserted) {
-        onCreditInserted?.(inserted as AssignedCreditRow, t.profileId);
+      const insertedRow = inserted as AssignedCreditRow | null;
+      if (insertedRow) {
+        onCreditInserted?.(insertedRow, t.profileId);
+        if (assignees.length === 1) {
+          insertedForSummary = [insertedRow];
+        }
       }
 
       const first = (t.firstName?.trim() || t.displayName.split(/\s+/)[0] || "there") as string;
@@ -567,14 +599,30 @@ export function AssignPackageDialog({
           : `Could not assign to ${failures.length} member(s). Others were saved.`,
         { description: summarizePackageFailures(failures), duration: 16_000 },
       );
+      onOpenChange(false);
+      onAssigned?.();
     } else {
       toast.success(
         assignees.length === 1
           ? `${name} assigned to ${assignees[0]!.displayName}`
           : `${name} assigned to ${assignees.length} members`,
       );
+      if (assignees.length === 1 && insertedForSummary.length > 0) {
+        setAssignResultRows(insertedForSummary);
+        setAssignResultMemberName(assignees[0]!.displayName);
+        setAssignResultOpen(true);
+        onOpenChange(false);
+      } else {
+        onOpenChange(false);
+        onAssigned?.();
+      }
     }
-    onOpenChange(false);
+  };
+
+  const closeAssignResult = () => {
+    setAssignResultOpen(false);
+    setAssignResultRows([]);
+    setAssignResultMemberName("");
     onAssigned?.();
   };
 
@@ -936,6 +984,38 @@ export function AssignPackageDialog({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog
+        open={assignResultOpen}
+        onOpenChange={(o) => {
+          if (!o) closeAssignResult();
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Package assigned</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            {assignResultRows.length > 1
+              ? `${assignResultRows.length} credit rows created for ${assignResultMemberName}:`
+              : `Credits added for ${assignResultMemberName}:`}
+          </p>
+          <ul className="max-h-64 list-disc space-y-1 overflow-y-auto pl-5 text-sm">
+            {assignResultRows.map((row) => (
+              <li key={row.id}>{formatAssignedCreditSummary(row)}</li>
+            ))}
+          </ul>
+          <DialogFooter>
+            <Button
+              type="button"
+              className="bg-[#a3b693] text-white hover:bg-[#8fa67d]"
+              onClick={closeAssignResult}
+            >
+              Done
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

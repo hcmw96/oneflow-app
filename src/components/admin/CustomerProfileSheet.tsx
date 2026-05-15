@@ -1,5 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Calendar, Loader2, Mail, Package, Phone, Shield, Trash2, User, Pencil } from "lucide-react";
+import {
+  Calendar,
+  Loader2,
+  Mail,
+  Package,
+  Phone,
+  Plus,
+  Shield,
+  Trash2,
+  User,
+  Pencil,
+} from "lucide-react";
 import { toast } from "sonner";
 import {
   AssignPackageDialog,
@@ -32,6 +43,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import {
   Sheet,
   SheetContent,
   SheetHeader,
@@ -42,6 +61,11 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
+import {
+  UNLIMITED_CREDIT_DISPLAY,
+  creditExpiresToDateInput,
+  dateInputToCreditExpires,
+} from "@/lib/userCreditAdmin";
 import { cn } from "@/lib/utils";
 
 const ALL_ROLES = [
@@ -168,6 +192,17 @@ export function CustomerProfileSheet({
 
   const [removeCreditId, setRemoveCreditId] = useState<string | null>(null);
   const [removingCredit, setRemovingCredit] = useState(false);
+
+  const [editCredit, setEditCredit] = useState<CreditRow | null>(null);
+  const [editRemaining, setEditRemaining] = useState("");
+  const [editTotal, setEditTotal] = useState("");
+  const [editExpires, setEditExpires] = useState("");
+  const [editUnlimited, setEditUnlimited] = useState(false);
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  const [topUpCredit, setTopUpCredit] = useState<CreditRow | null>(null);
+  const [topUpAmount, setTopUpAmount] = useState("1");
+  const [toppingUp, setToppingUp] = useState(false);
 
   const [creditTransactions, setCreditTransactions] = useState<CreditTransactionRow[]>([]);
   const [secondaryPopoverOpen, setSecondaryPopoverOpen] = useState(false);
@@ -434,10 +469,109 @@ export function CustomerProfileSheet({
     if (pendingRole) void applyRole(pendingRole);
   };
 
+  const removeCreditTarget = useMemo(
+    () => credits.find((c) => c.id === removeCreditId) ?? null,
+    [credits, removeCreditId],
+  );
+
+  const openEditCredit = (row: CreditRow) => {
+    setEditCredit(row);
+    const unlimited = row.is_unlimited === true;
+    setEditUnlimited(unlimited);
+    setEditRemaining(
+      unlimited ? String(UNLIMITED_CREDIT_DISPLAY) : String(row.credits_remaining ?? 0),
+    );
+    setEditTotal(
+      unlimited ? String(UNLIMITED_CREDIT_DISPLAY) : String(row.credits_total ?? 0),
+    );
+    setEditExpires(creditExpiresToDateInput(row.expires_at));
+  };
+
+  const saveEditCredit = async () => {
+    if (!editCredit || !canManage) return;
+    setSavingEdit(true);
+    const unlimited = editUnlimited;
+    const remaining = unlimited
+      ? UNLIMITED_CREDIT_DISPLAY
+      : Math.max(0, Math.trunc(Number(editRemaining)));
+    const total = unlimited
+      ? UNLIMITED_CREDIT_DISPLAY
+      : Math.max(0, Math.trunc(Number(editTotal)));
+    if (!unlimited && (!Number.isFinite(remaining) || !Number.isFinite(total))) {
+      toast.error("Enter valid credit numbers.");
+      setSavingEdit(false);
+      return;
+    }
+    const expiresAt = dateInputToCreditExpires(editExpires);
+    const { data, error } = await supabase
+      .from("user_credits")
+      .update({
+        credits_remaining: remaining,
+        credits_total: total,
+        expires_at: expiresAt,
+        is_unlimited: unlimited,
+      })
+      .eq("id", editCredit.id)
+      .select(
+        "id, product_name, credits_remaining, credits_total, is_unlimited, expires_at, yoco_payment_id, created_at",
+      )
+      .maybeSingle();
+    setSavingEdit(false);
+    if (error || !data) {
+      console.error("edit credit failed", error);
+      toast.error(supabaseErrorMessage(error, "Could not save credit"));
+      return;
+    }
+    const updated = data as CreditRow;
+    const now = Date.now();
+    setCredits((prev) => {
+      const next = prev.map((c) => (c.id === updated.id ? updated : c));
+      return next.filter((c) => isCreditActive(c, now));
+    });
+    setEditCredit(null);
+    toast.success("Credit updated");
+    onProfileUpdated?.();
+  };
+
+  const confirmTopUp = async () => {
+    if (!topUpCredit || !canManage || topUpCredit.is_unlimited) return;
+    const add = Math.trunc(Number(topUpAmount));
+    if (!Number.isFinite(add) || add < 1) {
+      toast.error("Enter at least 1 credit to add.");
+      return;
+    }
+    setToppingUp(true);
+    const rem = Math.trunc(Number(topUpCredit.credits_remaining ?? 0));
+    const tot = Math.trunc(Number(topUpCredit.credits_total ?? 0));
+    const { data, error } = await supabase
+      .from("user_credits")
+      .update({
+        credits_remaining: rem + add,
+        credits_total: tot + add,
+      })
+      .eq("id", topUpCredit.id)
+      .select(
+        "id, product_name, credits_remaining, credits_total, is_unlimited, expires_at, yoco_payment_id, created_at",
+      )
+      .maybeSingle();
+    setToppingUp(false);
+    if (error || !data) {
+      console.error("top up credit failed", error);
+      toast.error(supabaseErrorMessage(error, "Could not top up credits"));
+      return;
+    }
+    const updated = data as CreditRow;
+    setCredits((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+    const name = topUpCredit.product_name ?? "package";
+    setTopUpCredit(null);
+    setTopUpAmount("1");
+    toast.success(`Added ${add} credits to ${name}`);
+    onProfileUpdated?.();
+  };
+
   const removeCredit = async () => {
     if (!removeCreditId || !canManage) return;
     const removedId = removeCreditId;
-    const row = credits.find((c) => c.id === removedId);
     setRemovingCredit(true);
     setRemoveCreditId(null);
     setCredits((prev) => prev.filter((c) => c.id !== removedId));
@@ -449,11 +583,7 @@ export function CustomerProfileSheet({
       await load();
       return;
     }
-    toast.success(
-      row?.product_name
-        ? `Removed ${row.product_name} from ${fullName}'s account`
-        : `Credit removed from ${fullName}'s account`,
-    );
+    toast.success("Package removed");
     onProfileUpdated?.();
   };
 
@@ -766,17 +896,44 @@ export function CustomerProfileSheet({
                               </span>
                             ) : null}
                           </div>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="shrink-0 text-destructive hover:bg-destructive/10"
-                            disabled={!canManage}
-                            onClick={() => setRemoveCreditId(c.id)}
-                          >
-                            <Trash2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                            Remove
-                          </Button>
+                          <div className="flex shrink-0 flex-wrap items-center gap-1">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-8 gap-1 px-2 text-xs"
+                              disabled={!canManage}
+                              onClick={() => openEditCredit(c)}
+                            >
+                              <Pencil className="h-3 w-3 shrink-0" aria-hidden />
+                              Edit
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-8 gap-1 px-2 text-xs"
+                              disabled={!canManage || c.is_unlimited === true}
+                              onClick={() => {
+                                setTopUpCredit(c);
+                                setTopUpAmount("1");
+                              }}
+                            >
+                              <Plus className="h-3 w-3 shrink-0" aria-hidden />
+                              Top up
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-8 gap-1 px-2 text-xs text-destructive hover:bg-destructive/10"
+                              disabled={!canManage}
+                              onClick={() => setRemoveCreditId(c.id)}
+                            >
+                              <Trash2 className="h-3 w-3 shrink-0" aria-hidden />
+                              Remove
+                            </Button>
+                          </div>
                         </li>
                       );
                     })}
@@ -961,9 +1118,13 @@ export function CustomerProfileSheet({
             expires_at: row.expires_at,
           };
           if (!isCreditActive(nextRow, now)) return;
-          setCredits((prev) => [...prev, nextRow]);
+          setCredits((prev) => {
+            if (prev.some((c) => c.id === nextRow.id)) return prev;
+            return [...prev, nextRow];
+          });
         }}
         onAssigned={() => {
+          void load();
           onProfileUpdated?.();
         }}
       />
@@ -1008,12 +1169,141 @@ export function CustomerProfileSheet({
         </AlertDialogContent>
       </AlertDialog>
 
+      <Dialog
+        open={editCredit !== null}
+        onOpenChange={(o) => {
+          if (!o) setEditCredit(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit package</DialogTitle>
+          </DialogHeader>
+          {editCredit ? (
+            <div className="grid gap-4 py-2">
+              <p className="text-sm font-medium">{editCredit.product_name ?? "Pass"}</p>
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2">
+                <Label htmlFor="edit-unlimited">Unlimited</Label>
+                <Switch
+                  id="edit-unlimited"
+                  checked={editUnlimited}
+                  onCheckedChange={(v) => {
+                    setEditUnlimited(v);
+                    if (v) {
+                      setEditRemaining(String(UNLIMITED_CREDIT_DISPLAY));
+                      setEditTotal(String(UNLIMITED_CREDIT_DISPLAY));
+                    }
+                  }}
+                />
+              </div>
+              {!editUnlimited ? (
+                <>
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="edit-remaining">Credits remaining</Label>
+                    <Input
+                      id="edit-remaining"
+                      type="number"
+                      min={0}
+                      value={editRemaining}
+                      onChange={(e) => setEditRemaining(e.target.value)}
+                    />
+                  </div>
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="edit-total">Credits total</Label>
+                    <Input
+                      id="edit-total"
+                      type="number"
+                      min={0}
+                      value={editTotal}
+                      onChange={(e) => setEditTotal(e.target.value)}
+                    />
+                  </div>
+                </>
+              ) : null}
+              <div className="grid gap-1.5">
+                <Label htmlFor="edit-expires">Expiry date</Label>
+                <Input
+                  id="edit-expires"
+                  type="date"
+                  value={editExpires}
+                  onChange={(e) => setEditExpires(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">Leave empty for no expiry.</p>
+              </div>
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setEditCredit(null)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              className="bg-[#a3b693] text-white hover:bg-[#8fa67d]"
+              disabled={savingEdit || !canManage}
+              onClick={() => void saveEditCredit()}
+            >
+              {savingEdit ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={topUpCredit !== null}
+        onOpenChange={(o) => {
+          if (!o) {
+            setTopUpCredit(null);
+            setTopUpAmount("1");
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Top up credits</DialogTitle>
+          </DialogHeader>
+          {topUpCredit ? (
+            <div className="grid gap-4 py-2">
+              <p className="text-sm text-muted-foreground">
+                Add credits to <span className="font-medium text-foreground">{topUpCredit.product_name ?? "this package"}</span>
+                . Current balance: {topUpCredit.credits_remaining ?? 0} / {topUpCredit.credits_total ?? 0}
+              </p>
+              <div className="grid gap-1.5">
+                <Label htmlFor="top-up-amount">Credits to add</Label>
+                <Input
+                  id="top-up-amount"
+                  type="number"
+                  min={1}
+                  value={topUpAmount}
+                  onChange={(e) => setTopUpAmount(e.target.value)}
+                />
+              </div>
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setTopUpCredit(null)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              className="bg-[#a3b693] text-white hover:bg-[#8fa67d]"
+              disabled={toppingUp || !canManage}
+              onClick={() => void confirmTopUp()}
+            >
+              {toppingUp ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              Confirm
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <AlertDialog open={removeCreditId !== null} onOpenChange={(o) => !o && setRemoveCreditId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Remove this credit?</AlertDialogTitle>
+            <AlertDialogTitle>Remove package?</AlertDialogTitle>
             <AlertDialogDescription>
-              This removes the pass from their account. This cannot be undone.
+              Remove {removeCreditTarget?.product_name ?? "this package"} from {fullName}? This cannot
+              be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -1026,7 +1316,7 @@ export function CustomerProfileSheet({
                 void removeCredit();
               }}
             >
-              {removingCredit ? "Removing…" : "Remove credit"}
+              {removingCredit ? "Removing…" : "Remove"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
