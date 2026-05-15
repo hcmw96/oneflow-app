@@ -108,11 +108,6 @@ function isCreditActive(c: EmbeddedCreditRow, nowMs: number): boolean {
   return Number.isFinite(rem) && rem > 0;
 }
 
-function unwrapProfileCredits(raw: unknown): EmbeddedCreditRow[] {
-  if (!Array.isArray(raw)) return [];
-  return raw as EmbeddedCreditRow[];
-}
-
 function activeCreditsForProfile(credits: EmbeddedCreditRow[], nowMs: number): EmbeddedCreditRow[] {
   return credits.filter((c) => isCreditActive(c, nowMs));
 }
@@ -240,24 +235,7 @@ function CustomersPage() {
     const { data: profiles, error: pErr } = await supabase
       .from("profiles")
       .select(
-        `
-    id,
-    first_name,
-    last_name,
-    email,
-    phone,
-    role,
-    is_active,
-    created_at,
-    waiver_accepted_at,
-    user_credits!user_credits_profile_id_fkey (
-      product_name,
-      category,
-      credits_remaining,
-      is_unlimited,
-      expires_at
-    )
-  `.trim(),
+        "id, first_name, last_name, email, phone, role, is_active, created_at, waiver_accepted_at",
       )
       .order("first_name", { ascending: true });
 
@@ -270,12 +248,40 @@ function CustomersPage() {
     }
 
     const ids = (profiles ?? []).map((p: { id: string }) => p.id);
+
+    const creditsByProfile = new Map<string, EmbeddedCreditRow[]>();
     const bookedIds = new Set<string>();
-    if (ids.length) {
-      const { data: bookingRows } = await supabase
-        .from("bookings")
-        .select("profile_id")
-        .in("profile_id", ids);
+
+    if (ids.length > 0) {
+      const [{ data: bookingRows }, { data: creditRows, error: creditsErr }] = await Promise.all([
+        supabase.from("bookings").select("profile_id").in("profile_id", ids),
+        supabase
+          .from("user_credits")
+          .select(
+            "profile_id, product_name, category, credits_remaining, is_unlimited, expires_at",
+          )
+          .in("profile_id", ids),
+      ]);
+
+      if (creditsErr) {
+        console.error("customers: user_credits load failed", creditsErr);
+        toast.error(supabaseErrorMessage(creditsErr, "Could not load member credits"));
+      }
+
+      for (const row of creditRows ?? []) {
+        const pid = String((row as { profile_id: string }).profile_id);
+        const credit: EmbeddedCreditRow = {
+          product_name: (row as { product_name: string | null }).product_name,
+          category: (row as { category: string | null }).category,
+          credits_remaining: (row as { credits_remaining: number | null }).credits_remaining,
+          is_unlimited: (row as { is_unlimited: boolean | null }).is_unlimited,
+          expires_at: (row as { expires_at: string | null }).expires_at,
+        };
+        const list = creditsByProfile.get(pid) ?? [];
+        list.push(credit);
+        creditsByProfile.set(pid, list);
+      }
+
       for (const row of bookingRows ?? []) {
         const pid = row.profile_id as string | null;
         if (pid) bookedIds.add(pid);
@@ -286,7 +292,7 @@ function CustomersPage() {
       const id = String(p.id);
       const name = [p.first_name, p.last_name].filter(Boolean).join(" ").trim() || "Member";
       const waiverAt = p.waiver_accepted_at as string | null | undefined;
-      const embedded = unwrapProfileCredits(p.user_credits);
+      const embedded = creditsByProfile.get(id) ?? [];
       const active = activeCreditsForProfile(embedded, nowMs);
       return {
         id,
