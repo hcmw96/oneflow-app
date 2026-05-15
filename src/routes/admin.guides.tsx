@@ -87,32 +87,24 @@ type GuideRow = {
   packages: GuideCreditPillRow[];
 };
 
-type GuideProfileJoin = {
-  id: string;
-  first_name: string | null;
-  last_name: string | null;
-  email: string | null;
-  phone: string | null;
-  avatar_url: string | null;
-};
-
-type GuideFetchRow = {
+type GuideTableRow = {
   id: string;
   is_active: boolean | null;
   bio: string | null;
   disciplines: unknown;
   photo_url: string | null;
   profile_id: string;
-  profiles: GuideProfileJoin | GuideProfileJoin[] | null;
 };
 
-function unwrapEmbeddedProfile(
-  raw: GuideProfileJoin | GuideProfileJoin[] | null | undefined,
-): GuideProfileJoin | null {
-  if (raw == null) return null;
-  if (Array.isArray(raw)) return raw[0] ?? null;
-  return raw;
-}
+type GuideProfileRow = {
+  id: string;
+  first_name: string | null;
+  last_name: string | null;
+  email: string | null;
+  phone: string | null;
+  avatar_url: string | null;
+  created_at: string | null;
+};
 
 function normalizeDisciplineValue(value: string): string {
   const v = value.trim().toLowerCase();
@@ -231,9 +223,7 @@ function GuidesPage() {
       supabase.from("profiles").select("role").eq("id", user.id).maybeSingle(),
       supabase
         .from("guides")
-        .select(
-          "id, is_active, bio, disciplines, photo_url, profile_id, profiles(id, first_name, last_name, email, phone, avatar_url)",
-        )
+        .select("id, is_active, bio, disciplines, photo_url, profile_id")
         .order("id"),
       supabase
         .from("classes")
@@ -262,7 +252,29 @@ function GuidesPage() {
       toast.error(supabaseErrorMessage(classesRes.error, "Could not load weekly classes"));
     }
 
-    const guideRows = (guidesData ?? []) as GuideFetchRow[];
+    const guideRows = (guidesData ?? []) as GuideTableRow[];
+    const profileIds = [
+      ...new Set(guideRows.map((g) => g.profile_id).filter((id): id is string => Boolean(id))),
+    ];
+
+    const profilesById = new Map<string, GuideProfileRow>();
+    if (profileIds.length > 0) {
+      const { data: profilesData, error: profilesError } = await supabase
+        .from("profiles")
+        .select("id, first_name, last_name, email, phone, avatar_url, created_at")
+        .in("id", profileIds);
+
+      console.log("guide profiles:", profilesData, profilesError);
+
+      if (profilesError) {
+        console.error("guide profiles fetch error:", profilesError);
+        toast.error(supabaseErrorMessage(profilesError, "Could not load guide profiles"));
+      } else {
+        for (const p of (profilesData ?? []) as GuideProfileRow[]) {
+          profilesById.set(String(p.id), p);
+        }
+      }
+    }
 
     const classCountByGuideName = new Map<string, number>();
     for (const c of (classesRes.data ?? []) as { guide_name: string | null }[]) {
@@ -273,14 +285,10 @@ function GuidesPage() {
 
     const mapped: Omit<GuideRow, "packages">[] = [];
     for (const guide of guideRows) {
-      const profile = unwrapEmbeddedProfile(guide.profiles);
-      if (!profile) {
-        console.warn(`[admin/guides] guides row ${guide.id} has no embedded profile`);
-        continue;
-      }
+      const profile = profilesById.get(String(guide.profile_id)) ?? null;
 
-      const firstName = titleCase(profile.first_name ?? "");
-      const lastName = titleCase(profile.last_name ?? "");
+      const firstName = titleCase(profile?.first_name ?? "");
+      const lastName = titleCase(profile?.last_name ?? "");
       const fullName = `${firstName} ${lastName}`.trim() || "Guide";
       const classesThisWeek = classCountByGuideName.get(fullName.toLowerCase()) ?? 0;
 
@@ -289,9 +297,9 @@ function GuidesPage() {
         id: String(guide.profile_id),
         firstName,
         lastName,
-        email: (profile.email ?? "").trim(),
-        phone: (profile.phone ?? "").trim(),
-        avatarUrl: profile.avatar_url ?? null,
+        email: (profile?.email ?? "").trim(),
+        phone: (profile?.phone ?? "").trim(),
+        avatarUrl: profile?.avatar_url ?? null,
         profileRole: null,
         bio: guide.bio ?? null,
         photoUrl: guide.photo_url ?? null,
@@ -299,7 +307,7 @@ function GuidesPage() {
         disciplines: normalizeDisciplines(guide.disciplines),
         active: guide.is_active !== false,
         classesThisWeek,
-        joinedAt: null,
+        joinedAt: profile?.created_at ?? null,
       });
     }
 
