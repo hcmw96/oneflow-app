@@ -23,7 +23,6 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { deleteMayChallengeCheckInForBooking } from "@/lib/mayChallengeCheckIn";
 import { awardClassesAttendedBadges } from "@/lib/badges";
 import {
   fetchTheSageCreditProfileIds,
@@ -38,12 +37,24 @@ import {
   bookingConfirmationEmailData,
   bookingConfirmationTemplateForClassType,
 } from "@/lib/bookingConfirmationEmail";
+import { CheckInRosterMemberAvatar } from "@/components/admin/CheckInRosterMemberAvatar";
+import { CheckInRosterStatusPill } from "@/components/admin/CheckInRosterStatusPill";
+import {
+  type BookingRow,
+  type RosterRow,
+  formatClassTime,
+  normalizeBooking,
+  oneClass,
+  oneProfile,
+  patchBookingAttendance,
+} from "@/lib/checkInRoster";
 
 export const Route = createFileRoute("/admin/check-in")({
+  validateSearch: (raw: Record<string, unknown>) => ({
+    class: typeof raw.class === "string" ? raw.class : undefined,
+  }),
   component: CheckInPage,
 });
-
-type BookingStatus = "attended" | "confirmed" | "cancelled" | "no-show";
 
 type TodayClass = {
   id: string;
@@ -58,115 +69,10 @@ type TodayClass = {
   guide_profile_id: string | null;
 };
 
-type ProfileJoin = { first_name: string; last_name: string } | null;
-
-type BookingRow = {
-  id: string;
-  status: string;
-  profile_id: string;
-  class_id: string;
-  qr_token: string | null;
-  qr_used?: boolean | null;
-  checked_in?: boolean | null;
-  payment_method: string | null;
-  mat_addon?: boolean | null;
-  towel_addon?: boolean | null;
-  profiles: ProfileJoin | ProfileJoin[] | null;
-  classes:
-    | { id: string; name: string; starts_at: string; guide_name: string | null }
-    | { id: string; name: string; starts_at: string; guide_name: string | null }[]
-    | null;
-};
-
 type RosterCheckFilter = "all" | "checked_in" | "not_yet";
 
-type RosterRow = {
-  id: string;
-  status: BookingStatus;
-  member: string;
-  profileId: string;
-  class_id: string;
-  className: string;
-  classStartsAt: string;
-  startsAtLabel: string;
-  creditLabel: string;
-  matAddon: boolean;
-  towelAddon: boolean;
-  hasSageCredit: boolean;
-};
-
-function oneProfile(p: BookingRow["profiles"]): ProfileJoin {
-  if (!p) return null;
-  return Array.isArray(p) ? (p[0] ?? null) : p;
-}
-
-function oneClass(c: BookingRow["classes"]) {
-  if (!c) return null;
-  return Array.isArray(c) ? (c[0] ?? null) : c;
-}
-
-function initials(name: string) {
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((s) => s[0])
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
-}
-
-/** Normalize mat/towel flags from PostgREST (boolean, 0/1, or legacy string). */
-function addonTruthy(v: unknown): boolean {
-  if (v === true) return true;
-  if (v === false || v == null) return false;
-  if (typeof v === "number") return v === 1;
-  if (typeof v === "string") {
-    const s = v.trim().toLowerCase();
-    return s === "true" || s === "t" || s === "1" || s === "yes";
-  }
-  return false;
-}
-
-function formatClassTime(iso: string) {
-  return new Date(iso)
-    .toLocaleTimeString("en-ZA", { hour: "numeric", minute: "2-digit", hour12: true })
-    .toUpperCase();
-}
-
-function normalizeBooking(raw: BookingRow, sageProfileIds: Set<string>): RosterRow | null {
-  const prof = oneProfile(raw.profiles);
-  const member =
-    prof && `${prof.first_name} ${prof.last_name}`.trim()
-      ? `${prof.first_name} ${prof.last_name}`.trim()
-      : "Unknown member";
-  const cls = oneClass(raw.classes);
-  if (!cls) return null;
-  const status = raw.status as BookingStatus;
-  if (!["attended", "confirmed", "cancelled", "no-show"].includes(status)) return null;
-  const matV = (raw as Record<string, unknown>).mat_addon;
-  const towelV = (raw as Record<string, unknown>).towel_addon;
-  const matAddon = addonTruthy(matV);
-  const towelAddon = addonTruthy(towelV);
-  if (import.meta.env.DEV && (matAddon || towelAddon)) {
-    console.log("[check-in] booking addons", raw.id, "mat_addon=", matV, "towel_addon=", towelV);
-  }
-  return {
-    id: raw.id,
-    status,
-    member,
-    profileId: raw.profile_id,
-    class_id: raw.class_id,
-    className: cls.name,
-    classStartsAt: cls.starts_at,
-    startsAtLabel: `Today · ${formatClassTime(cls.starts_at)}`,
-    creditLabel: raw.payment_method?.replace(/_/g, " ") ?? "—",
-    matAddon,
-    towelAddon,
-    hasSageCredit: sageProfileIds.has(raw.profile_id),
-  };
-}
-
 function CheckInPage() {
+  const search = Route.useSearch();
   const [todayClasses, setTodayClasses] = useState<TodayClass[]>([]);
   const [roster, setRoster] = useState<RosterRow[]>([]);
   const [query, setQuery] = useState("");
@@ -181,6 +87,10 @@ function CheckInPage() {
   );
   const qrDedupeRef = useRef<string | null>(null);
   const qrDedupeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (search.class) setActiveSession(search.class);
+  }, [search.class]);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -255,7 +165,7 @@ function CheckInPage() {
         payment_method,
         mat_addon,
         towel_addon,
-        profiles ( first_name, last_name ),
+        profiles ( first_name, last_name, avatar_url ),
         classes ( id, name, starts_at, guide_name )
       `,
         )
@@ -351,38 +261,23 @@ function CheckInPage() {
   const utilisation = totalCapacity ? Math.round((checkedInCount / totalCapacity) * 100) : 0;
 
   const updateBookingStatus = async (id: string, status: "attended" | "confirmed") => {
-    const patch =
-      status === "attended"
-        ? {
-            status,
-            checked_in: true,
-            checked_in_at: new Date().toISOString(),
-          }
-        : {
-            status,
-            checked_in: false,
-            checked_in_at: null as string | null,
-            qr_used: false,
-          };
-    const { error } = await supabase.from("bookings").update(patch).eq("id", id);
+    const row = roster.find((r) => r.id === id);
+    const ctx =
+      row?.profileId && row.classStartsAt
+        ? { profileId: row.profileId, classStartsAt: row.classStartsAt }
+        : null;
+    const { error } = await patchBookingAttendance(supabase, {
+      bookingId: id,
+      status,
+      context: ctx,
+    });
     if (error) {
-      console.error("check-in: booking status update failed", error);
-      toast.error(supabaseErrorMessage(error, "Could not update booking"));
+      toast.error(error);
       return;
     }
     if (status === "attended") {
-      const row = roster.find((r) => r.id === id);
-      if (row?.profileId && row.classStartsAt) {
-        await supabase.from("challenge_checkins").insert({
-          profile_id: row.profileId,
-          class_date: new Date(row.classStartsAt).toISOString().split("T")[0],
-          booking_id: id,
-        });
-        void awardClassesAttendedBadges(row.profileId);
-      }
       toast.success("Checked in · +10 Flow Points");
     } else {
-      await deleteMayChallengeCheckInForBooking(id);
       toast.success("Reverted to confirmed");
     }
     await loadData();
@@ -619,9 +514,7 @@ function CheckInPage() {
                 const isCancelled = b.status === "cancelled";
                 return (
                   <li key={b.id} className="flex flex-wrap items-center gap-3 py-3 sm:flex-nowrap">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold">
-                      {initials(b.member)}
-                    </div>
+                    <CheckInRosterMemberAvatar row={b} />
                     <div className="min-w-0 flex-1">
                       <p className="flex min-w-0 flex-wrap items-center gap-1.5 text-sm font-semibold">
                         <span className="min-w-0 truncate">{b.member}</span>
@@ -636,7 +529,7 @@ function CheckInPage() {
                       </p>
                     </div>
                     <div className="flex w-full items-center gap-2 sm:w-auto">
-                      <StatusPill status={b.status} />
+                      <CheckInRosterStatusPill status={b.status} />
                       {isIn ? (
                         <button
                           type="button"
@@ -740,25 +633,6 @@ function SessionChip({
         <GuideActivePackagePills credits={guideCredits} className="mt-1 max-w-[220px]" />
       ) : null}
     </button>
-  );
-}
-
-function StatusPill({ status }: { status: BookingStatus }) {
-  const map: Record<BookingStatus, string> = {
-    attended: "bg-success/20 text-success-foreground",
-    confirmed: "bg-muted text-foreground",
-    cancelled: "bg-destructive/15 text-destructive",
-    "no-show": "bg-amber-500/15 text-amber-700 dark:text-amber-400",
-  };
-  return (
-    <span
-      className={cn(
-        "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
-        map[status],
-      )}
-    >
-      {status}
-    </span>
   );
 }
 

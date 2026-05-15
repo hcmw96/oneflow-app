@@ -1,10 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { CalendarDays, Percent, UserCheck, Users } from "lucide-react";
 import { PageHeader } from "@/components/admin/PageHeader";
 import { StatCard } from "@/components/admin/StatCard";
+import { ClassRosterSheet, type ClassRosterSession } from "@/components/admin/ClassRosterSheet";
 import { Skeleton } from "@/components/ui/skeleton";
-import { supabase } from "@/lib/supabase";
+import { getUser, supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { cn } from "@/lib/utils";
 
@@ -65,6 +66,27 @@ function AdminDashboard() {
   const [signInsToday, setSignInsToday] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [viewerRole, setViewerRole] = useState<string | null>(null);
+  const [rosterOpen, setRosterOpen] = useState(false);
+  const [rosterSession, setRosterSession] = useState<ClassRosterSession | null>(null);
+
+  const canOpenClassRoster = useMemo(() => {
+    const r = (viewerRole ?? "").toLowerCase();
+    return r === "director" || r === "management";
+  }, [viewerRole]);
+
+  useEffect(() => {
+    void (async () => {
+      const user = await getUser();
+      if (!user) return;
+      const { data } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .maybeSingle();
+      setViewerRole((data?.role as string | null) ?? null);
+    })();
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -134,9 +156,30 @@ function AdminDashboard() {
     timeZone: TZ,
   });
 
+  const openClassRoster = (c: TodayClassRow) => {
+    if (!canOpenClassRoster) return;
+    setRosterSession({
+      id: c.id,
+      name: c.name,
+      starts_at: c.starts_at,
+      capacity: c.capacity,
+      booked_count: c.booked_count,
+    });
+    setRosterOpen(true);
+  };
+
   return (
     <div>
       <PageHeader title="Dashboard" description={todayLabel} />
+
+      <ClassRosterSheet
+        open={rosterOpen}
+        onOpenChange={(o) => {
+          setRosterOpen(o);
+          if (!o) setRosterSession(null);
+        }}
+        session={rosterSession}
+      />
 
       {loading ? (
         <AdminDashboardSkeleton />
@@ -208,7 +251,24 @@ function AdminDashboard() {
                         .toUpperCase();
                       const guide = c.guide_name?.trim() || "—";
                       return (
-                        <tr key={c.id} className="border-t border-border">
+                        <tr
+                          key={c.id}
+                          className={cn(
+                            "border-t border-border",
+                            canOpenClassRoster && "cursor-pointer hover:bg-muted/40",
+                          )}
+                          onClick={() => openClassRoster(c)}
+                          onKeyDown={(e) => {
+                            if (!canOpenClassRoster) return;
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              openClassRoster(c);
+                            }
+                          }}
+                          tabIndex={canOpenClassRoster ? 0 : undefined}
+                          role={canOpenClassRoster ? "button" : undefined}
+                          aria-label={canOpenClassRoster ? `View roster for ${c.name}` : undefined}
+                        >
                           <td className="whitespace-nowrap px-5 py-3 font-medium tabular-nums">
                             {time}
                           </td>
