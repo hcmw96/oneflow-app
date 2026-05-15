@@ -60,6 +60,9 @@ export const Route = createFileRoute("/admin/timesheets")({
 const TZ = "Africa/Johannesburg";
 const PAGE_SIZE = 20;
 
+/** Shifts / timesheet staff pickers: BOH & front desk & management only (not guides or directors). */
+const BOH_TIMESHEET_STAFF_ROLES: readonly string[] = ["boh", "front_desk", "management"];
+
 type StaffRow = { id: string; fullName: string; role: string };
 
 type ShiftRow = {
@@ -235,8 +238,9 @@ function TimesheetsPage() {
     const [staffRes, shiftsRes, tsRes] = await Promise.all([
       supabase
         .from("profiles")
-        .select("id, first_name, last_name, role")
-        .in("role", ["guide", "management", "director", "boh", "front_desk"])
+        .select("id, first_name, last_name, role, avatar_url")
+        .in("role", BOH_TIMESHEET_STAFF_ROLES)
+        .eq("is_active", true)
         .order("first_name", { ascending: true }),
       supabase
         .from("shifts")
