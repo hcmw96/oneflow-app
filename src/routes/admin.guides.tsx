@@ -34,11 +34,7 @@ import {
   fetchActiveUserCreditsByProfileIds,
   type GuideCreditPillRow,
 } from "@/lib/activeUserCredits";
-import {
-  ALLOWED_CLASS_TYPE_SLUGS,
-  CLASS_TYPE_SLUG_LABEL,
-  GUIDE_DISCIPLINE_LABELS,
-} from "@/lib/allowedClassTypes";
+import { CLASS_TYPE_SLUG_LABEL, isAllowedClassTypeSlug } from "@/lib/allowedClassTypes";
 
 export const Route = createFileRoute("/admin/guides")({
   head: () => ({
@@ -50,18 +46,37 @@ export const Route = createFileRoute("/admin/guides")({
 const SAGE = "#a3b693";
 const SAGE_BORDER = "border-[#c5d4b8]/80";
 
-const DISCIPLINE_OPTIONS = GUIDE_DISCIPLINE_LABELS;
-
-const DISCIPLINE_FILTER_KEYS = [
-  ...ALLOWED_CLASS_TYPE_SLUGS.map((key) => ({
-    key,
-    label: CLASS_TYPE_SLUG_LABEL[key],
-  })),
-  { key: "sauna" as const, label: "Sauna" },
-  { key: "pilates" as const, label: "Pilates (legacy)" },
+/** Stored in `guides.disciplines` text[] — slug values only. */
+const GUIDE_DISCIPLINE_SLUGS = [
+  "yoga",
+  "sculpt",
+  "pilates",
+  "power",
+  "wellzone",
+  "sauna_journey",
+  "beginner",
 ] as const;
 
-type Discipline = (typeof GUIDE_DISCIPLINE_LABELS)[number];
+type GuideDisciplineSlug = (typeof GUIDE_DISCIPLINE_SLUGS)[number];
+
+const GUIDE_DISCIPLINE_SLUG_LABEL: Record<GuideDisciplineSlug, string> = {
+  yoga: CLASS_TYPE_SLUG_LABEL.yoga,
+  sculpt: CLASS_TYPE_SLUG_LABEL.sculpt,
+  pilates: "Pilates",
+  power: CLASS_TYPE_SLUG_LABEL.power,
+  wellzone: CLASS_TYPE_SLUG_LABEL.wellzone,
+  sauna_journey: CLASS_TYPE_SLUG_LABEL.sauna_journey,
+  beginner: CLASS_TYPE_SLUG_LABEL.beginner,
+};
+
+const DISCIPLINE_FILTER_KEYS = [
+  ...GUIDE_DISCIPLINE_SLUGS.map((key) => ({
+    key,
+    label: GUIDE_DISCIPLINE_SLUG_LABEL[key],
+  })),
+  { key: "beginner_sculpt" as const, label: "Beginner sculpt" },
+  { key: "event" as const, label: "Event" },
+] as const;
 type RoleType = "director" | "management" | "guide" | "customer" | "other";
 
 type GuideSortKey = "name_asc" | "name_desc" | "joined_asc" | "active_first";
@@ -106,36 +121,60 @@ type GuideProfileRow = {
   created_at: string | null;
 };
 
-function normalizeDisciplineValue(value: string): string {
-  const v = value.trim().toLowerCase();
-  if (v === "sauna journey" || v === "sauna_journey") return "Sauna Journey";
-  if (v === "beginner sculpt" || v === "beginner_sculpt") return "Beginner sculpt";
-  return value.trim();
+function disciplineValueToSlug(value: string): GuideDisciplineSlug | null {
+  const raw = value.trim();
+  if (!raw) return null;
+  const v = raw.toLowerCase().replace(/\s+/g, "_");
+  if (v === "sauna" || v === "sauna_journey") return "sauna_journey";
+  if ((GUIDE_DISCIPLINE_SLUGS as readonly string[]).includes(v)) return v as GuideDisciplineSlug;
+  const fromLabel = GUIDE_DISCIPLINE_SLUGS.find(
+    (slug) => GUIDE_DISCIPLINE_SLUG_LABEL[slug].toLowerCase() === raw.toLowerCase(),
+  );
+  return fromLabel ?? null;
 }
 
-function normalizeDisciplines(raw: unknown): string[] {
+function disciplinesRawToSlugs(raw: unknown): GuideDisciplineSlug[] {
   if (!Array.isArray(raw)) return [];
-  return raw
-    .map((x) => normalizeDisciplineValue(String(x)))
-    .filter(Boolean)
-    .filter((v, i, arr) => arr.indexOf(v) === i);
+  const out: GuideDisciplineSlug[] = [];
+  for (const item of raw) {
+    const slug = disciplineValueToSlug(String(item));
+    if (slug && !out.includes(slug)) out.push(slug);
+  }
+  return out;
+}
+
+function slugsToInviteLabels(slugs: GuideDisciplineSlug[]): string[] {
+  return slugs.map((s) => GUIDE_DISCIPLINE_SLUG_LABEL[s]);
 }
 
 function guideRowDisciplineKeys(disciplines: string[]): Set<string> {
   const out = new Set<string>();
   for (const raw of disciplines) {
-    const d = raw.trim().toLowerCase();
-    if (d === "yoga") out.add("yoga");
-    else if (d === "sculpt") out.add("sculpt");
-    else if (d === "pilates") out.add("pilates");
-    else if (d === "power") out.add("power");
-    else if (d === "beginner") out.add("beginner");
-    else if (d === "beginner sculpt" || d === "beginner_sculpt") out.add("beginner_sculpt");
-    else if (d === "event") out.add("event");
-    else if (d === "wellzone") out.add("wellzone");
-    else if (d.includes("sauna")) out.add("sauna");
+    const slug = disciplineValueToSlug(raw);
+    if (slug) out.add(slug);
+    else if (isAllowedClassTypeSlug(raw)) out.add(raw);
+    else if (raw.toLowerCase().includes("sauna")) out.add("sauna_journey");
   }
   return out;
+}
+
+function GuideDisciplinePills({ disciplines }: { disciplines: string[] }) {
+  const slugs = disciplinesRawToSlugs(disciplines);
+  if (slugs.length === 0) {
+    return <span className="text-xs text-muted-foreground">No disciplines set</span>;
+  }
+  return (
+    <div className="flex flex-wrap gap-1">
+      {slugs.map((slug) => (
+        <span
+          key={slug}
+          className="inline-flex rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-foreground"
+        >
+          {GUIDE_DISCIPLINE_SLUG_LABEL[slug]}
+        </span>
+      ))}
+    </div>
+  );
 }
 
 function titleCase(value: string): string {
@@ -165,13 +204,14 @@ function GuidesPage() {
   const [loading, setLoading] = useState(true);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingGuideId, setEditingGuideId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [viewerRole, setViewerRole] = useState<RoleType>("other");
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
-  const [disciplines, setDisciplines] = useState<string[]>([]);
+  const [disciplines, setDisciplines] = useState<GuideDisciplineSlug[]>([]);
   const [active, setActive] = useState(true);
   const [sort, setSort] = useState<GuideSortKey>("name_asc");
   const [activeListFilter, setActiveListFilter] = useState<"all" | "active" | "inactive">("all");
@@ -190,6 +230,7 @@ function GuidesPage() {
   const closeSheet = useCallback(() => {
     setSheetOpen(false);
     setEditingId(null);
+    setEditingGuideId(null);
     resetForm();
   }, [resetForm]);
 
@@ -197,7 +238,7 @@ function GuidesPage() {
     setFirstName(row.firstName);
     setLastName(row.lastName);
     setEmail(row.email);
-    setDisciplines(row.disciplines);
+    setDisciplines(disciplinesRawToSlugs(row.disciplines));
     setActive(row.active);
   }, []);
 
@@ -304,7 +345,7 @@ function GuidesPage() {
         bio: guide.bio ?? null,
         photoUrl: guide.photo_url ?? null,
         fullName,
-        disciplines: normalizeDisciplines(guide.disciplines),
+        disciplines: disciplinesRawToSlugs(guide.disciplines),
         active: guide.is_active !== false,
         classesThisWeek,
         joinedAt: profile?.created_at ?? null,
@@ -380,14 +421,15 @@ function GuidesPage() {
     });
   }, [sortedRows, activeListFilter, disciplineFilters]);
 
-  const toggleDiscipline = (value: Discipline) => {
+  const toggleDiscipline = (slug: GuideDisciplineSlug) => {
     setDisciplines((prev) =>
-      prev.includes(value) ? prev.filter((d) => d !== value) : [...prev, value],
+      prev.includes(slug) ? prev.filter((d) => d !== slug) : [...prev, slug],
     );
   };
 
   const openInvite = () => {
     setEditingId(null);
+    setEditingGuideId(null);
     resetForm();
     setActive(true);
     setSheetOpen(true);
@@ -395,6 +437,7 @@ function GuidesPage() {
 
   const openEdit = (row: GuideRow) => {
     setEditingId(row.id);
+    setEditingGuideId(row.guideId);
     populateForm(row);
     setSheetOpen(true);
   };
@@ -426,7 +469,7 @@ function GuidesPage() {
           email: payload.email,
           first_name: payload.first_name,
           last_name: payload.last_name,
-          disciplines: payload.disciplines,
+          disciplines: slugsToInviteLabels(disciplines),
         },
       });
 
@@ -444,6 +487,12 @@ function GuidesPage() {
       return;
     }
 
+    if (!editingGuideId) {
+      toast.error("Missing guide record — refresh and try again.");
+      setSaving(false);
+      return;
+    }
+
     const nextRole = payload.active ? "guide" : "customer";
 
     const [profileRes, guidesRes] = await Promise.all([
@@ -456,14 +505,13 @@ function GuidesPage() {
           role: nextRole,
         })
         .eq("id", editingId),
-      supabase.from("guides").upsert(
-        {
-          profile_id: editingId,
+      supabase
+        .from("guides")
+        .update({
           disciplines: payload.disciplines,
           is_active: payload.active,
-        },
-        { onConflict: "profile_id" },
-      ),
+        })
+        .eq("id", editingGuideId),
     ]);
 
     if (profileRes.error) {
@@ -678,8 +726,8 @@ function GuidesPage() {
                   <td className="max-w-[220px] truncate px-5 py-3 text-muted-foreground">
                     {row.email || "—"}
                   </td>
-                  <td className="px-5 py-3 text-muted-foreground">
-                    {row.disciplines.length ? row.disciplines.join(", ") : "—"}
+                  <td className="max-w-[min(240px,36vw)] px-5 py-3">
+                    <GuideDisciplinePills disciplines={row.disciplines} />
                   </td>
                   <td className="px-5 py-3">
                     <span
@@ -781,13 +829,16 @@ function GuidesPage() {
 
             <div className="grid gap-2">
               <Label>Disciplines</Label>
-              <div className="grid grid-cols-1 gap-2 rounded-xl border border-border p-3">
-                {DISCIPLINE_OPTIONS.map((d) => {
-                  const checked = disciplines.includes(d);
+              <div className="grid grid-cols-1 gap-2 rounded-xl border border-border p-3 sm:grid-cols-2">
+                {GUIDE_DISCIPLINE_SLUGS.map((slug) => {
+                  const checked = disciplines.includes(slug);
                   return (
-                    <label key={d} className="flex items-center gap-2 text-sm">
-                      <Checkbox checked={checked} onCheckedChange={() => toggleDiscipline(d)} />
-                      <span>{d}</span>
+                    <label key={slug} className="flex items-center gap-2 text-sm">
+                      <Checkbox
+                        checked={checked}
+                        onCheckedChange={() => toggleDiscipline(slug)}
+                      />
+                      <span>{GUIDE_DISCIPLINE_SLUG_LABEL[slug]}</span>
                     </label>
                   );
                 })}
