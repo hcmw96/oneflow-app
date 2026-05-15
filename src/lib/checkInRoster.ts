@@ -83,7 +83,13 @@ export function formatClassTime(iso: string) {
     .toUpperCase();
 }
 
-export function normalizeBooking(raw: BookingRow, sageProfileIds: Set<string>): RosterRow | null {
+export type RosterAddonAccessSets = {
+  matProfileIds: Set<string>;
+  towelProfileIds: Set<string>;
+  cafeProfileIds: Set<string>;
+};
+
+export function normalizeBooking(raw: BookingRow, addonAccess: RosterAddonAccessSets): RosterRow | null {
   const prof = oneProfile(raw.profiles);
   const member =
     prof && `${prof.first_name ?? ""} ${prof.last_name ?? ""}`.trim()
@@ -93,10 +99,8 @@ export function normalizeBooking(raw: BookingRow, sageProfileIds: Set<string>): 
   if (!cls) return null;
   const status = raw.status as BookingStatus;
   if (!["attended", "confirmed", "cancelled", "no-show"].includes(status)) return null;
-  const matV = (raw as Record<string, unknown>).mat_addon;
-  const towelV = (raw as Record<string, unknown>).towel_addon;
-  const matAddon = rosterAddonTruthy(matV);
-  const towelAddon = rosterAddonTruthy(towelV);
+  const matAddon = addonAccess.matProfileIds.has(raw.profile_id);
+  const towelAddon = addonAccess.towelProfileIds.has(raw.profile_id);
   const avatarRaw = prof?.avatar_url;
   const avatarUrl = typeof avatarRaw === "string" && avatarRaw.trim() ? avatarRaw.trim() : null;
   return {
@@ -111,7 +115,7 @@ export function normalizeBooking(raw: BookingRow, sageProfileIds: Set<string>): 
     creditLabel: raw.payment_method?.replace(/_/g, " ") ?? "—",
     matAddon,
     towelAddon,
-    hasSageCredit: sageProfileIds.has(raw.profile_id),
+    hasSageCredit: addonAccess.cafeProfileIds.has(raw.profile_id),
     avatarUrl,
   };
 }

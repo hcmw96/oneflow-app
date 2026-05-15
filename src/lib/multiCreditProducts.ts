@@ -11,7 +11,15 @@ export type UserCreditInsertRow = {
   expires_at: string | null;
   yoco_payment_id: string;
   purchased_at?: string;
+  mat_access?: boolean;
+  towel_access?: boolean;
 };
+
+/** The Seeker — `products.id` prefix `df5794ea`. */
+export const THE_SEEKER_PRODUCT_ID_PREFIX = "df5794ea";
+
+/** The Sage — `products.id` prefix `e8ea33ba`. */
+export const THE_SAGE_PRODUCT_ID_PREFIX = "e8ea33ba";
 
 const SEEKER_YOGA_CLASS_TYPES = [
   "yoga",
@@ -23,35 +31,54 @@ const SEEKER_YOGA_CLASS_TYPES = [
   "event",
 ] as const;
 
-export function isSeekerProductName(productName: string): boolean {
-  return productName.toLowerCase().includes("seeker");
+const WELLZONE_CLASS_TYPES = ["wellzone", "sauna_journey"] as const;
+
+const UNLIMITED_CREDITS = 999;
+
+export function isTheSeekerProduct(productId: string, productName: string): boolean {
+  const id = productId.trim().toLowerCase();
+  const name = productName.trim().toLowerCase();
+  return id.startsWith(THE_SEEKER_PRODUCT_ID_PREFIX) || name.includes("seeker");
 }
 
-export function isSageProductName(productName: string): boolean {
-  return productName.toLowerCase().includes("sage");
+export function isTheSageProduct(productId: string, productName: string): boolean {
+  const id = productId.trim().toLowerCase();
+  const name = productName.trim().toLowerCase();
+  return id.startsWith(THE_SAGE_PRODUCT_ID_PREFIX) || name.includes("sage");
 }
 
-export function isMultiCreditProductName(productName: string): boolean {
-  return isSeekerProductName(productName) || isSageProductName(productName);
+export function isMultiCreditBundleProduct(productId: string, productName: string): boolean {
+  return isTheSeekerProduct(productId, productName) || isTheSageProduct(productId, productName);
+}
+
+/** Standalone add-ons assigned without bundle splitting. */
+export function getStandaloneCreditFlags(productName: string): Partial<UserCreditInsertRow> {
+  const n = productName.trim().toLowerCase();
+  if (n.includes("mat storage") || (n.includes("mat") && n.includes("access"))) {
+    return { mat_access: true };
+  }
+  if (n.includes("towel access") || (n === "towel" || n.startsWith("towel "))) {
+    return { towel_access: true };
+  }
+  return {};
 }
 
 export function getExtraCreditsForProduct(
+  productId: string,
   productName: string,
   profileId: string,
-  productId: string,
   expiresAt: string | null,
   paymentId: string,
 ): UserCreditInsertRow[] {
   const extras: UserCreditInsertRow[] = [];
-  const lower = productName.toLowerCase();
 
-  if (lower.includes("seeker")) {
+  if (isTheSeekerProduct(productId, productName)) {
     extras.push({
       profile_id: profileId,
       product_id: productId,
       product_name: "The Seeker - Wellzone",
       category: "wellzone",
-      allowed_class_types: ["wellzone", "sauna_journey"],
+      allowed_class_types: [...WELLZONE_CLASS_TYPES],
       credits_total: 10,
       credits_remaining: 10,
       is_unlimited: false,
@@ -72,7 +99,19 @@ export function getExtraCreditsForProduct(
     });
   }
 
-  if (lower.includes("sage")) {
+  if (isTheSageProduct(productId, productName)) {
+    extras.push({
+      profile_id: profileId,
+      product_id: productId,
+      product_name: "The Sage - Wellzone",
+      category: "wellzone",
+      allowed_class_types: [...WELLZONE_CLASS_TYPES],
+      credits_total: UNLIMITED_CREDITS,
+      credits_remaining: UNLIMITED_CREDITS,
+      is_unlimited: true,
+      expires_at: expiresAt,
+      yoco_payment_id: paymentId,
+    });
     extras.push({
       profile_id: profileId,
       product_id: productId,
@@ -90,19 +129,36 @@ export function getExtraCreditsForProduct(
   return extras;
 }
 
-/** Overrides for the primary row when a bundle maps to multiple `user_credits` rows. */
 export function getMainCreditOverridesForProduct(
+  productId: string,
   productName: string,
 ): Partial<UserCreditInsertRow> | null {
-  if (!isSeekerProductName(productName)) return null;
-  return {
-    product_name: "The Seeker - Yoga",
-    category: "yoga",
-    allowed_class_types: [...SEEKER_YOGA_CLASS_TYPES],
-    credits_total: 999,
-    credits_remaining: 999,
-    is_unlimited: true,
-  };
+  if (isTheSeekerProduct(productId, productName)) {
+    return {
+      product_name: "The Seeker - Yoga",
+      category: "yoga",
+      allowed_class_types: [...SEEKER_YOGA_CLASS_TYPES],
+      credits_total: UNLIMITED_CREDITS,
+      credits_remaining: UNLIMITED_CREDITS,
+      is_unlimited: true,
+      mat_access: true,
+      towel_access: true,
+    };
+  }
+
+  if (isTheSageProduct(productId, productName)) {
+    return {
+      product_name: "The Sage - Yoga",
+      category: "yoga",
+      credits_total: UNLIMITED_CREDITS,
+      credits_remaining: UNLIMITED_CREDITS,
+      is_unlimited: true,
+      mat_access: true,
+      towel_access: true,
+    };
+  }
+
+  return null;
 }
 
 export function buildProductCreditRows(args: {
@@ -129,16 +185,33 @@ export function buildProductCreditRows(args: {
     is_unlimited: args.isUnlimited,
     expires_at: args.expiresAt,
     yoco_payment_id: args.paymentId,
+    mat_access: false,
+    towel_access: false,
     ...(args.purchasedAt ? { purchased_at: args.purchasedAt } : {}),
   };
 
-  const overrides = getMainCreditOverridesForProduct(args.productName);
-  const mergedMain = overrides ? { ...main, ...overrides } : main;
+  const bundleOverrides = getMainCreditOverridesForProduct(args.productId, args.productName);
+  let mergedMain = bundleOverrides ? { ...main, ...bundleOverrides } : main;
+
+  if (!bundleOverrides) {
+    const standalone = getStandaloneCreditFlags(args.productName);
+    mergedMain = { ...mergedMain, ...standalone };
+    const n = args.productName.trim().toLowerCase();
+    if (n.includes("café") || n.includes("cafe")) {
+      mergedMain = {
+        ...mergedMain,
+        category: "cafe",
+        credits_total: mergedMain.credits_total > 0 ? mergedMain.credits_total : 10,
+        credits_remaining: mergedMain.credits_remaining > 0 ? mergedMain.credits_remaining : 10,
+        is_unlimited: false,
+      };
+    }
+  }
 
   const extras = getExtraCreditsForProduct(
+    args.productId,
     args.productName,
     args.profileId,
-    args.productId,
     args.expiresAt,
     args.paymentId,
   ).map((row) => ({

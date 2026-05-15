@@ -46,7 +46,8 @@ import {
   isAllowedClassTypeSlug,
 } from "@/lib/allowedClassTypes";
 import {
-  fetchTheSageCreditProfileIds,
+  fetchRosterMemberAddonAccess,
+  type RosterMemberAddonAccess,
   RosterAddonPills,
 } from "@/components/admin/RosterAddonPills";
 
@@ -129,7 +130,10 @@ function shortMemberName(first: string, last: string) {
   return L ? `${f} ${L}.` : f;
 }
 
-function normalizeBooking(raw: BookingRowRaw, sageProfileIds: Set<string>): AdminBookingRow | null {
+function normalizeBooking(
+  raw: BookingRowRaw,
+  addonAccess: RosterMemberAddonAccess,
+): AdminBookingRow | null {
   const prof = one(raw.profiles);
   const fn = prof?.first_name?.trim() ?? "";
   const ln = prof?.last_name?.trim() ?? "";
@@ -150,9 +154,9 @@ function normalizeBooking(raw: BookingRowRaw, sageProfileIds: Set<string>): Admi
     status,
     classStartsAtIso: cls.starts_at,
     creditLabel: raw.payment_method?.replace(/_/g, " ") ?? "—",
-    matAddon: Boolean(raw.mat_addon),
-    towelAddon: Boolean(raw.towel_addon),
-    hasSageCredit: Boolean(pid && sageProfileIds.has(pid)),
+    matAddon: Boolean(pid && addonAccess.matProfileIds.has(pid)),
+    towelAddon: Boolean(pid && addonAccess.towelProfileIds.has(pid)),
+    hasSageCredit: Boolean(pid && addonAccess.cafeProfileIds.has(pid)),
   };
 }
 
@@ -309,7 +313,7 @@ function BookingsPage() {
       return;
     }
 
-    const [{ data: bookingsData, error: bookingsError }, sageProfileIds] = await Promise.all([
+    const [{ data: bookingsData, error: bookingsError }, addonAccess] = await Promise.all([
       supabase
         .from("bookings")
         .select(
@@ -326,7 +330,7 @@ function BookingsPage() {
       `,
         )
         .in("class_id", classIds),
-      fetchTheSageCreditProfileIds(supabase),
+      fetchRosterMemberAddonAccess(supabase),
     ]);
 
     if (bookingsError) {
@@ -339,7 +343,7 @@ function BookingsPage() {
 
     const rawRows = (bookingsData ?? []) as unknown as BookingRowRaw[];
     const mapped = rawRows
-      .map((row) => normalizeBooking(row, sageProfileIds))
+      .map((row) => normalizeBooking(row, addonAccess))
       .filter((r): r is AdminBookingRow => r !== null);
     setBookings(mapped);
     setLoading(false);

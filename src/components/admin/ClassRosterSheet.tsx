@@ -11,7 +11,7 @@ import {
   patchBookingAttendance,
 } from "@/lib/checkInRoster";
 import {
-  fetchTheSageCreditProfileIds,
+  fetchRosterMemberAddonAccess,
   RosterAddonPills,
 } from "@/components/admin/RosterAddonPills";
 import { CheckInRosterMemberAvatar } from "@/components/admin/CheckInRosterMemberAvatar";
@@ -51,7 +51,7 @@ export function ClassRosterSheet({
     }
     setLoading(true);
     try {
-      const [{ data: bookingsData, error: bookingsError }, sageProfileIds] = await Promise.all([
+      const [{ data: bookingsData, error: bookingsError }, addonAccess] = await Promise.all([
         supabase
           .from("bookings")
           .select(
@@ -69,7 +69,7 @@ export function ClassRosterSheet({
       `,
           )
           .eq("class_id", session.id),
-        fetchTheSageCreditProfileIds(supabase),
+        fetchRosterMemberAddonAccess(supabase),
       ]);
 
       if (bookingsError) {
@@ -81,7 +81,7 @@ export function ClassRosterSheet({
 
       const rows = (bookingsData ?? []) as unknown as BookingRow[];
       const normalized = rows
-        .map((row) => normalizeBooking(row, sageProfileIds))
+        .map((row) => normalizeBooking(row, addonAccess))
         .filter((r): r is RosterRow => r !== null);
       setRoster(normalized);
     } finally {

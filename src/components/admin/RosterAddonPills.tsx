@@ -1,24 +1,28 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { cn } from "@/lib/utils";
 
-/** "The Sage" café product — roster café pill when member has active credit. */
-export const THE_SAGE_PRODUCT_ID = "e8ea33ba-0283-41a1-b2c9-60a0b38653e0";
-
 const SAGE_PILL = "#a3b693";
 
 const pillClass =
   "inline-flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white";
 
-type SageCreditRow = {
+type CreditAccessRow = {
   profile_id: string | null;
   credits_remaining: number | null;
   is_unlimited: boolean | null;
   expires_at: string | null;
-  product_id?: string | null;
-  product_name?: string | null;
+  mat_access?: boolean | null;
+  towel_access?: boolean | null;
+  category?: string | null;
 };
 
-function isActiveSageCredit(row: SageCreditRow, nowMs: number): boolean {
+export type RosterMemberAddonAccess = {
+  matProfileIds: Set<string>;
+  towelProfileIds: Set<string>;
+  cafeProfileIds: Set<string>;
+};
+
+function isActiveCredit(row: CreditAccessRow, nowMs: number): boolean {
   if (row.expires_at) {
     const t = new Date(row.expires_at).getTime();
     if (Number.isFinite(t) && t <= nowMs) return false;
@@ -28,30 +32,54 @@ function isActiveSageCredit(row: SageCreditRow, nowMs: number): boolean {
   return Number.isFinite(rem) && rem > 0;
 }
 
-/** Profile IDs with an active Sage café credit (product_id OR product_name ILIKE '%sage%'). */
-export async function fetchTheSageCreditProfileIds(client: SupabaseClient): Promise<Set<string>> {
+/** Active mat / towel / café access from `user_credits` for check-in roster pills. */
+export async function fetchRosterMemberAddonAccess(
+  client: SupabaseClient,
+): Promise<RosterMemberAddonAccess> {
   const nowMs = Date.now();
-  const [byId, byName] = await Promise.all([
-    client
-      .from("user_credits")
-      .select("profile_id, credits_remaining, is_unlimited, expires_at, product_id, product_name")
-      .eq("product_id", THE_SAGE_PRODUCT_ID),
-    client
-      .from("user_credits")
-      .select("profile_id, credits_remaining, is_unlimited, expires_at, product_id, product_name")
-      .ilike("product_name", "%sage%"),
-  ]);
+  const { data, error } = await client
+    .from("user_credits")
+    .select(
+      "profile_id, credits_remaining, is_unlimited, expires_at, mat_access, towel_access, category",
+    );
 
-  if (byId.error) console.error(byId.error);
-  if (byName.error) console.error(byName.error);
-
-  const out = new Set<string>();
-  for (const raw of [...(byId.data ?? []), ...(byName.data ?? [])]) {
-    const row = raw as SageCreditRow;
-    if (!row.profile_id || !isActiveSageCredit(row, nowMs)) continue;
-    out.add(String(row.profile_id));
+  if (error) {
+    console.error("fetchRosterMemberAddonAccess", error);
+    return {
+      matProfileIds: new Set(),
+      towelProfileIds: new Set(),
+      cafeProfileIds: new Set(),
+    };
   }
-  return out;
+
+  const matProfileIds = new Set<string>();
+  const towelProfileIds = new Set<string>();
+  const cafeProfileIds = new Set<string>();
+
+  for (const raw of data ?? []) {
+    const row = raw as CreditAccessRow;
+    const pid = row.profile_id ? String(row.profile_id) : "";
+    if (!pid || !isActiveCredit(row, nowMs)) continue;
+
+    if (row.mat_access === true) matProfileIds.add(pid);
+    if (row.towel_access === true) towelProfileIds.add(pid);
+
+    const cat = (row.category ?? "").trim().toLowerCase();
+    if (cat === "cafe") {
+      const rem = Number(row.credits_remaining);
+      if (row.is_unlimited || (Number.isFinite(rem) && rem > 0)) {
+        cafeProfileIds.add(pid);
+      }
+    }
+  }
+
+  return { matProfileIds, towelProfileIds, cafeProfileIds };
+}
+
+/** @deprecated Use fetchRosterMemberAddonAccess — café set only. */
+export async function fetchTheSageCreditProfileIds(client: SupabaseClient): Promise<Set<string>> {
+  const access = await fetchRosterMemberAddonAccess(client);
+  return access.cafeProfileIds;
 }
 
 export function RosterAddonPills({
@@ -70,17 +98,17 @@ export function RosterAddonPills({
   return (
     <span className={cn("inline-flex flex-wrap items-center gap-1", className)}>
       {mat ? (
-        <span className={pillClass} style={{ backgroundColor: SAGE_PILL }} title="Mat add-on">
+        <span className={pillClass} style={{ backgroundColor: SAGE_PILL }} title="Mat access">
           <span aria-hidden>🧘</span> Mat
         </span>
       ) : null}
       {towel ? (
-        <span className={pillClass} style={{ backgroundColor: SAGE_PILL }} title="Towel add-on">
+        <span className={pillClass} style={{ backgroundColor: SAGE_PILL }} title="Towel access">
           <span aria-hidden>🪣</span> Towel
         </span>
       ) : null}
       {cafe ? (
-        <span className={pillClass} style={{ backgroundColor: SAGE_PILL }} title="The Sage café">
+        <span className={pillClass} style={{ backgroundColor: SAGE_PILL }} title="Café credits">
           <span aria-hidden>☕</span> Café
         </span>
       ) : null}

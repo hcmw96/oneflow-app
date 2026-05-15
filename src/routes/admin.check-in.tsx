@@ -25,7 +25,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { awardClassesAttendedBadges } from "@/lib/badges";
 import {
-  fetchTheSageCreditProfileIds,
+  fetchRosterMemberAddonAccess,
   RosterAddonPills,
 } from "@/components/admin/RosterAddonPills";
 import { GuideActivePackagePills } from "@/components/admin/GuideActivePackagePills";
@@ -152,7 +152,7 @@ function CheckInPage() {
       return;
     }
 
-    const [{ data: bookingsData, error: bookingsError }, sageProfileIds] = await Promise.all([
+    const [{ data: bookingsData, error: bookingsError }, addonAccess] = await Promise.all([
       supabase
         .from("bookings")
         .select(
@@ -170,7 +170,7 @@ function CheckInPage() {
       `,
         )
         .in("class_id", classIds),
-      fetchTheSageCreditProfileIds(supabase),
+      fetchRosterMemberAddonAccess(supabase),
     ]);
 
     if (bookingsError) {
@@ -183,7 +183,7 @@ function CheckInPage() {
 
     const rows = (bookingsData ?? []) as unknown as BookingRow[];
     const normalized = rows
-      .map((row) => normalizeBooking(row, sageProfileIds))
+      .map((row) => normalizeBooking(row, addonAccess))
       .filter((r): r is RosterRow => r !== null);
     setRoster(normalized);
     setLoading(false);
