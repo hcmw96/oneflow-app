@@ -3,6 +3,8 @@ import { useEffect, useState } from "react";
 import { CalendarDays, Check, Loader2 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { getUser, supabase } from "@/lib/supabase";
+import { defaultAllowedClassTypesForCreditCategory } from "@/lib/allowedClassTypes";
+import { buildProductCreditRows } from "@/lib/multiCreditProducts";
 
 /** May challenge stamps are written on studio check-in (see upsertMayChallengeCheckIn), not here. */
 
@@ -189,22 +191,26 @@ function PaymentSuccessPage() {
         await new Promise((r) => setTimeout(r, 500));
       }
 
-      const insertRow = {
-        profile_id: profileId,
-        product_id: packId,
-        product_name: p.name,
-        category: p.category,
-        allowed_class_types: p.allowed_class_types,
-        credits_total: creditCount,
-        credits_remaining: creditCount,
-        is_unlimited: isUnlimited,
-        expires_at: p.validity_days
-          ? new Date(Date.now() + p.validity_days * 86400000).toISOString()
-          : null,
-        yoco_payment_id: checkoutId,
-      };
+      const expiresAt = p.validity_days
+        ? new Date(Date.now() + p.validity_days * 86400000).toISOString()
+        : null;
 
-      const { error: insertError } = await supabase.from("user_credits").insert(insertRow);
+      const creditRows = buildProductCreditRows({
+        productName: p.name,
+        profileId,
+        productId: packId,
+        expiresAt,
+        paymentId: checkoutId ?? "yoco_checkout",
+        category: p.category ?? "yoga",
+        allowedClassTypes: p.allowed_class_types?.length
+          ? p.allowed_class_types
+          : [...defaultAllowedClassTypesForCreditCategory(p.category)],
+        creditsTotal: creditCount,
+        creditsRemaining: creditCount,
+        isUnlimited,
+      });
+
+      const { error: insertError } = await supabase.from("user_credits").insert(creditRows);
 
       if (insertError) {
         console.error(insertError);
@@ -226,11 +232,13 @@ function PaymentSuccessPage() {
         used: flowPointsUsed,
       });
       if (!cancelled) {
+        const bundleUnlimited =
+          isUnlimited || creditRows.some((row) => row.is_unlimited);
         setState({
           status: "success",
           productName: p.name,
-          creditsAdded: isUnlimited ? 0 : creditCount,
-          isUnlimited,
+          creditsAdded: bundleUnlimited ? 0 : creditCount,
+          isUnlimited: bundleUnlimited,
         });
       }
     }

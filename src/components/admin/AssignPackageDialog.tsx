@@ -7,6 +7,7 @@ import {
   allowedClassTypeCheckboxOptions,
   defaultAllowedClassTypesForCreditCategory,
 } from "@/lib/allowedClassTypes";
+import { buildProductCreditRows } from "@/lib/multiCreditProducts";
 import {
   CREDIT_CATEGORY_ORDERED,
   PRODUCT_CATEGORY_SLUG_LABEL,
@@ -385,45 +386,44 @@ export function AssignPackageDialog({
         );
         continue;
       }
+      const expiresAt = product.validity_days
+        ? new Date(Date.now() + Math.trunc(product.validity_days) * 86400000).toISOString()
+        : null;
+      const creditRows = buildProductCreditRows({
+        productName: product.name,
+        profileId: t.profileId,
+        productId: product.id,
+        expiresAt,
+        paymentId: "manual_assignment",
+        purchasedAt,
+        category: product.category ?? "yoga",
+        allowedClassTypes: product.allowed_class_types?.length
+          ? product.allowed_class_types
+          : [...defaultAllowedClassTypesForCreditCategory(product.category)],
+        creditsTotal: total,
+        creditsRemaining: total,
+        isUnlimited,
+      });
+
       const { data: inserted, error } = await supabase
         .from("user_credits")
-        .insert({
-          profile_id: t.profileId,
-          product_id: product.id,
-          product_name: product.name,
-          category: product.category ?? "yoga",
-          allowed_class_types: product.allowed_class_types?.length
-            ? product.allowed_class_types
-            : [...defaultAllowedClassTypesForCreditCategory(product.category)],
-          credits_total: total,
-          credits_remaining: total,
-          is_unlimited: isUnlimited,
-          expires_at: product.validity_days
-            ? new Date(Date.now() + Math.trunc(product.validity_days) * 86400000).toISOString()
-            : null,
-          yoco_payment_id: "manual_assignment",
-          purchased_at: purchasedAt,
-        })
-        .select("id, product_name, credits_remaining, credits_total, is_unlimited, expires_at")
-        .maybeSingle();
+        .insert(creditRows)
+        .select("id, product_name, credits_remaining, credits_total, is_unlimited, expires_at");
 
       if (error) {
         recordPackageAssignFailure(t, "user_credits insert (existing product)", error, failures);
         continue;
       }
-      if (inserted) {
-        const row = inserted as AssignedCreditRow;
-        onCreditInserted?.(row, t.profileId);
+      const insertedRows = (inserted ?? []) as AssignedCreditRow[];
+      if (insertedRows[0]) {
+        onCreditInserted?.(insertedRows[0]!, t.profileId);
       }
 
       const first = (t.firstName?.trim() || t.displayName.split(/\s+/)[0] || "there") as string;
-      await sendPackageEmail(
-        t.email,
-        first,
-        product.name,
-        productCreditsLine(total, isUnlimited),
-        existingNote,
-      );
+      const creditsDesc = creditRows.some((r) => r.is_unlimited)
+        ? "Unlimited yoga studio credits plus Wellzone, Sauna Journey, and Café credits are now available."
+        : productCreditsLine(total, isUnlimited);
+      await sendPackageEmail(t.email, first, product.name, creditsDesc, existingNote);
     }
     setSubmitting(false);
     setConfirmOpen(false);
