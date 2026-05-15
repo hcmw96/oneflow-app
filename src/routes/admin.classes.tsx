@@ -62,6 +62,8 @@ export const Route = createFileRoute("/admin/classes")({
 
 const TZ = "Africa/Johannesburg";
 const GUIDE_NONE = "__none__";
+/** Edit / create class dialog: Radix forbids empty string SelectItem values. */
+const GUIDE_DIALOG_NONE = "none";
 
 const LOCATIONS = ["Studio 1", "Studio 2", "Wellzone", "Sauna"] as const;
 
@@ -241,7 +243,7 @@ function ClassesPage() {
   const [name, setName] = useState("");
   const [classType, setClassType] = useState<string>("yoga");
   const [location, setLocation] = useState<string>("Studio 1");
-  const [guideId, setGuideId] = useState<string>(GUIDE_NONE);
+  const [guideId, setGuideId] = useState<string>(GUIDE_DIALOG_NONE);
   const [dateStr, setDateStr] = useState(toDateInputValue(new Date()));
   const [startTime, setStartTime] = useState("09:00");
   const [endTime, setEndTime] = useState("10:00");
@@ -355,7 +357,11 @@ function ClassesPage() {
     const token = `${editingId}|${guideFkTarget}|${guides.length}`;
     if (editGuideSelectSyncRef.current === token) return;
     editGuideSelectSyncRef.current = token;
-    setGuideId(guidesTableIdForClassGuideId(c.guide_id, guides));
+    if (!c.guide_id) setGuideId(GUIDE_DIALOG_NONE);
+    else {
+      const tid = guidesTableIdForClassGuideId(c.guide_id, guides);
+      setGuideId(tid !== GUIDE_NONE ? tid : c.guide_id);
+    }
   }, [dialogOpen, editingId, guides, guideFkTarget, rows]);
 
   useEffect(() => {
@@ -551,7 +557,7 @@ function ClassesPage() {
     setName("");
     setClassType("yoga");
     setLocation("Studio 1");
-    setGuideId(GUIDE_NONE);
+    setGuideId(GUIDE_DIALOG_NONE);
     setDateStr(toDateInputValue(new Date()));
     setStartTime("09:00");
     setEndTime("10:00");
@@ -580,7 +586,11 @@ function ClassesPage() {
     setDescription(c.description ?? "");
     setDialogOpen(true);
     const sid = c.guide_id;
-    setGuideId(guidesTableIdForClassGuideId(sid, guides));
+    if (!sid) setGuideId(GUIDE_DIALOG_NONE);
+    else {
+      const tid = guidesTableIdForClassGuideId(sid, guides);
+      setGuideId(tid !== GUIDE_NONE ? tid : sid);
+    }
   };
 
   const validateForm = (): boolean => {
@@ -609,16 +619,20 @@ function ClassesPage() {
     const start = combineDateTimeLocal(dateStr, startTime);
     const end = combineDateTimeLocal(dateStr, endTime);
     const cap = Math.round(Number(capacity));
-    const selected = guides.find((g) => g.guide_id === guideId || g.profile_id === guideId);
-    const gid =
-      guideId === GUIDE_NONE
-        ? null
-        : selected
-          ? guideFkTarget === "profiles"
-            ? selected.profile_id
-            : selected.guide_id
-          : null;
-    const gName = gid ? (guideMap.get(gid) ?? null) : null;
+    let gid: string | null;
+    let gName: string | null;
+    if (guideId === "none" || guideId === GUIDE_DIALOG_NONE || guideId === GUIDE_NONE || !guideId) {
+      gid = null;
+      gName = null;
+    } else {
+      const selected = guides.find((g) => g.guide_id === guideId || g.profile_id === guideId);
+      gid = selected
+        ? guideFkTarget === "profiles"
+          ? selected.profile_id
+          : selected.guide_id
+        : null;
+      gName = gid ? (guideMap.get(gid) ?? null) : null;
+    }
 
     const base = {
       name: name.trim(),
@@ -1143,31 +1157,37 @@ function ClassesPage() {
               )}
               <Select
                 value={
-                  editingClass ? editingClass.guide_id || "" : guideId === GUIDE_NONE ? "" : guideId
+                  !guideId ||
+                  guideId === GUIDE_NONE ||
+                  guideId === GUIDE_DIALOG_NONE ||
+                  guideId === "none"
+                    ? "none"
+                    : guideId
                 }
-                onValueChange={(v) => setGuideId(v === "" ? GUIDE_NONE : v)}
+                onValueChange={setGuideId}
                 disabled={!canManage}
               >
                 <SelectTrigger>
                   <SelectValue
                     placeholder={
-                      editingClass
-                        ? editingClass.guide_id
-                          ? undefined
-                          : "No guide"
-                        : guideId === GUIDE_NONE
-                          ? "No guide"
-                          : undefined
+                      !guideId ||
+                      guideId === GUIDE_NONE ||
+                      guideId === GUIDE_DIALOG_NONE ||
+                      guideId === "none"
+                        ? "No guide"
+                        : undefined
                     }
                   />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">No guide</SelectItem>
-                  {guideOptions.map((g) => (
-                    <SelectItem key={g.guide_id} value={g.guide_id}>
-                      {g.label}
-                    </SelectItem>
-                  ))}
+                  <SelectItem value="none">No guide</SelectItem>
+                  {guideOptions
+                    .filter((g) => Boolean(g.guide_id?.trim()))
+                    .map((g) => (
+                      <SelectItem key={g.guide_id} value={g.guide_id}>
+                        {g.label}
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
             </div>
