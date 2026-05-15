@@ -62,9 +62,17 @@ import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import {
+  BUNDLE_COMPONENT_OPTIONS,
+  buildBundleComponentCreditRow,
+  type BundleComponentKind,
+} from "@/lib/multiCreditProducts";
+import {
   UNLIMITED_CREDIT_DISPLAY,
+  USER_CREDIT_ADMIN_SELECT,
   creditExpiresToDateInput,
   dateInputToCreditExpires,
+  partitionCreditsForDisplay,
+  type AdminCreditRow,
 } from "@/lib/userCreditAdmin";
 import { cn } from "@/lib/utils";
 
@@ -112,16 +120,7 @@ type ProfileRow = {
   is_active: boolean | null;
 };
 
-type CreditRow = {
-  id: string;
-  product_name: string | null;
-  credits_remaining: number | null;
-  credits_total: number | null;
-  is_unlimited: boolean | null;
-  expires_at: string | null;
-  yoco_payment_id?: string | null;
-  created_at?: string | null;
-};
+type CreditRow = AdminCreditRow;
 
 type CreditTransactionRow = {
   id: string;
@@ -204,6 +203,16 @@ export function CustomerProfileSheet({
   const [topUpAmount, setTopUpAmount] = useState("1");
   const [toppingUp, setToppingUp] = useState(false);
 
+  const [addComponentGroup, setAddComponentGroup] = useState<{
+    productId: string;
+    title: string;
+  } | null>(null);
+  const [addComponentKind, setAddComponentKind] = useState<BundleComponentKind>("wellzone");
+  const [addComponentCredits, setAddComponentCredits] = useState("10");
+  const [addComponentUnlimited, setAddComponentUnlimited] = useState(false);
+  const [addComponentExpires, setAddComponentExpires] = useState("");
+  const [addingComponent, setAddingComponent] = useState(false);
+
   const [creditTransactions, setCreditTransactions] = useState<CreditTransactionRow[]>([]);
   const [secondaryPopoverOpen, setSecondaryPopoverOpen] = useState(false);
   const [secondaryDraft, setSecondaryDraft] = useState<string[]>([]);
@@ -247,9 +256,7 @@ export function CustomerProfileSheet({
     const [{ data: cr }, { data: bk }] = await Promise.all([
       supabase
         .from("user_credits")
-        .select(
-          "id, product_name, credits_remaining, credits_total, is_unlimited, expires_at, yoco_payment_id, created_at",
-        )
+        .select(USER_CREDIT_ADMIN_SELECT)
         .eq("profile_id", customerId)
         .order("created_at", { ascending: false }),
       supabase
@@ -469,10 +476,74 @@ export function CustomerProfileSheet({
     if (pendingRole) void applyRole(pendingRole);
   };
 
+  const creditDisplayEntries = useMemo(
+    () => partitionCreditsForDisplay(credits),
+    [credits],
+  );
+
   const removeCreditTarget = useMemo(
     () => credits.find((c) => c.id === removeCreditId) ?? null,
     [credits, removeCreditId],
   );
+
+  const openAddComponent = (productId: string, title: string, rows: CreditRow[]) => {
+    const sampleExpiry = rows.find((r) => r.expires_at)?.expires_at ?? null;
+    setAddComponentGroup({ productId, title });
+    setAddComponentKind("wellzone");
+    setAddComponentCredits("10");
+    setAddComponentUnlimited(false);
+    setAddComponentExpires(creditExpiresToDateInput(sampleExpiry));
+  };
+
+  const confirmAddComponent = async () => {
+    if (!addComponentGroup || !customerId || !canManage) return;
+    const isAccessOnly = addComponentKind === "mat" || addComponentKind === "towel";
+    const unlimited = addComponentUnlimited || isAccessOnly;
+    let total = unlimited ? UNLIMITED_CREDIT_DISPLAY : Math.trunc(Number(addComponentCredits));
+    if (!unlimited && (!Number.isFinite(total) || total < 1)) {
+      toast.error("Enter at least 1 credit.");
+      return;
+    }
+    if (isAccessOnly && !addComponentUnlimited) {
+      total = 1;
+    }
+    setAddingComponent(true);
+    const insertRow = buildBundleComponentCreditRow({
+      profileId: customerId,
+      productId: addComponentGroup.productId,
+      bundleTitle: addComponentGroup.title,
+      component: addComponentKind,
+      creditsTotal: total,
+      creditsRemaining: total,
+      isUnlimited: unlimited,
+      expiresAt: dateInputToCreditExpires(addComponentExpires),
+      paymentId: "manual_component",
+      purchasedAt: new Date().toISOString(),
+    });
+    const { data, error } = await supabase
+      .from("user_credits")
+      .insert(insertRow)
+      .select(USER_CREDIT_ADMIN_SELECT)
+      .maybeSingle();
+    setAddingComponent(false);
+    if (error || !data) {
+      console.error("add bundle component failed", error);
+      toast.error(supabaseErrorMessage(error, "Could not add component"));
+      return;
+    }
+    const inserted = data as CreditRow;
+    const now = Date.now();
+    if (isCreditActive(inserted, now)) {
+      setCredits((prev) => {
+        if (prev.some((c) => c.id === inserted.id)) return prev;
+        return [...prev, inserted];
+      });
+    }
+    setAddComponentGroup(null);
+    toast.success("Component added");
+    onProfileUpdated?.();
+    void load();
+  };
 
   const openEditCredit = (row: CreditRow) => {
     setEditCredit(row);
@@ -512,9 +583,7 @@ export function CustomerProfileSheet({
         is_unlimited: unlimited,
       })
       .eq("id", editCredit.id)
-      .select(
-        "id, product_name, credits_remaining, credits_total, is_unlimited, expires_at, yoco_payment_id, created_at",
-      )
+      .select(USER_CREDIT_ADMIN_SELECT)
       .maybeSingle();
     setSavingEdit(false);
     if (error || !data) {
@@ -550,9 +619,7 @@ export function CustomerProfileSheet({
         credits_total: tot + add,
       })
       .eq("id", topUpCredit.id)
-      .select(
-        "id, product_name, credits_remaining, credits_total, is_unlimited, expires_at, yoco_payment_id, created_at",
-      )
+      .select(USER_CREDIT_ADMIN_SELECT)
       .maybeSingle();
     setToppingUp(false);
     if (error || !data) {
@@ -586,6 +653,109 @@ export function CustomerProfileSheet({
     toast.success("Package removed");
     onProfileUpdated?.();
   };
+
+  const componentRowLabel = (row: CreditRow, bundleTitle: string) => {
+    const name = row.product_name ?? "Component";
+    const prefix = `${bundleTitle} - `;
+    if (name.startsWith(prefix)) return name.slice(prefix.length);
+    if (name.includes(" - ")) return name.split(" - ").pop() ?? name;
+    return name;
+  };
+
+  const renderCreditRow = (c: CreditRow, opts?: { bundleTitle?: string; nested?: boolean }) => {
+    const totalNum = c.credits_total;
+    const totalLabel =
+      totalNum == null || !Number.isFinite(Number(totalNum)) ? "—" : String(totalNum);
+    const remLabel = c.is_unlimited ? "∞" : String(c.credits_remaining ?? 0);
+    const title = opts?.bundleTitle
+      ? componentRowLabel(c, opts.bundleTitle)
+      : (c.product_name ?? "Pass");
+    const showMat = c.mat_access === true;
+    const showTowel = c.towel_access === true;
+
+    return (
+      <div
+        className={cn(
+          "flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm",
+          opts?.nested ? "bg-background/60" : "rounded-lg border border-border bg-muted/30",
+        )}
+      >
+        <div className="min-w-0">
+          <p className="font-medium">{title}</p>
+          <p className="text-xs text-muted-foreground">
+            {c.is_unlimited ? (
+              <span>Unlimited</span>
+            ) : (
+              <span>
+                {remLabel} / {totalLabel} credits
+              </span>
+            )}
+            {c.expires_at
+              ? ` · Exp ${new Date(c.expires_at).toLocaleDateString("en-ZA")}`
+              : " · No expiry"}
+          </p>
+          <div className="mt-1 flex flex-wrap gap-1">
+            {c.is_unlimited ? (
+              <span className="inline-flex rounded-full bg-[#a3b693]/20 px-2 py-0.5 text-[10px] font-semibold uppercase text-[#5f6b52]">
+                Unlimited
+              </span>
+            ) : null}
+            {showMat ? (
+              <span className="inline-flex rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                Mat
+              </span>
+            ) : null}
+            {showTowel ? (
+              <span className="inline-flex rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                Towel
+              </span>
+            ) : null}
+          </div>
+          </div>
+        <div className="flex shrink-0 flex-wrap items-center gap-1">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1 px-2 text-xs"
+            disabled={!canManage}
+            onClick={() => openEditCredit(c)}
+          >
+            <Pencil className="h-3 w-3 shrink-0" aria-hidden />
+            Edit
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1 px-2 text-xs"
+            disabled={!canManage || c.is_unlimited === true}
+            onClick={() => {
+              setTopUpCredit(c);
+              setTopUpAmount("1");
+            }}
+          >
+            <Plus className="h-3 w-3 shrink-0" aria-hidden />
+            Top up
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1 px-2 text-xs text-destructive hover:bg-destructive/10"
+            disabled={!canManage}
+            onClick={() => setRemoveCreditId(c.id)}
+          >
+            <Trash2 className="h-3 w-3 shrink-0" aria-hidden />
+            Remove
+          </Button>
+        </div>
+      </div>
+    );
+  };
+
+  const addComponentAccessOnly =
+    addComponentKind === "mat" || addComponentKind === "towel";
 
   return (
     <>
@@ -865,75 +1035,45 @@ export function CustomerProfileSheet({
                 {credits.length === 0 ? (
                   <p className="text-sm text-muted-foreground">No active credits.</p>
                 ) : (
-                  <ul className="space-y-2">
-                    {credits.map((c) => {
-                      const totalNum = c.credits_total;
-                      const totalLabel =
-                        totalNum == null || !Number.isFinite(Number(totalNum)) ? "—" : String(totalNum);
-                      const remLabel = c.is_unlimited ? "∞" : String(c.credits_remaining ?? 0);
+                  <ul className="space-y-3">
+                    {creditDisplayEntries.map((entry) => {
+                      if (entry.kind === "standalone") {
+                        return (
+                          <li key={entry.row.id}>{renderCreditRow(entry.row)}</li>
+                        );
+                      }
+                      const { group } = entry;
                       return (
                         <li
-                          key={c.id}
-                          className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm"
+                          key={group.productId}
+                          className="overflow-hidden rounded-lg border border-border bg-muted/20"
                         >
-                          <div className="min-w-0">
-                            <p className="font-medium">{c.product_name ?? "Pass"}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {c.is_unlimited ? (
-                                <span>Unlimited</span>
-                              ) : (
-                                <span>
-                                  {remLabel} / {totalLabel} credits
-                                </span>
-                              )}
-                              {c.expires_at
-                                ? ` · Exp ${new Date(c.expires_at).toLocaleDateString("en-ZA")}`
-                                : " · No expiry"}
-                            </p>
-                            {c.is_unlimited ? (
-                              <span className="mt-1 inline-flex rounded-full bg-[#a3b693]/20 px-2 py-0.5 text-[10px] font-semibold uppercase text-[#5f6b52]">
-                                Unlimited
-                              </span>
-                            ) : null}
-                          </div>
-                          <div className="flex shrink-0 flex-wrap items-center gap-1">
+                          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-muted/40 px-3 py-2">
+                            <p className="font-display text-sm font-semibold">{group.title}</p>
                             <Button
                               type="button"
                               variant="outline"
                               size="sm"
                               className="h-8 gap-1 px-2 text-xs"
                               disabled={!canManage}
-                              onClick={() => openEditCredit(c)}
-                            >
-                              <Pencil className="h-3 w-3 shrink-0" aria-hidden />
-                              Edit
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="h-8 gap-1 px-2 text-xs"
-                              disabled={!canManage || c.is_unlimited === true}
-                              onClick={() => {
-                                setTopUpCredit(c);
-                                setTopUpAmount("1");
-                              }}
+                              onClick={() =>
+                                openAddComponent(group.productId, group.title, group.rows)
+                              }
                             >
                               <Plus className="h-3 w-3 shrink-0" aria-hidden />
-                              Top up
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="h-8 gap-1 px-2 text-xs text-destructive hover:bg-destructive/10"
-                              disabled={!canManage}
-                              onClick={() => setRemoveCreditId(c.id)}
-                            >
-                              <Trash2 className="h-3 w-3 shrink-0" aria-hidden />
-                              Remove
+                              Add component
                             </Button>
                           </div>
+                          <ul className="divide-y divide-border">
+                            {group.rows.map((c) => (
+                              <li key={c.id}>
+                                {renderCreditRow(c, {
+                                  bundleTitle: group.title,
+                                  nested: true,
+                                })}
+                              </li>
+                            ))}
+                          </ul>
                         </li>
                       );
                     })}
@@ -1111,11 +1251,15 @@ export function CustomerProfileSheet({
           const now = Date.now();
           const nextRow: CreditRow = {
             id: row.id,
+            product_id: row.product_id ?? null,
             product_name: row.product_name,
+            category: row.category ?? null,
             credits_remaining: row.credits_remaining,
             credits_total: row.credits_total,
             is_unlimited: row.is_unlimited,
             expires_at: row.expires_at,
+            mat_access: row.mat_access ?? false,
+            towel_access: row.towel_access ?? false,
           };
           if (!isCreditActive(nextRow, now)) return;
           setCredits((prev) => {
@@ -1168,6 +1312,100 @@ export function CustomerProfileSheet({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog
+        open={addComponentGroup !== null}
+        onOpenChange={(o) => {
+          if (!o) setAddComponentGroup(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add credits to this package</DialogTitle>
+          </DialogHeader>
+          {addComponentGroup ? (
+            <div className="grid gap-4 py-2">
+              <p className="text-sm text-muted-foreground">
+                Add a component to{" "}
+                <span className="font-medium text-foreground">{addComponentGroup.title}</span>.
+              </p>
+              <div className="grid gap-1.5">
+                <Label>Type</Label>
+                <Select
+                  value={addComponentKind}
+                  onValueChange={(v) => {
+                    const kind = v as BundleComponentKind;
+                    setAddComponentKind(kind);
+                    if (kind === "mat" || kind === "towel") {
+                      setAddComponentUnlimited(true);
+                    }
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {BUNDLE_COMPONENT_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2">
+                <Label htmlFor="add-component-unlimited">Unlimited</Label>
+                <Switch
+                  id="add-component-unlimited"
+                  checked={addComponentUnlimited || addComponentAccessOnly}
+                  disabled={addComponentAccessOnly}
+                  onCheckedChange={setAddComponentUnlimited}
+                />
+              </div>
+              {!addComponentUnlimited && !addComponentAccessOnly ? (
+                <div className="grid gap-1.5">
+                  <Label htmlFor="add-component-credits">Number of credits</Label>
+                  <Input
+                    id="add-component-credits"
+                    type="number"
+                    min={1}
+                    value={addComponentCredits}
+                    onChange={(e) => setAddComponentCredits(e.target.value)}
+                  />
+                </div>
+              ) : addComponentAccessOnly ? (
+                <p className="text-xs text-muted-foreground">
+                  Mat and towel components grant ongoing access for this package period.
+                </p>
+              ) : null}
+              <div className="grid gap-1.5">
+                <Label htmlFor="add-component-expires">Expiry date</Label>
+                <Input
+                  id="add-component-expires"
+                  type="date"
+                  value={addComponentExpires}
+                  onChange={(e) => setAddComponentExpires(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">Leave empty for no expiry.</p>
+              </div>
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setAddComponentGroup(null)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              className="bg-[#a3b693] text-white hover:bg-[#8fa67d]"
+              disabled={addingComponent || !canManage}
+              onClick={() => void confirmAddComponent()}
+            >
+              {addingComponent ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              Confirm
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={editCredit !== null}

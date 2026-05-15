@@ -161,6 +161,122 @@ export function getMainCreditOverridesForProduct(
   return null;
 }
 
+export type BundleComponentKind = "yoga" | "wellzone" | "cafe" | "mat" | "towel";
+
+export const BUNDLE_COMPONENT_OPTIONS: { value: BundleComponentKind; label: string }[] = [
+  { value: "yoga", label: "Yoga" },
+  { value: "wellzone", label: "Wellzone" },
+  { value: "cafe", label: "Café" },
+  { value: "mat", label: "Mat Storage" },
+  { value: "towel", label: "Towel Service" },
+];
+
+export function resolveBundlePackageTitle(productId: string, rows: { product_name: string | null }[]): string {
+  if (isTheSeekerProduct(productId, "")) return "The Seeker";
+  if (isTheSageProduct(productId, "")) return "The Sage";
+  for (const row of rows) {
+    const name = row.product_name ?? "";
+    if (isTheSeekerProduct(productId, name)) return "The Seeker";
+    if (isTheSageProduct(productId, name)) return "The Sage";
+  }
+  return rows[0]?.product_name?.split(" - ")[0]?.trim() || "Package";
+}
+
+export function creditRowBelongsToBundle(
+  row: { product_id?: string | null; product_name?: string | null },
+): boolean {
+  const pid = row.product_id?.trim();
+  if (!pid) return false;
+  return isMultiCreditBundleProduct(pid, row.product_name ?? "");
+}
+
+export function bundleComponentSortKey(row: {
+  product_name?: string | null;
+  category?: string | null;
+  mat_access?: boolean | null;
+  towel_access?: boolean | null;
+}): number {
+  const name = (row.product_name ?? "").toLowerCase();
+  if (row.mat_access || name.includes("mat")) return 4;
+  if (row.towel_access || name.includes("towel")) return 5;
+  if (row.category === "cafe" || name.includes("café") || name.includes("cafe")) return 3;
+  if (row.category === "wellzone" || name.includes("wellzone") || name.includes("sauna")) return 2;
+  return 1;
+}
+
+export function buildBundleComponentCreditRow(args: {
+  profileId: string;
+  productId: string;
+  bundleTitle: string;
+  component: BundleComponentKind;
+  creditsTotal: number;
+  creditsRemaining: number;
+  isUnlimited: boolean;
+  expiresAt: string | null;
+  paymentId?: string;
+  purchasedAt?: string;
+}): UserCreditInsertRow {
+  const paymentId = args.paymentId ?? "manual_component";
+  const title = args.bundleTitle.trim();
+  const base: UserCreditInsertRow = {
+    profile_id: args.profileId,
+    product_id: args.productId,
+    product_name: title,
+    category: "yoga",
+    allowed_class_types: [],
+    credits_total: args.creditsTotal,
+    credits_remaining: args.creditsRemaining,
+    is_unlimited: args.isUnlimited,
+    expires_at: args.expiresAt,
+    yoco_payment_id: paymentId,
+    mat_access: false,
+    towel_access: false,
+    ...(args.purchasedAt ? { purchased_at: args.purchasedAt } : {}),
+  };
+
+  switch (args.component) {
+    case "yoga":
+      return {
+        ...base,
+        product_name: `${title} - Yoga`,
+        category: "yoga",
+        allowed_class_types: [...SEEKER_YOGA_CLASS_TYPES],
+      };
+    case "wellzone":
+      return {
+        ...base,
+        product_name: `${title} - Wellzone`,
+        category: "wellzone",
+        allowed_class_types: [...WELLZONE_CLASS_TYPES],
+      };
+    case "cafe":
+      return {
+        ...base,
+        product_name: `${title} - Café`,
+        category: "cafe",
+        allowed_class_types: [],
+      };
+    case "mat":
+      return {
+        ...base,
+        product_name: `${title} - Mat Storage`,
+        category: "yoga",
+        allowed_class_types: [],
+        mat_access: true,
+      };
+    case "towel":
+      return {
+        ...base,
+        product_name: `${title} - Towel Service`,
+        category: "yoga",
+        allowed_class_types: [],
+        towel_access: true,
+      };
+    default:
+      return base;
+  }
+}
+
 export function buildProductCreditRows(args: {
   productName: string;
   profileId: string;

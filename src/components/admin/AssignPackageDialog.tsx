@@ -8,6 +8,7 @@ import {
   defaultAllowedClassTypesForCreditCategory,
 } from "@/lib/allowedClassTypes";
 import { buildProductCreditRows } from "@/lib/multiCreditProducts";
+import { USER_CREDIT_ADMIN_SELECT } from "@/lib/userCreditAdmin";
 import {
   CREDIT_CATEGORY_ORDERED,
   PRODUCT_CATEGORY_SLUG_LABEL,
@@ -147,11 +148,15 @@ function formatAssignedCreditSummary(row: AssignedCreditRow): string {
 
 export type AssignedCreditRow = {
   id: string;
+  product_id: string | null;
   product_name: string | null;
+  category: string | null;
   credits_remaining: number | null;
   credits_total: number | null;
   is_unlimited: boolean | null;
   expires_at: string | null;
+  mat_access?: boolean | null;
+  towel_access?: boolean | null;
 };
 
 type Props = {
@@ -423,7 +428,7 @@ export function AssignPackageDialog({
       const { data: inserted, error } = await supabase
         .from("user_credits")
         .insert(creditRows)
-        .select("id, product_name, credits_remaining, credits_total, is_unlimited, expires_at");
+        .select(USER_CREDIT_ADMIN_SELECT);
 
       if (error) {
         recordPackageAssignFailure(t, "user_credits insert (existing product)", error, failures);
@@ -563,7 +568,7 @@ export function AssignPackageDialog({
           yoco_payment_id: "manual_assignment",
           purchased_at: purchasedAt,
         })
-        .select("id, product_name, credits_remaining, credits_total, is_unlimited, expires_at")
+        .select(USER_CREDIT_ADMIN_SELECT)
         .maybeSingle();
 
       if (error) {
