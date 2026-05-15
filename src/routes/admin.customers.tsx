@@ -250,7 +250,7 @@ function CustomersPage() {
     is_active,
     created_at,
     waiver_accepted_at,
-    user_credits (
+    user_credits!user_credits_profile_id_fkey (
       product_name,
       category,
       credits_remaining,
