@@ -33,6 +33,7 @@ import {
 } from "@/components/ui/select";
 import { getUser, supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
+import { normalizeProductCategoryKey } from "@/lib/productCategories";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/admin/customers")({
@@ -77,6 +78,57 @@ function mergeCreditsAfterAssign(prev: number, row: AssignedCreditRow): number {
   const add = row.credits_remaining ?? 0;
   if (prev >= 999) return 999;
   return prev + add;
+}
+
+type EmbeddedCreditRow = {
+  product_name: string | null;
+  category: string | null;
+  credits_remaining: number | null;
+  is_unlimited: boolean | null;
+  expires_at: string | null;
+};
+
+/** all_access > yoga > wellzone (other categories sort last). */
+function categoryPlanPriority(category: string | null | undefined): number {
+  const k = normalizeProductCategoryKey(category);
+  if (k === "all_access") return 3;
+  if (k === "yoga") return 2;
+  if (k === "wellzone") return 1;
+  return 0;
+}
+
+function isCreditActive(c: EmbeddedCreditRow, nowMs: number): boolean {
+  const exp = c.expires_at;
+  if (exp != null && String(exp).trim() !== "") {
+    const t = new Date(exp).getTime();
+    if (!Number.isNaN(t) && t <= nowMs) return false;
+  }
+  if (c.is_unlimited) return true;
+  const rem = Number(c.credits_remaining);
+  return Number.isFinite(rem) && rem > 0;
+}
+
+function unwrapProfileCredits(raw: unknown): EmbeddedCreditRow[] {
+  if (!Array.isArray(raw)) return [];
+  return raw as EmbeddedCreditRow[];
+}
+
+function activeCreditsForProfile(credits: EmbeddedCreditRow[], nowMs: number): EmbeddedCreditRow[] {
+  return credits.filter((c) => isCreditActive(c, nowMs));
+}
+
+function planLabelFromActiveCredits(active: EmbeddedCreditRow[]): string {
+  if (active.length === 0) return "No plan";
+  const sorted = [...active].sort(
+    (a, b) => categoryPlanPriority(b.category) - categoryPlanPriority(a.category),
+  );
+  const name = sorted[0]?.product_name?.trim();
+  return name || "—";
+}
+
+function totalCreditsRemainingActive(active: EmbeddedCreditRow[]): number {
+  if (active.some((c) => c.is_unlimited)) return 999;
+  return active.reduce((sum, c) => sum + (Number(c.credits_remaining) || 0), 0);
 }
 
 const ROLE_LABEL: Record<string, string> = {
@@ -184,13 +236,34 @@ function CustomersPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    const nowMs = Date.now();
     const { data: profiles, error: pErr } = await supabase
       .from("profiles")
-      .select("id, first_name, last_name, email, phone, role, waiver_accepted_at, created_at")
+      .select(
+        `
+    id,
+    first_name,
+    last_name,
+    email,
+    phone,
+    role,
+    is_active,
+    created_at,
+    waiver_accepted_at,
+    user_credits (
+      product_name,
+      category,
+      credits_remaining,
+      is_unlimited,
+      expires_at
+    )
+  `.trim(),
+      )
       .order("first_name", { ascending: true });
 
     if (pErr) {
       console.error(pErr);
+      toast.error(supabaseErrorMessage(pErr, "Could not load customers"));
       setMembers([]);
       setLoading(false);
       return;
@@ -208,36 +281,21 @@ function CustomersPage() {
         if (pid) bookedIds.add(pid);
       }
     }
-    const creditByProfile: Record<string, number> = {};
-    if (ids.length) {
-      const { data: credits } = await supabase
-        .from("user_credits")
-        .select("profile_id, credits_remaining, is_unlimited")
-        .in("profile_id", ids);
-
-      for (const row of credits ?? []) {
-        const pid = row.profile_id as string;
-        if (row.is_unlimited) {
-          creditByProfile[pid] = 999;
-          continue;
-        }
-        const n = Number(row.credits_remaining) || 0;
-        creditByProfile[pid] = (creditByProfile[pid] ?? 0) + n;
-      }
-    }
 
     const rows: MemberRow[] = (profiles ?? []).map((p: Record<string, unknown>) => {
       const id = String(p.id);
       const name = [p.first_name, p.last_name].filter(Boolean).join(" ").trim() || "Member";
       const waiverAt = p.waiver_accepted_at as string | null | undefined;
+      const embedded = unwrapProfileCredits(p.user_credits);
+      const active = activeCreditsForProfile(embedded, nowMs);
       return {
         id,
         name,
         email: String(p.email ?? "—"),
         phone: String(p.phone ?? "—"),
         role: String(p.role ?? "customer").toLowerCase(),
-        plan: "—",
-        credits: creditByProfile[id] ?? 0,
+        plan: planLabelFromActiveCredits(active),
+        credits: totalCreditsRemainingActive(active),
         lastVisit: "—",
         status: "active" as const,
         waiverSigned: Boolean(waiverAt),
@@ -319,8 +377,7 @@ function CustomersPage() {
     );
   };
 
-  const allFilteredSelected =
-    filtered.length > 0 && filtered.every((m) => selectedSet.has(m.id));
+  const allFilteredSelected = filtered.length > 0 && filtered.every((m) => selectedSet.has(m.id));
   const someFilteredSelected = filtered.some((m) => selectedSet.has(m.id));
 
   const toggleSelectAllFiltered = () => {
@@ -365,9 +422,13 @@ function CustomersPage() {
     const header = ["Name", "Email", "Phone", "Role", "Credits"].join(",");
     const body = rows
       .map((m) =>
-        [esc(m.name), esc(m.email), esc(m.phone), esc(m.role), String(m.credits >= 999 ? "Unlimited" : m.credits)].join(
-          ",",
-        ),
+        [
+          esc(m.name),
+          esc(m.email),
+          esc(m.phone),
+          esc(m.role),
+          String(m.credits >= 999 ? "Unlimited" : m.credits),
+        ].join(","),
       )
       .join("\n");
     const csv = `${header}\n${body}`;
@@ -546,7 +607,8 @@ function CustomersPage() {
                   value={firstName}
                   onChange={(e) => {
                     setFirstName(e.target.value);
-                    if (addFieldErrors.firstName) setAddFieldErrors((e) => ({ ...e, firstName: undefined }));
+                    if (addFieldErrors.firstName)
+                      setAddFieldErrors((e) => ({ ...e, firstName: undefined }));
                   }}
                   autoComplete="given-name"
                   aria-invalid={Boolean(addFieldErrors.firstName)}
@@ -562,7 +624,8 @@ function CustomersPage() {
                   value={lastName}
                   onChange={(e) => {
                     setLastName(e.target.value);
-                    if (addFieldErrors.lastName) setAddFieldErrors((e) => ({ ...e, lastName: undefined }));
+                    if (addFieldErrors.lastName)
+                      setAddFieldErrors((e) => ({ ...e, lastName: undefined }));
                   }}
                   autoComplete="family-name"
                   aria-invalid={Boolean(addFieldErrors.lastName)}
@@ -685,7 +748,12 @@ function CustomersPage() {
             </div>
           </div>
           <DialogFooter className="flex-col gap-2 sm:flex-row">
-            <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => setMessageOpen(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full sm:w-auto"
+              onClick={() => setMessageOpen(false)}
+            >
               Cancel
             </Button>
             <Button
@@ -761,7 +829,11 @@ function CustomersPage() {
               ["Has credits", chipHasCredits, () => setChipHasCredits((v) => !v)] as const,
               ["No credits", chipNoCredits, () => setChipNoCredits((v) => !v)] as const,
               ["Never booked", chipNeverBooked, () => setChipNeverBooked((v) => !v)] as const,
-              ["Waiver not signed", chipWaiverUnsigned, () => setChipWaiverUnsigned((v) => !v)] as const,
+              [
+                "Waiver not signed",
+                chipWaiverUnsigned,
+                () => setChipWaiverUnsigned((v) => !v),
+              ] as const,
               ["Joined this month", chipJoinedMonth, () => setChipJoinedMonth((v) => !v)] as const,
             ] as const
           ).map(([label, on, toggle]) => (
@@ -998,10 +1070,20 @@ function CustomersPage() {
               >
                 Send message
               </Button>
-              <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={exportSelectedMembersCsv}>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full sm:w-auto"
+                onClick={exportSelectedMembersCsv}
+              >
                 Export selected
               </Button>
-              <Button type="button" variant="ghost" className="w-full sm:w-auto" onClick={clearMemberSelection}>
+              <Button
+                type="button"
+                variant="ghost"
+                className="w-full sm:w-auto"
+                onClick={clearMemberSelection}
+              >
                 Clear selection
               </Button>
             </div>
