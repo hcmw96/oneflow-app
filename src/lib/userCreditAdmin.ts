@@ -24,6 +24,45 @@ export function dateInputToCreditExpires(value: string): string | null {
   return d.toISOString();
 }
 
+/** Parse date input to start-of-day UTC ISO (or null if empty). */
+export function dateInputToCreditPurchased(value: string): string | null {
+  const v = value.trim();
+  if (!v) return null;
+  const d = new Date(`${v}T00:00:00.000Z`);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString();
+}
+
+export function todayCreditDateInput(): string {
+  return creditExpiresToDateInput(new Date().toISOString());
+}
+
+/** Add calendar days to a date input value; returns another `YYYY-MM-DD` string. */
+export function addDaysToCreditDateInput(startDateInput: string, days: number): string {
+  const startIso = dateInputToCreditPurchased(startDateInput);
+  if (!startIso || !Number.isFinite(days) || days < 1) return "";
+  const d = new Date(startIso);
+  d.setUTCDate(d.getUTCDate() + Math.trunc(days));
+  return creditExpiresToDateInput(d.toISOString());
+}
+
+export function resolveAssignCreditPeriod(
+  startDateInput: string,
+  endDateInput: string,
+): { ok: true; purchasedAt: string; expiresAt: string | null } | { ok: false; message: string } {
+  const purchasedAt =
+    dateInputToCreditPurchased(startDateInput) ?? new Date().toISOString();
+  const expiresAt = dateInputToCreditExpires(endDateInput);
+  if (startDateInput.trim() && endDateInput.trim() && expiresAt) {
+    const startMs = new Date(purchasedAt).getTime();
+    const endMs = new Date(expiresAt).getTime();
+    if (Number.isFinite(startMs) && Number.isFinite(endMs) && endMs < startMs) {
+      return { ok: false, message: "End date must be on or after the start date." };
+    }
+  }
+  return { ok: true, purchasedAt, expiresAt };
+}
+
 export const UNLIMITED_CREDIT_DISPLAY = 999;
 
 /** Columns loaded for admin profile credit management. */

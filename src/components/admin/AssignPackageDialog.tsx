@@ -16,7 +16,12 @@ import {
   type BundleComponentKind,
   type UserCreditInsertRow,
 } from "@/lib/multiCreditProducts";
-import { USER_CREDIT_ADMIN_SELECT } from "@/lib/userCreditAdmin";
+import {
+  USER_CREDIT_ADMIN_SELECT,
+  addDaysToCreditDateInput,
+  resolveAssignCreditPeriod,
+  todayCreditDateInput,
+} from "@/lib/userCreditAdmin";
 import {
   CREDIT_CATEGORY_ORDERED,
   PRODUCT_CATEGORY_SLUG_LABEL,
@@ -149,6 +154,50 @@ function newBundleExtraDraft(kind: BundleComponentKind = "cafe"): BundleExtraDra
   };
 }
 
+function PackagePeriodFields({
+  idPrefix,
+  startDate,
+  endDate,
+  onStartChange,
+  onEndChange,
+}: {
+  idPrefix: string;
+  startDate: string;
+  endDate: string;
+  onStartChange: (value: string) => void;
+  onEndChange: (value: string) => void;
+}) {
+  return (
+    <div className="grid gap-3 rounded-lg border border-border bg-muted/15 p-3 sm:grid-cols-2">
+      <div className="grid gap-1.5 sm:col-span-2">
+        <p className="text-sm font-medium">Package period</p>
+        <p className="text-xs text-muted-foreground">
+          Start defaults to today. End is prefilled from product validity when available.
+        </p>
+      </div>
+      <div className="grid gap-1.5">
+        <Label htmlFor={`${idPrefix}-start`}>Start date</Label>
+        <Input
+          id={`${idPrefix}-start`}
+          type="date"
+          value={startDate}
+          onChange={(e) => onStartChange(e.target.value)}
+        />
+      </div>
+      <div className="grid gap-1.5">
+        <Label htmlFor={`${idPrefix}-end`}>End date</Label>
+        <Input
+          id={`${idPrefix}-end`}
+          type="date"
+          value={endDate}
+          onChange={(e) => onEndChange(e.target.value)}
+        />
+        <p className="text-xs text-muted-foreground">Leave empty for no expiry.</p>
+      </div>
+    </div>
+  );
+}
+
 function bundleRowSummary(row: UserCreditInsertRow): string {
   if (row.mat_access && !row.is_unlimited) return "Mat access";
   if (row.towel_access && !row.is_unlimited) return "Towel access";
@@ -217,6 +266,8 @@ export function AssignPackageDialog({
   const [existingCategory, setExistingCategory] = useState<string>("");
   const [selectedProductId, setSelectedProductId] = useState<string>("");
   const [existingNote, setExistingNote] = useState("");
+  const [assignStartDate, setAssignStartDate] = useState("");
+  const [assignEndDate, setAssignEndDate] = useState("");
 
   const [customName, setCustomName] = useState("");
   const [customCategory, setCustomCategory] = useState<CreditCategoryOrdered>("yoga");
@@ -256,6 +307,8 @@ export function AssignPackageDialog({
     setExistingCategory("");
     setSelectedProductId("");
     setExistingNote("");
+    setAssignStartDate(todayCreditDateInput());
+    setAssignEndDate("");
     setCustomName("");
     setCustomCategory("yoga");
     setCustomCredits("10");
@@ -355,10 +408,7 @@ export function AssignPackageDialog({
         : Number(selectedProduct.credit_count ?? 0);
     const isUnlimited = rawCount >= UNLIMITED_PRODUCT_THRESHOLD;
     const total = isUnlimited ? rawCount : Math.trunc(rawCount);
-    const validityDays = selectedProduct.validity_days;
-    const expiresAt = validityDays
-      ? new Date(Date.now() + Math.trunc(validityDays) * 86400000).toISOString()
-      : null;
+    const expiresAt = resolvedAssignPeriod.ok ? resolvedAssignPeriod.expiresAt : null;
     return buildProductCreditRows({
       productName: selectedProduct.name,
       profileId: "00000000-0000-4000-8000-000000000000",
@@ -373,11 +423,37 @@ export function AssignPackageDialog({
       creditsRemaining: total,
       isUnlimited,
     });
-  }, [selectedProduct, isBundleAssign]);
+  }, [selectedProduct, isBundleAssign, resolvedAssignPeriod]);
 
   useEffect(() => {
     setBundleExtras([]);
   }, [selectedProductId]);
+
+  useEffect(() => {
+    if (!selectedProductId) return;
+    const product = products.find((p) => p.id === selectedProductId);
+    if (!product) return;
+    const start = todayCreditDateInput();
+    setAssignStartDate(start);
+    setAssignEndDate(
+      product.validity_days && product.validity_days > 0
+        ? addDaysToCreditDateInput(start, product.validity_days)
+        : "",
+    );
+  }, [selectedProductId, products]);
+
+  const resolvedAssignPeriod = useMemo(
+    () => resolveAssignCreditPeriod(assignStartDate, assignEndDate),
+    [assignStartDate, assignEndDate],
+  );
+
+  const validateAssignPeriod = (): boolean => {
+    if (!resolvedAssignPeriod.ok) {
+      toast.error(resolvedAssignPeriod.message);
+      return false;
+    }
+    return true;
+  };
 
   const buildBundleExtraInsertRows = (
     product: ProductPick,
@@ -505,7 +581,13 @@ export function AssignPackageDialog({
       );
     }
 
-    const purchasedAt = new Date().toISOString();
+    const period = resolveAssignCreditPeriod(assignStartDate, assignEndDate);
+    if (!period.ok) {
+      toast.error(period.message);
+      setSubmitting(false);
+      return;
+    }
+    const { purchasedAt, expiresAt } = period;
 
     for (const t of assignees) {
       if (!isUuidProfileId(t.profileId)) {
@@ -526,9 +608,6 @@ export function AssignPackageDialog({
         );
         continue;
       }
-      const expiresAt = product.validity_days
-        ? new Date(Date.now() + Math.trunc(product.validity_days) * 86400000).toISOString()
-        : null;
       const baseCreditRows = buildProductCreditRows({
         productName: product.name,
         profileId: t.profileId,
@@ -616,16 +695,7 @@ export function AssignPackageDialog({
         return;
       }
     }
-    let expiresAt: string | null = null;
-    const vd = customValidityDays.trim();
-    if (vd) {
-      const days = Math.trunc(Number(vd));
-      if (!Number.isFinite(days) || days < 1) {
-        toast.error("Validity days must be a positive number or blank.");
-        return;
-      }
-      expiresAt = new Date(Date.now() + days * 86400000).toISOString();
-    }
+    if (!validateAssignPeriod()) return;
 
     const isUnlimited = customUnlimited;
     const total = isUnlimited ? UNLIMITED_MANUAL_TOTAL : Math.trunc(Number(customCredits));
@@ -654,7 +724,13 @@ export function AssignPackageDialog({
       );
     }
 
-    const purchasedAt = new Date().toISOString();
+    const period = resolveAssignCreditPeriod(assignStartDate, assignEndDate);
+    if (!period.ok) {
+      toast.error(period.message);
+      setSubmitting(false);
+      return;
+    }
+    const { purchasedAt, expiresAt } = period;
 
     for (const t of assignees) {
       if (!isUuidProfileId(t.profileId)) {
@@ -799,6 +875,7 @@ export function AssignPackageDialog({
         return;
       }
       if (!validateBundleExtras()) return;
+      if (!validateAssignPeriod()) return;
     } else {
       const name = customName.trim();
       if (!name) {
@@ -812,14 +889,7 @@ export function AssignPackageDialog({
           return;
         }
       }
-      const vd = customValidityDays.trim();
-      if (vd) {
-        const days = Math.trunc(Number(vd));
-        if (!Number.isFinite(days) || days < 1) {
-          toast.error("Validity days must be a positive number or blank.");
-          return;
-        }
-      }
+      if (!validateAssignPeriod()) return;
     }
     setConfirmTab(kind);
     setConfirmOpen(true);
@@ -940,6 +1010,13 @@ export function AssignPackageDialog({
                     </Select>
                   )}
                 </div>
+                <PackagePeriodFields
+                  idPrefix="assign-existing"
+                  startDate={assignStartDate}
+                  endDate={assignEndDate}
+                  onStartChange={setAssignStartDate}
+                  onEndChange={setAssignEndDate}
+                />
                 {isBundleAssign && selectedProduct ? (
                   <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-3">
                     <div>
@@ -1161,15 +1238,30 @@ export function AssignPackageDialog({
                     </Label>
                   </div>
                 </div>
+                <PackagePeriodFields
+                  idPrefix="assign-custom"
+                  startDate={assignStartDate}
+                  endDate={assignEndDate}
+                  onStartChange={setAssignStartDate}
+                  onEndChange={setAssignEndDate}
+                />
                 <div className="grid gap-2">
-                  <Label htmlFor="assign-custom-validity">Validity days (optional)</Label>
+                  <Label htmlFor="assign-custom-validity">Validity days (shortcut)</Label>
                   <Input
                     id="assign-custom-validity"
                     type="number"
                     min={1}
-                    placeholder="Leave blank for no expiry"
+                    placeholder="Fills end date from start"
                     value={customValidityDays}
-                    onChange={(e) => setCustomValidityDays(e.target.value)}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setCustomValidityDays(v);
+                      const days = Math.trunc(Number(v));
+                      if (!Number.isFinite(days) || days < 1) return;
+                      const start = assignStartDate.trim() || todayCreditDateInput();
+                      if (!assignStartDate.trim()) setAssignStartDate(start);
+                      setAssignEndDate(addDaysToCreditDateInput(start, days));
+                    }}
                   />
                 </div>
                 <div className="grid gap-2">
