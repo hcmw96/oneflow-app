@@ -25,6 +25,13 @@ export function AdminShell({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<AdminProfile | null>(null);
   const [pendingLeaveCount, setPendingLeaveCount] = useState(0);
 
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const isCheckInKiosk = pathname === "/admin/check-in";
+
+  useEffect(() => {
+    if (isCheckInKiosk) setCollapsed(true);
+  }, [isCheckInKiosk]);
+
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -56,7 +63,6 @@ export function AdminShell({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
   const leaveRequestsActive = useRouterState({
     select: (s) => {
       if (s.location.pathname !== "/admin/timesheets") return false;
@@ -345,7 +351,16 @@ export function AdminShell({ children }: { children: ReactNode }) {
             {currentLabel}
           </h1>
         </header>
-        <main className="flex-1 overflow-y-auto px-4 py-5 md:px-6 md:py-8">{children}</main>
+        <main
+          className={cn(
+            "flex-1 px-4 py-5 md:px-6 md:py-8",
+            isCheckInKiosk
+              ? "flex min-h-0 flex-col overflow-hidden py-3 md:py-4"
+              : "overflow-y-auto",
+          )}
+        >
+          {children}
+        </main>
       </div>
     </div>
   );

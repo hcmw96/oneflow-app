@@ -383,10 +383,9 @@ function CheckInPage() {
   };
 
   return (
-    <div>
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <PageHeader
         title="Check-In"
-        description="Mark attendance for today's classes"
         actions={
           <button
             type="button"
@@ -402,13 +401,13 @@ function CheckInPage() {
       {loading ? (
         <div className="py-16 text-center text-sm text-muted-foreground">Loading check-in…</div>
       ) : (
-        <div className="flex flex-col gap-4 md:min-h-[calc(100dvh-11rem)] md:flex-row md:items-stretch">
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4">
-            <div className="rounded-2xl border border-border bg-card p-4 sm:p-5 md:max-h-[min(42vh,420px)] md:shrink-0">
-              <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <div className="grid min-h-0 flex-1 grid-cols-[minmax(200px,260px)_minmax(0,1fr)] gap-3 overflow-hidden">
+          <div className="flex min-h-0 flex-col gap-2 overflow-hidden">
+            <div className="flex max-h-[38%] shrink-0 flex-col overflow-hidden rounded-2xl border border-border bg-card p-3">
+              <p className="mb-2 shrink-0 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Today&apos;s classes
               </p>
-              <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 md:flex-col md:overflow-x-visible md:overflow-y-auto md:pb-0">
+              <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto pr-0.5">
               <SessionChip
                 active={activeSession === "all"}
                 onClick={() => setActiveSession("all")}
@@ -429,8 +428,8 @@ function CheckInPage() {
               </div>
             </div>
 
-            <div className="flex min-h-0 flex-1 flex-col rounded-2xl border border-border bg-card p-4 sm:p-5">
-            <div className="relative">
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border bg-card p-3">
+            <div className="relative shrink-0">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <input
                 value={query}
@@ -440,7 +439,7 @@ function CheckInPage() {
               />
             </div>
 
-            <div className="mt-3 flex flex-col gap-2">
+            <div className="mt-2 flex shrink-0 flex-col gap-2">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/40 px-2 py-1 text-xs font-semibold text-muted-foreground">
                   <Filter className="h-3.5 w-3.5" aria-hidden />
@@ -508,7 +507,7 @@ function CheckInPage() {
               </div>
             </div>
 
-            <ul className="mt-3 min-h-0 flex-1 divide-y divide-border overflow-y-auto md:max-h-[min(48vh,560px)]">
+            <ul className="mt-2 min-h-0 flex-1 divide-y divide-border overflow-y-auto">
               {filtered.length === 0 && (
                 <li className="py-10 text-center text-sm text-muted-foreground">
                   No matching attendees.
@@ -569,11 +568,10 @@ function CheckInPage() {
             </div>
           </div>
 
-          <div className="flex w-full shrink-0 flex-col gap-4 md:w-[min(400px,38%)] md:max-w-[440px]">
+          <div className="flex min-h-0 flex-col gap-2 overflow-hidden">
             <div
               className={cn(
-                "flex flex-col rounded-2xl border border-border bg-card p-4 sm:p-5",
-                "min-h-[min(52dvh,520px)] md:min-h-[calc(100dvh-11rem)] md:flex-1",
+                "flex min-h-0 flex-1 flex-col rounded-2xl border border-border bg-card p-3",
               )}
             >
               <div className="mb-4 flex w-full items-center gap-2 text-sm font-semibold">
@@ -593,7 +591,7 @@ function CheckInPage() {
               </p>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid shrink-0 grid-cols-2 gap-2">
               <Stat label="Checked in" value={checkedInCount} />
               <Stat label="Capacity" value={`${utilisation}%`} />
             </div>
@@ -631,7 +629,7 @@ function SessionChip({
       type="button"
       onClick={onClick}
       className={cn(
-        "shrink-0 rounded-xl border px-3 py-2 text-left transition-colors md:w-full",
+        "w-full rounded-xl border px-3 py-2 text-left transition-colors",
         active ? "border-primary bg-primary/10" : "border-border bg-background hover:bg-muted",
       )}
     >
