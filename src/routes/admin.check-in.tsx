@@ -28,11 +28,6 @@ import {
   fetchRosterMemberAddonAccess,
   RosterAddonPills,
 } from "@/components/admin/RosterAddonPills";
-import { GuideActivePackagePills } from "@/components/admin/GuideActivePackagePills";
-import {
-  fetchActiveUserCreditsByProfileIds,
-  type GuideCreditPillRow,
-} from "@/lib/activeUserCredits";
 import {
   bookingConfirmationEmailData,
   bookingConfirmationTemplateForClassType,
@@ -66,7 +61,6 @@ type TodayClass = {
   location: string | null;
   guide_name: string | null;
   guide_id: string | null;
-  guide_profile_id: string | null;
 };
 
 type RosterCheckFilter = "all" | "checked_in" | "not_yet";
@@ -82,9 +76,6 @@ function CheckInPage() {
   const [activeSession, setActiveSession] = useState<string>("all");
   const [walkInOpen, setWalkInOpen] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [guideCreditMap, setGuideCreditMap] = useState(
-    () => new Map<string, GuideCreditPillRow[]>(),
-  );
   const qrDedupeRef = useRef<string | null>(null);
   const qrDedupeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -103,7 +94,7 @@ function CheckInPage() {
     const { data: classesData, error: classesError } = await supabase
       .from("classes")
       .select(
-        "id, name, class_type, starts_at, capacity, booked_count, location, guide_name, guide_id, guides ( profile_id )",
+        "id, name, class_type, starts_at, capacity, booked_count, location, guide_name, guide_id",
       )
       .gte("starts_at", start.toISOString())
       .lte("starts_at", end.toISOString())
@@ -120,30 +111,19 @@ function CheckInPage() {
     }
 
     const rawClasses = (classesData ?? []) as unknown as Record<string, unknown>[];
-    const classes: TodayClass[] = rawClasses.map((row) => {
-      const g = row.guides;
-      const guideRow = (Array.isArray(g) ? g[0] : g) as { profile_id?: string } | null | undefined;
-      const guide_profile_id = guideRow?.profile_id ? String(guideRow.profile_id) : null;
-      return {
-        id: String(row.id),
-        name: String(row.name ?? ""),
-        class_type: String(row.class_type ?? ""),
-        starts_at: String(row.starts_at ?? ""),
-        capacity: Number(row.capacity ?? 0),
-        booked_count: Number(row.booked_count ?? 0),
-        location: (row.location as string | null) ?? null,
-        guide_name: (row.guide_name as string | null) ?? null,
-        guide_id: (row.guide_id as string | null) ?? null,
-        guide_profile_id,
-      };
-    });
+    const classes: TodayClass[] = rawClasses.map((row) => ({
+      id: String(row.id),
+      name: String(row.name ?? ""),
+      class_type: String(row.class_type ?? ""),
+      starts_at: String(row.starts_at ?? ""),
+      capacity: Number(row.capacity ?? 0),
+      booked_count: Number(row.booked_count ?? 0),
+      location: (row.location as string | null) ?? null,
+      guide_name: (row.guide_name as string | null) ?? null,
+      guide_id: (row.guide_id as string | null) ?? null,
+    }));
     setTodayClasses(classes);
 
-    const guideProfileIds = classes
-      .map((c) => c.guide_profile_id)
-      .filter((id): id is string => Boolean(id));
-    const creditMap = await fetchActiveUserCreditsByProfileIds(guideProfileIds);
-    setGuideCreditMap(creditMap);
     const classIds = classes.map((c) => c.id);
 
     if (classIds.length === 0) {
@@ -211,7 +191,6 @@ function CheckInPage() {
       const forClass = roster.filter((b) => b.class_id === c.id);
       const total = forClass.filter((b) => b.status !== "cancelled").length;
       const attended = forClass.filter((b) => b.status === "attended").length;
-      const guideCredits = c.guide_profile_id ? (guideCreditMap.get(c.guide_profile_id) ?? []) : [];
       return {
         key: c.id,
         label: c.name,
@@ -220,10 +199,9 @@ function CheckInPage() {
         attended,
         capacity: c.capacity,
         guideName: c.guide_name,
-        guideCredits,
       };
     });
-  }, [todayClasses, roster, guideCreditMap]);
+  }, [todayClasses, roster]);
 
   const checkInFilterCount =
     Number(activeSession !== "all") +
@@ -422,7 +400,6 @@ function CheckInPage() {
                   label={s.label}
                   meta={`${s.time} · ${s.attended}/${s.total}`}
                   guideName={s.guideName}
-                  guideCredits={s.guideCredits}
                 />
               ))}
               </div>
@@ -615,14 +592,12 @@ function SessionChip({
   label,
   meta,
   guideName,
-  guideCredits,
 }: {
   active: boolean;
   onClick: () => void;
   label: string;
   meta: string;
   guideName?: string | null;
-  guideCredits?: readonly GuideCreditPillRow[];
 }) {
   return (
     <button
@@ -637,9 +612,6 @@ function SessionChip({
       <p className="text-[10px] text-muted-foreground">{meta}</p>
       {guideName ? (
         <p className="mt-1 text-[10px] font-medium text-[#4a5a42]">Guide · {guideName}</p>
-      ) : null}
-      {guideCredits && guideCredits.length > 0 ? (
-        <GuideActivePackagePills credits={guideCredits} className="mt-1 max-w-[220px]" />
       ) : null}
     </button>
   );
