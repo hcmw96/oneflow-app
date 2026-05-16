@@ -402,9 +402,13 @@ function CheckInPage() {
       {loading ? (
         <div className="py-16 text-center text-sm text-muted-foreground">Loading check-in…</div>
       ) : (
-        <div className="grid gap-4 lg:grid-cols-3">
-          <div className="rounded-2xl border border-border bg-card p-4 sm:p-5 lg:col-span-2">
-            <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-2">
+        <div className="flex flex-col gap-4 md:min-h-[calc(100dvh-11rem)] md:flex-row md:items-stretch">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4">
+            <div className="rounded-2xl border border-border bg-card p-4 sm:p-5 md:max-h-[min(42vh,420px)] md:shrink-0">
+              <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Today&apos;s classes
+              </p>
+              <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 md:flex-col md:overflow-x-visible md:overflow-y-auto md:pb-0">
               <SessionChip
                 active={activeSession === "all"}
                 onClick={() => setActiveSession("all")}
@@ -422,9 +426,11 @@ function CheckInPage() {
                   guideCredits={s.guideCredits}
                 />
               ))}
+              </div>
             </div>
 
-            <div className="relative mt-3">
+            <div className="flex min-h-0 flex-1 flex-col rounded-2xl border border-border bg-card p-4 sm:p-5">
+            <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <input
                 value={query}
@@ -502,7 +508,7 @@ function CheckInPage() {
               </div>
             </div>
 
-            <ul className="mt-3 divide-y divide-border">
+            <ul className="mt-3 min-h-0 flex-1 divide-y divide-border overflow-y-auto md:max-h-[min(48vh,560px)]">
               {filtered.length === 0 && (
                 <li className="py-10 text-center text-sm text-muted-foreground">
                   No matching attendees.
@@ -560,25 +566,30 @@ function CheckInPage() {
                 );
               })}
             </ul>
+            </div>
           </div>
 
-          <div className="space-y-4">
+          <div className="flex w-full shrink-0 flex-col gap-4 md:w-[min(400px,38%)] md:max-w-[440px]">
             <div
               className={cn(
-                "rounded-2xl border border-border bg-card p-4 sm:p-5",
-                "flex flex-col items-center justify-center",
-                "min-h-[min(62dvh,520px)] max-lg:py-6",
-                "lg:min-h-0 lg:items-stretch lg:justify-start lg:py-5",
+                "flex flex-col rounded-2xl border border-border bg-card p-4 sm:p-5",
+                "min-h-[min(52dvh,520px)] md:min-h-[calc(100dvh-11rem)] md:flex-1",
               )}
             >
-              <div className="mb-4 flex w-full min-w-0 items-center justify-center gap-2 text-sm font-semibold max-lg:text-center lg:mb-0 lg:justify-start">
-                <QrCode className="h-4 w-4 shrink-0 text-[#a3b693]" aria-hidden /> Self check-in QR
+              <div className="mb-4 flex w-full items-center gap-2 text-sm font-semibold">
+                <QrCode className="h-4 w-4 shrink-0 text-[#a3b693]" aria-hidden />
+                Self check-in QR
               </div>
-              <div className="flex w-full flex-1 flex-col items-center justify-center lg:mt-4 lg:flex-none">
-                <QRScanner onScan={(text: string) => void handleQrScan(text)} />
+              <div className="flex min-h-0 flex-1 flex-col items-center justify-center">
+                <QRScanner
+                  defaultFacing="user"
+                  size="large"
+                  className="mx-0 w-full"
+                  onScan={(text: string) => void handleQrScan(text)}
+                />
               </div>
-              <p className="mx-auto mt-4 max-w-[min(90vw,320px)] px-1 text-center text-sm text-muted-foreground">
-                Members show their booking QR at the desk.
+              <p className="mt-4 text-center text-sm text-muted-foreground">
+                Members hold their booking QR up to the front camera.
               </p>
             </div>
 
@@ -620,7 +631,7 @@ function SessionChip({
       type="button"
       onClick={onClick}
       className={cn(
-        "shrink-0 rounded-xl border px-3 py-2 text-left transition-colors",
+        "shrink-0 rounded-xl border px-3 py-2 text-left transition-colors md:w-full",
         active ? "border-primary bg-primary/10" : "border-border bg-background hover:bg-muted",
       )}
     >
