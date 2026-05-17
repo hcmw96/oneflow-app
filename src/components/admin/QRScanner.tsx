@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { Html5Qrcode } from "html5-qrcode";
+import { useEffect, useId, useRef, useState } from "react";
+import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
 import { RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -13,6 +13,11 @@ interface QRScannerProps {
   className?: string;
 }
 
+function qrScanBoxSize(viewfinderWidth: number, viewfinderHeight: number, ratio: number) {
+  const edge = Math.floor(Math.min(viewfinderWidth, viewfinderHeight) * ratio);
+  return { width: Math.max(edge, 200), height: Math.max(edge, 200) };
+}
+
 export function QRScanner({
   onScan,
   onError,
@@ -21,6 +26,8 @@ export function QRScanner({
   size = "default",
   className,
 }: QRScannerProps) {
+  const reactId = useId().replace(/:/g, "");
+  const containerId = `qr-scanner-${reactId}`;
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const onScanRef = useRef(onScan);
   onScanRef.current = onScan;
@@ -28,8 +35,8 @@ export function QRScanner({
   onErrorRef.current = onError;
   const [permissionDenied, setPermissionDenied] = useState(false);
   const [cameraFacing, setCameraFacing] = useState<"environment" | "user">(defaultFacing);
-  const containerId = "qr-scanner-container";
-  const qrboxSize = size === "large" ? 280 : 210;
+  const isKiosk = size === "large";
+  const scanBoxRatio = isKiosk ? 0.78 : 0.72;
 
   useEffect(() => {
     setCameraFacing(defaultFacing);
@@ -37,25 +44,62 @@ export function QRScanner({
 
   useEffect(() => {
     setPermissionDenied(false);
-    const scanner = new Html5Qrcode(containerId);
+    const scanner = new Html5Qrcode(containerId, {
+      formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
+      verbose: false,
+    });
     scannerRef.current = scanner;
+
+    const styleEl = document.createElement("style");
+    styleEl.setAttribute("data-qr-scanner", containerId);
+    styleEl.textContent = `
+      #${containerId} {
+        position: relative !important;
+        width: 100% !important;
+        height: 100% !important;
+        min-height: 0 !important;
+        padding: 0 !important;
+        border: none !important;
+        background: #000 !important;
+      }
+      #${containerId} video {
+        width: 100% !important;
+        height: 100% !important;
+        object-fit: cover !important;
+        display: block !important;
+      }
+      #${containerId} img {
+        display: none !important;
+      }
+      #${containerId} #qr-shaded-region {
+        border-width: 3px !important;
+        border-color: rgba(163, 182, 147, 0.95) !important;
+        border-radius: 12px !important;
+        box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.55) !important;
+      }
+    `;
+    document.head.appendChild(styleEl);
 
     scanner
       .start(
-        { facingMode: cameraFacing },
         {
-          fps: 10,
-          qrbox: { width: qrboxSize, height: qrboxSize },
+          facingMode: cameraFacing,
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+        {
+          fps: isKiosk ? 12 : 10,
+          qrbox: (w, h) => qrScanBoxSize(w, h, scanBoxRatio),
           aspectRatio: 1.0,
+          disableFlip: cameraFacing === "environment",
         },
         (decodedText: string) => {
           onScanRef.current(decodedText);
         },
         () => {
-          // scan errors are noisy — ignore
+          // per-frame miss — ignore
         },
       )
-      .then(() => {})
       .catch((err: unknown) => {
         const msg = err instanceof Error ? err.message : String(err);
         if (msg.includes("Permission")) {
@@ -65,21 +109,20 @@ export function QRScanner({
       });
 
     return () => {
+      styleEl.remove();
       if (scannerRef.current?.isScanning) {
         void scannerRef.current.stop().catch(() => {});
       }
       scannerRef.current = null;
     };
-  }, [cameraFacing, qrboxSize]);
+  }, [cameraFacing, containerId, isKiosk, scanBoxRatio]);
 
   if (permissionDenied) {
     return (
       <div
         className={cn(
           "mx-auto flex aspect-square items-center justify-center rounded-2xl border-[3px] border-dashed border-[#a3b693] bg-muted/30 p-4 text-center text-sm text-muted-foreground",
-          size === "large"
-            ? "h-full min-h-[280px] w-full max-w-none"
-            : "w-[min(90vw,320px)] max-w-[320px]",
+          isKiosk ? "h-full w-full max-w-lg" : "w-[min(90vw,320px)] max-w-[320px]",
           className,
         )}
       >
@@ -91,38 +134,22 @@ export function QRScanner({
   return (
     <div
       className={cn(
-        "relative mx-auto aspect-square overflow-hidden rounded-2xl border-[3px] border-[#a3b693] bg-black shadow-md",
-        size === "large"
-          ? "h-full min-h-[280px] w-full max-w-none"
-          : "w-[min(90vw,320px)] max-w-[320px]",
+        "relative mx-auto overflow-hidden rounded-2xl border-[3px] border-[#a3b693] bg-black shadow-md",
+        isKiosk
+          ? "aspect-square h-full w-full max-h-[min(72vh,520px)] max-w-lg"
+          : "aspect-square w-[min(90vw,320px)] max-w-[320px]",
         className,
       )}
     >
-      <div id={containerId} className="h-full w-full min-h-0" />
-      <div
-        className="pointer-events-none absolute inset-0 flex items-center justify-center p-[9%]"
-        aria-hidden
-      >
-        <div
-          className={cn(
-            "relative aspect-square max-w-full",
-            size === "large" ? "w-[min(72%,280px)]" : "w-[min(72%,210px)]",
-          )}
-        >
-          <span className="absolute left-0 top-0 h-9 w-9 rounded-tl-md border-l-[3px] border-t-[3px] border-[#a3b693]" />
-          <span className="absolute right-0 top-0 h-9 w-9 rounded-tr-md border-r-[3px] border-t-[3px] border-[#a3b693]" />
-          <span className="absolute bottom-0 left-0 h-9 w-9 rounded-bl-md border-b-[3px] border-l-[3px] border-[#a3b693]" />
-          <span className="absolute bottom-0 right-0 h-9 w-9 rounded-br-md border-b-[3px] border-r-[3px] border-[#a3b693]" />
-        </div>
-      </div>
+      <div id={containerId} className="absolute inset-0 h-full w-full" />
       {showFlipButton ? (
         <button
           type="button"
           onClick={() => setCameraFacing((prev) => (prev === "environment" ? "user" : "environment"))}
-          className="absolute bottom-3 right-3 z-10 inline-flex items-center gap-1 rounded-full bg-black/70 px-3 py-1.5 text-xs font-semibold text-white"
+          className="absolute bottom-3 right-3 z-10 inline-flex items-center gap-1 rounded-full bg-black/70 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur-sm"
         >
           <RefreshCw className="h-3.5 w-3.5" />
-          {cameraFacing === "environment" ? "Use front" : "Use back"}
+          {cameraFacing === "environment" ? "Use front camera" : "Use back camera"}
         </button>
       ) : null}
     </div>

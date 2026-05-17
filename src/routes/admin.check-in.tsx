@@ -17,6 +17,7 @@ import {
   oneClass,
   oneProfile,
 } from "@/lib/checkInRoster";
+import { parseQrCheckInToken } from "@/lib/qrCheckIn";
 
 export const Route = createFileRoute("/admin/check-in")({
   validateSearch: (raw: Record<string, unknown>) => ({
@@ -45,6 +46,7 @@ function CheckInPage() {
   const [loading, setLoading] = useState(true);
   const qrDedupeRef = useRef<string | null>(null);
   const qrDedupeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const qrInvalidToastRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (search.class) setActiveSession(search.class);
@@ -174,9 +176,30 @@ function CheckInPage() {
   const totalCapacity = sessions.reduce((s, x) => s + x.capacity, 0);
   const utilisation = totalCapacity ? Math.round((checkedInCount / totalCapacity) * 100) : 0;
 
+  const toastQrIssue = (key: string, message: string, variant: "error" | "warning" = "error") => {
+    if (qrInvalidToastRef.current === key) return;
+    qrInvalidToastRef.current = key;
+    if (qrDedupeTimerRef.current) clearTimeout(qrDedupeTimerRef.current);
+    qrDedupeTimerRef.current = setTimeout(() => {
+      qrInvalidToastRef.current = null;
+    }, 3200);
+    if (variant === "warning") {
+      toast.warning(message, {
+        duration: 3500,
+        className:
+          "border-amber-500/40 bg-amber-50 text-amber-950 dark:bg-amber-950/30 dark:text-amber-50",
+      });
+    } else {
+      toast.error(message, {
+        className: "border-destructive/30 bg-destructive/10 text-destructive",
+      });
+    }
+  };
+
   const handleQrScan = async (decodedText: string) => {
-    const token = decodedText.trim();
+    const token = parseQrCheckInToken(decodedText);
     if (!token) return;
+
     if (qrDedupeRef.current === token) return;
     qrDedupeRef.current = token;
     if (qrDedupeTimerRef.current) clearTimeout(qrDedupeTimerRef.current);
@@ -198,7 +221,6 @@ function CheckInPage() {
       `,
       )
       .eq("qr_token", token)
-      .eq("status", "confirmed")
       .maybeSingle();
 
     if (findError) {
@@ -208,30 +230,31 @@ function CheckInPage() {
     }
 
     if (!booking?.id) {
-      const { data: existingBooking } = await supabase
-        .from("bookings")
-        .select("id, status, checked_in, qr_used")
-        .eq("qr_token", token)
-        .maybeSingle();
+      toastQrIssue(
+        `missing:${token}`,
+        "No booking found for this code. Use the QR from My Bookings in the app.",
+      );
+      return;
+    }
 
-      const alreadyUsed =
-        !!existingBooking &&
-        (existingBooking.qr_used === true ||
-          existingBooking.checked_in === true ||
-          existingBooking.status === "attended");
+    const status = String(booking.status ?? "");
+    const alreadyUsed =
+      booking.qr_used === true ||
+      booking.checked_in === true ||
+      status === "attended";
 
-      if (alreadyUsed) {
-        toast.warning("Already checked in", {
-          duration: 3500,
-          className:
-            "border-amber-500/40 bg-amber-50 text-amber-950 dark:bg-amber-950/30 dark:text-amber-50",
-        });
-        return;
-      }
+    if (alreadyUsed) {
+      toastQrIssue("already-in", "Already checked in", "warning");
+      return;
+    }
 
-      toast.error("Invalid QR code", {
-        className: "border-destructive/30 bg-destructive/10 text-destructive",
-      });
+    if (status === "cancelled") {
+      toastQrIssue(`cancelled:${token}`, "This booking was cancelled.");
+      return;
+    }
+
+    if (status !== "confirmed") {
+      toastQrIssue(`status:${token}`, `Booking is ${status.replace(/_/g, " ")} — cannot check in.`);
       return;
     }
 
@@ -315,16 +338,18 @@ function CheckInPage() {
                 <QrCode className="h-4 w-4 shrink-0 text-[#a3b693]" aria-hidden />
                 Self check-in QR
               </div>
-              <div className="flex min-h-0 flex-1 flex-col items-center justify-center">
+              <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-1">
                 <QRScanner
                   defaultFacing="user"
                   size="large"
-                  className="mx-0 w-full"
+                  showFlipButton
+                  className="w-full"
                   onScan={(text: string) => void handleQrScan(text)}
                 />
               </div>
-              <p className="mt-4 text-center text-sm text-muted-foreground">
-                Members hold their booking QR up to the front camera.
+              <p className="mt-3 text-center text-sm text-muted-foreground">
+                Hold the member&apos;s booking QR inside the green frame, about arm&apos;s length
+                away.
               </p>
             </div>
 
