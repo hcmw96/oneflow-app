@@ -62,7 +62,7 @@ type GuideDisciplineSlug = (typeof GUIDE_DISCIPLINE_SLUGS)[number];
 const GUIDE_DISCIPLINE_SLUG_LABEL: Record<GuideDisciplineSlug, string> = {
   yoga: CLASS_TYPE_SLUG_LABEL.yoga,
   sculpt: CLASS_TYPE_SLUG_LABEL.sculpt,
-  pilates: "Pilates",
+  pilates: CLASS_TYPE_SLUG_LABEL.pilates,
   power: CLASS_TYPE_SLUG_LABEL.power,
   wellzone: CLASS_TYPE_SLUG_LABEL.wellzone,
   sauna_journey: CLASS_TYPE_SLUG_LABEL.sauna_journey,

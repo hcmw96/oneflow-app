@@ -1,4 +1,4 @@
-import type { PostgrestError } from "@supabase/supabase-js";
+import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 
 /**
@@ -42,6 +42,10 @@ function profilesFromGuideRow(row: Record<string, unknown>): ProfileEmbed {
 }
 
 const LOG = "[guidesForSelect]";
+
+function guideLabel(g: Pick<GuideSelectRow, "first_name" | "last_name">): string {
+  return [g.first_name, g.last_name].filter(Boolean).join(" ").trim();
+}
 
 /**
  * Active guides with profile names for class forms.
@@ -102,7 +106,12 @@ export async function fetchGuidesForClassSelect(
       returned: profs?.length ?? 0,
     });
     if (!pErr && profs?.length) {
-      const byId = new Map(profs.map((p) => [String(p.id), p]));
+      const byId = new Map(
+        profs.map((p: { id: string; first_name: string | null; last_name: string | null; avatar_url: string | null }) => [
+          String(p.id),
+          p,
+        ]),
+      );
       mapped = mapped.map((m) => {
         if (guideLabel(m)) return m;
         const p = byId.get(m.profile_id);
@@ -129,8 +138,4 @@ export async function fetchGuidesForClassSelect(
   });
 
   return { data: mapped, error: null };
-}
-
-function guideLabel(g: Pick<GuideSelectRow, "first_name" | "last_name">): string {
-  return [g.first_name, g.last_name].filter(Boolean).join(" ").trim();
 }

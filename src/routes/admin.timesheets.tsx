@@ -926,7 +926,7 @@ function TimesheetsPage() {
           <div className="mt-6 space-y-4">
             <div className="grid gap-1.5">
               <Label>Staff member</Label>
-              <Select value={sProfileId} onValueChange={setSProfileId}>
+              <Select value={sProfileId || undefined} onValueChange={setSProfileId}>
                 <SelectTrigger>
                   <SelectValue placeholder="Choose staff" />
                 </SelectTrigger>

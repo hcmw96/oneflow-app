@@ -216,7 +216,6 @@ export default function SchedulePage() {
     }
 
     const now = new Date();
-    const isToday = isSameDay(day, now);
     const rows = data ?? [];
     const mapped = rows
       .map((c) => {
@@ -229,12 +228,7 @@ export default function SchedulePage() {
       .sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime());
 
     const nowT = now.getTime();
-    const visible = isToday
-      ? [
-          ...mapped.filter((c) => !isPastScheduleClass(c.starts_at, nowT)),
-          ...mapped.filter((c) => isPastScheduleClass(c.starts_at, nowT)),
-        ]
-      : mapped;
+    const visible = mapped.filter((c) => !isPastScheduleClass(c.starts_at, nowT));
 
     classesCacheRef.current.set(key, visible);
     setClasses(visible);

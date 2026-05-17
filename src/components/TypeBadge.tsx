@@ -18,7 +18,7 @@ export function TypeBadge({ type, className }: { type: ClassType; className?: st
     <span
       className={cn(
         "inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide",
-        styles[type],
+        styles[type as keyof typeof styles] ?? "bg-muted text-foreground",
         className,
       )}
     >

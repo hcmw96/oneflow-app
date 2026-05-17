@@ -19,7 +19,14 @@ import { StatCard } from "@/components/admin/StatCard";
 import { getUser, supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { fetchGuidesForClassSelect, type GuideSelectRow } from "@/lib/guidesForSelect";
-import { allowedClassTypeCheckboxOptions } from "@/lib/allowedClassTypes";
+import {
+  ADD_CLASS_TYPE_SELECT_VALUE,
+  buildClassTypeSelectOptions,
+  fetchCustomClassTypes,
+  saveCustomClassTypes,
+  slugifyClassTypeName,
+  type CustomClassType,
+} from "@/lib/classTypeOptions";
 import { displayClassType } from "@/types/studio";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -50,6 +57,7 @@ import {
   Select,
   SelectContent,
   SelectItem,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -67,8 +75,6 @@ const GUIDE_NONE = "__none__";
 const GUIDE_DIALOG_NONE = "none";
 
 const LOCATIONS = ["Studio 1", "Studio 2", "Wellzone", "Sauna"] as const;
-
-const CLASS_TYPES = allowedClassTypeCheckboxOptions();
 
 type ClassRow = {
   id: string;
@@ -241,6 +247,10 @@ function ClassesPage() {
   const [saving, setSaving] = useState(false);
   const [name, setName] = useState("");
   const [classType, setClassType] = useState<string>("yoga");
+  const [customClassTypes, setCustomClassTypes] = useState<CustomClassType[]>([]);
+  const [addTypeOpen, setAddTypeOpen] = useState(false);
+  const [newTypeName, setNewTypeName] = useState("");
+  const [savingNewType, setSavingNewType] = useState(false);
   const [location, setLocation] = useState<string>("Studio 1");
   const [guideId, setGuideId] = useState<string>(GUIDE_DIALOG_NONE);
   const [dateStr, setDateStr] = useState(toDateInputValue(new Date()));
@@ -311,13 +321,68 @@ function ClassesPage() {
     void (async () => {
       const user = await getUser();
       if (!user) return;
-      const [{ data }] = await Promise.all([
+      const [profileRes, custom] = await Promise.all([
         supabase.from("profiles").select("role").eq("id", user.id).maybeSingle(),
-        loadGuideOptions(),
+        fetchCustomClassTypes(),
       ]);
-      setRole((data?.role as string | null) ?? null);
+      setRole((profileRes.data?.role as string | null) ?? null);
+      setCustomClassTypes(custom);
+      await loadGuideOptions();
     })();
   }, [loadGuideOptions]);
+
+  const classTypeOptions = useMemo(
+    () => buildClassTypeSelectOptions(customClassTypes, classType),
+    [customClassTypes, classType],
+  );
+
+  const filterTypeOptions = useMemo(
+    () => buildClassTypeSelectOptions(customClassTypes),
+    [customClassTypes],
+  );
+
+  const onClassTypeSelect = (value: string) => {
+    if (value === ADD_CLASS_TYPE_SELECT_VALUE) {
+      setNewTypeName("");
+      setAddTypeOpen(true);
+      return;
+    }
+    setClassType(value);
+  };
+
+  const submitNewClassType = async () => {
+    const label = newTypeName.trim();
+    if (!label) {
+      toast.error("Enter a name for the new class type.");
+      return;
+    }
+    const slug = slugifyClassTypeName(label);
+    if (!slug) {
+      toast.error("Use letters or numbers in the type name.");
+      return;
+    }
+    if (classTypeOptions.some((o) => o.value === slug)) {
+      toast.error("That class type already exists.");
+      setClassType(slug);
+      setAddTypeOpen(false);
+      return;
+    }
+
+    setSavingNewType(true);
+    const next = [...customClassTypes, { slug, label }];
+    const { error } = await saveCustomClassTypes(next);
+    setSavingNewType(false);
+
+    if (error) {
+      toast.error(supabaseErrorMessage(error, "Could not save class type"));
+      return;
+    }
+
+    setCustomClassTypes(next);
+    setClassType(slug);
+    setAddTypeOpen(false);
+    toast.success(`Class type “${label}” added`);
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -870,7 +935,7 @@ function ClassesPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All types</SelectItem>
-              {CLASS_TYPES.map((t) => (
+              {filterTypeOptions.map((t) => (
                 <SelectItem key={t.value} value={t.value}>
                   {t.label}
                 </SelectItem>
@@ -1123,16 +1188,27 @@ function ClassesPage() {
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
                 <Label>Type</Label>
-                <Select value={classType} onValueChange={setClassType} disabled={!canManage}>
+                <Select value={classType} onValueChange={onClassTypeSelect} disabled={!canManage}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {CLASS_TYPES.map((t) => (
+                    {classTypeOptions.map((t) => (
                       <SelectItem key={t.value} value={t.value}>
                         {t.label}
                       </SelectItem>
                     ))}
+                    {canManage ? (
+                      <>
+                        <SelectSeparator />
+                        <SelectItem
+                          value={ADD_CLASS_TYPE_SELECT_VALUE}
+                          className="font-semibold text-[#4a6b3c]"
+                        >
+                          + Add class type…
+                        </SelectItem>
+                      </>
+                    ) : null}
                   </SelectContent>
                 </Select>
               </div>
@@ -1276,6 +1352,46 @@ function ClassesPage() {
               </div>
             </DialogFooter>
           ) : null}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={addTypeOpen} onOpenChange={setAddTypeOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Add class type</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-3 py-2">
+            <div>
+              <Label htmlFor="new-class-type-name">Type name</Label>
+              <Input
+                id="new-class-type-name"
+                value={newTypeName}
+                onChange={(e) => setNewTypeName(e.target.value)}
+                placeholder="e.g. Reformer"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void submitNewClassType();
+                }}
+              />
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                Saved for your studio and available on all future classes.
+              </p>
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button type="button" variant="outline" onClick={() => setAddTypeOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={savingNewType}
+              className="bg-[#a3b693] text-white hover:bg-[#8fa67d]"
+              onClick={() => void submitNewClassType()}
+            >
+              {savingNewType ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Add type
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

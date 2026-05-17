@@ -126,13 +126,15 @@ class AdminErrorBoundary extends React.Component<
       return (
         <div className="mx-auto flex min-h-[40vh] max-w-xl flex-col items-center justify-center gap-3 px-4 text-center">
           <h2 className="font-display text-2xl font-semibold">Something went wrong</h2>
-          <p className="text-sm text-muted-foreground">{this.state.message}</p>
+          <p className="text-sm text-muted-foreground">
+            {this.state.message || "An unexpected error occurred. Please try again."}
+          </p>
           <Button
             type="button"
             onClick={() => this.setState({ hasError: false, message: "" })}
             variant="outline"
           >
-            Retry section
+            Try again
           </Button>
         </div>
       );

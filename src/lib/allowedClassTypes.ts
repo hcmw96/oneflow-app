@@ -7,6 +7,7 @@ import { normalizeProductCategoryKey } from "@/lib/productCategories";
 export const ALLOWED_CLASS_TYPE_SLUGS = [
   "yoga",
   "sculpt",
+  "pilates",
   "wellzone",
   "sauna_journey",
   "power",
@@ -20,6 +21,7 @@ export type AllowedClassTypeSlug = (typeof ALLOWED_CLASS_TYPE_SLUGS)[number];
 export const CLASS_TYPE_SLUG_LABEL: Record<AllowedClassTypeSlug, string> = {
   yoga: "Yoga",
   sculpt: "Sculpt",
+  pilates: "Pilates",
   wellzone: "Wellzone",
   sauna_journey: "Sauna Journey",
   power: "Power",
@@ -42,6 +44,7 @@ export const ALL_ALLOWED_CLASS_TYPES: readonly AllowedClassTypeSlug[] = [
 const DEFAULTS_YOGA_STUDIO: readonly AllowedClassTypeSlug[] = [
   "yoga",
   "sculpt",
+  "pilates",
   "power",
   "beginner",
   "beginner_sculpt",
@@ -78,4 +81,12 @@ export function defaultAllowedClassTypesForCreditCategory(
 
 export function isAllowedClassTypeSlug(value: string): value is AllowedClassTypeSlug {
   return (ALLOWED_CLASS_TYPE_SLUGS as readonly string[]).includes(value);
+}
+
+export function humanizeClassTypeSlug(slug: string): string {
+  return slug
+    .split("_")
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
 }

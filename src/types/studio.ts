@@ -1,26 +1,21 @@
 import {
   CLASS_TYPE_SLUG_LABEL,
+  humanizeClassTypeSlug,
   type AllowedClassTypeSlug,
   isAllowedClassTypeSlug,
 } from "@/lib/allowedClassTypes";
 
 /** Display labels for class types (matches TypeBadge styles). */
-export type ClassType =
-  | (typeof CLASS_TYPE_SLUG_LABEL)[AllowedClassTypeSlug]
-  /** Legacy DB rows */
-  | "Pilates";
+export type ClassType = (typeof CLASS_TYPE_SLUG_LABEL)[AllowedClassTypeSlug] | string;
 
-const LEGACY_SLUG_TO_DISPLAY: Record<string, ClassType> = {
-  pilates: "Pilates",
-};
-
-export function displayClassType(raw: string | null | undefined): ClassType {
+export function displayClassType(raw: string | null | undefined): string {
   const key = String(raw ?? "")
     .toLowerCase()
     .trim()
     .replace(/\s+/g, "_");
+  if (!key) return CLASS_TYPE_SLUG_LABEL.yoga;
   if (isAllowedClassTypeSlug(key)) return CLASS_TYPE_SLUG_LABEL[key];
-  return LEGACY_SLUG_TO_DISPLAY[key] ?? "Yoga";
+  return humanizeClassTypeSlug(key);
 }
 
 export type ChallengeType = "Yoga" | "Sauna Journey";

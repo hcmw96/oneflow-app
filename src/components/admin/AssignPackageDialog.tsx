@@ -400,6 +400,11 @@ export function AssignPackageDialog({
       isMultiCreditBundleProduct(selectedProduct.id, selectedProduct.name),
   );
 
+  const resolvedAssignPeriod = useMemo(
+    () => resolveAssignCreditPeriod(assignStartDate, assignEndDate),
+    [assignStartDate, assignEndDate],
+  );
+
   const bundlePreviewRows = useMemo((): UserCreditInsertRow[] => {
     if (!selectedProduct || !isBundleAssign) return [];
     const rawCount =
@@ -441,11 +446,6 @@ export function AssignPackageDialog({
         : "",
     );
   }, [selectedProductId, products]);
-
-  const resolvedAssignPeriod = useMemo(
-    () => resolveAssignCreditPeriod(assignStartDate, assignEndDate),
-    [assignStartDate, assignEndDate],
-  );
 
   const validateAssignPeriod = (): boolean => {
     if (!resolvedAssignPeriod.ok) {
@@ -988,7 +988,10 @@ export function AssignPackageDialog({
                   ) : productsInSelectedCategory.length === 0 ? (
                     <p className="text-sm text-muted-foreground">No products in this category.</p>
                   ) : (
-                    <Select value={selectedProductId} onValueChange={setSelectedProductId}>
+                    <Select
+                      value={selectedProductId || undefined}
+                      onValueChange={setSelectedProductId}
+                    >
                       <SelectTrigger>
                         <SelectValue placeholder="Select a product" />
                       </SelectTrigger>
