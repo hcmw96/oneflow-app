@@ -820,21 +820,23 @@ function CustomersPage() {
         </DialogContent>
       </Dialog>
 
-      <AssignPackageDialog
-        open={assignOpen}
-        onOpenChange={(o) => {
-          setAssignOpen(o);
-          if (!o) {
-            setBulkAssignTargets(null);
-            setAssignTarget(null);
-          }
-        }}
-        target={assignTarget}
-        bulkTargets={bulkAssignTargets}
-        canAssign={canManageCustomers}
-        onCreditInserted={(row, profileId) => bumpMemberCreditsAfterAssign(profileId, row)}
-        onAssigned={() => void load()}
-      />
+      {assignOpen ? (
+        <AssignPackageDialog
+          open
+          onOpenChange={(o) => {
+            setAssignOpen(o);
+            if (!o) {
+              setBulkAssignTargets(null);
+              setAssignTarget(null);
+            }
+          }}
+          target={assignTarget}
+          bulkTargets={bulkAssignTargets}
+          canAssign={canManageCustomers}
+          onCreditInserted={(row, profileId) => bumpMemberCreditsAfterAssign(profileId, row)}
+          onAssigned={() => void load()}
+        />
+      ) : null}
 
       <Dialog open={messageOpen} onOpenChange={setMessageOpen}>
         <DialogContent className="max-w-md">

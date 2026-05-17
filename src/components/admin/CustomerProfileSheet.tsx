@@ -1248,37 +1248,39 @@ export function CustomerProfileSheet({
         </SheetContent>
       </Sheet>
 
-      <AssignPackageDialog
-        open={assignOpen}
-        onOpenChange={setAssignOpen}
-        target={assignTarget}
-        canAssign={canManage}
-        onCreditInserted={(row: AssignedCreditRow, profileId) => {
-          if (profileId !== customerId) return;
-          const now = Date.now();
-          const nextRow: CreditRow = {
-            id: row.id,
-            product_id: row.product_id ?? null,
-            product_name: row.product_name,
-            category: row.category ?? null,
-            credits_remaining: row.credits_remaining,
-            credits_total: row.credits_total,
-            is_unlimited: row.is_unlimited,
-            expires_at: row.expires_at,
-            mat_access: row.mat_access ?? false,
-            towel_access: row.towel_access ?? false,
-          };
-          if (!isCreditActive(nextRow, now)) return;
-          setCredits((prev) => {
-            if (prev.some((c) => c.id === nextRow.id)) return prev;
-            return [...prev, nextRow];
-          });
-        }}
-        onAssigned={() => {
-          void load();
-          onProfileUpdated?.();
-        }}
-      />
+      {assignOpen ? (
+        <AssignPackageDialog
+          open
+          onOpenChange={setAssignOpen}
+          target={assignTarget}
+          canAssign={canManage}
+          onCreditInserted={(row: AssignedCreditRow, profileId) => {
+            if (profileId !== customerId) return;
+            const now = Date.now();
+            const nextRow: CreditRow = {
+              id: row.id,
+              product_id: row.product_id ?? null,
+              product_name: row.product_name,
+              category: row.category ?? null,
+              credits_remaining: row.credits_remaining,
+              credits_total: row.credits_total,
+              is_unlimited: row.is_unlimited,
+              expires_at: row.expires_at,
+              mat_access: row.mat_access ?? false,
+              towel_access: row.towel_access ?? false,
+            };
+            if (!isCreditActive(nextRow, now)) return;
+            setCredits((prev) => {
+              if (prev.some((c) => c.id === nextRow.id)) return prev;
+              return [...prev, nextRow];
+            });
+          }}
+          onAssigned={() => {
+            void load();
+            onProfileUpdated?.();
+          }}
+        />
+      ) : null}
 
       <AlertDialog
         open={roleConfirmOpen}

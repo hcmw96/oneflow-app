@@ -675,13 +675,15 @@ function StaffPage() {
         </div>
       )}
 
-      <AssignPackageDialog
-        open={assignOpen}
-        onOpenChange={setAssignOpen}
-        target={assignTarget}
-        canAssign={canManage}
-        onAssigned={() => void load()}
-      />
+      {assignOpen ? (
+        <AssignPackageDialog
+          open
+          onOpenChange={setAssignOpen}
+          target={assignTarget}
+          canAssign={canManage}
+          onAssigned={() => void load()}
+        />
+      ) : null}
 
       <CustomerProfileSheet
         customerId={profileSheetRow?.id ?? null}

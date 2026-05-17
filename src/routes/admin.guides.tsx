@@ -879,16 +879,18 @@ function GuidesPage() {
         </SheetContent>
       </Sheet>
 
-      <AssignPackageDialog
-        open={assignOpen}
-        onOpenChange={(o) => {
-          setAssignOpen(o);
-          if (!o) setAssignTarget(null);
-        }}
-        target={assignTarget}
-        canAssign={canAssignPackages}
-        onAssigned={() => void load()}
-      />
+      {assignOpen ? (
+        <AssignPackageDialog
+          open
+          onOpenChange={(o) => {
+            setAssignOpen(o);
+            if (!o) setAssignTarget(null);
+          }}
+          target={assignTarget}
+          canAssign={canAssignPackages}
+          onAssigned={() => void load()}
+        />
+      ) : null}
     </div>
   );
 }
