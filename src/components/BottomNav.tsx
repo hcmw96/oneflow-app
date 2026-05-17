@@ -27,7 +27,7 @@ export function BottomNav() {
               <Link
                 to={to}
                 className={cn(
-                  "flex min-h-[44px] flex-col items-center justify-center gap-1 rounded-xl px-2 py-1 text-[11px] font-medium transition-colors",
+                  "flex min-h-[44px] flex-col items-center justify-center gap-1 rounded-xl px-2 py-1 text-[11px] font-medium transition-colors duration-200 ease-out",
                   active ? "text-primary" : "text-muted-foreground",
                 )}
               >

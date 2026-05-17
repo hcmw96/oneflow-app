@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { Outlet, Link, createRootRoute, HeadContent, useNavigate, useRouterState } from "@tanstack/react-router";
 import { Loader2 } from "lucide-react";
 import { BottomNav } from "@/components/BottomNav";
+import { PageTransition } from "@/components/PageTransition";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider, useAuth } from "@/contexts/auth";
 import { captureReferrerFromSearch } from "@/lib/referral";
@@ -157,7 +158,11 @@ function ProtectedOutlet() {
     );
   }
 
-  return <Outlet />;
+  return (
+    <PageTransition>
+      <Outlet />
+    </PageTransition>
+  );
 }
 
 function RootComponent() {

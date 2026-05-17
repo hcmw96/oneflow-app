@@ -39,7 +39,7 @@ import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/admin/promotions")({
   beforeLoad: () => ensureMarketingAdminAccess(),
-  head: () => ({ meta: [{ title: "Promotions — One Flow Admin" }] }),
+  head: () => ({ meta: [{ title: "Promo codes — One Flow Admin" }] }),
   component: PromotionsPage,
 });
 
@@ -302,15 +302,19 @@ function PromotionsPage() {
   return (
     <div>
       <PageHeader
-        title="Promotions"
-        description={loading ? "Loading…" : `${rows.length} codes`}
+        title="Promo codes"
+        description={
+          loading
+            ? "Loading…"
+            : `${rows.length} code${rows.length === 1 ? "" : "s"} · shown on the Pricing page`
+        }
         actions={
           <Button
             type="button"
             onClick={openAdd}
             className="gap-2 bg-[#a3b693] text-white hover:bg-[#8fa67d]"
           >
-            <Plus className="h-4 w-4" /> New promotion
+            <Plus className="h-4 w-4" /> New promo code
           </Button>
         }
       />
@@ -348,7 +352,7 @@ function PromotionsPage() {
           <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
             <Megaphone className="h-10 w-10 text-muted-foreground" strokeWidth={1.5} />
             <p className="text-sm text-muted-foreground">
-              No promotions yet. Create one to start running offers.
+              No promo codes yet. Create one for customers to enter on the Pricing page.
             </p>
           </div>
         ) : (
@@ -459,7 +463,7 @@ function PromotionsPage() {
       <Sheet open={sheetOpen} onOpenChange={(o) => !o && closeSheet()}>
         <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-lg">
           <SheetHeader>
-            <SheetTitle>{editingId ? "Edit promotion" : "New promotion"}</SheetTitle>
+            <SheetTitle>{editingId ? "Edit promo code" : "New promo code"}</SheetTitle>
           </SheetHeader>
 
           <div className="mt-6 space-y-4">
@@ -593,7 +597,7 @@ function PromotionsPage() {
               className="bg-[#a3b693] text-white hover:bg-[#8fa67d]"
             >
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              {editingId ? "Save changes" : "Create promotion"}
+              {editingId ? "Save changes" : "Create promo code"}
             </Button>
           </SheetFooter>
         </SheetContent>

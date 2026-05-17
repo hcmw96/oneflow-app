@@ -59,6 +59,7 @@ export const getRouter = () => {
     routeTree,
     context: {},
     scrollRestoration: true,
+    defaultScrollRestoration: "smooth",
     defaultPreloadStaleTime: 0,
     defaultErrorComponent: DefaultErrorComponent,
   });

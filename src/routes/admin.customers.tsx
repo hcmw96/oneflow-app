@@ -54,6 +54,7 @@ function yearMonthKeyJhb(iso: string): string {
 
 const ALL_ROLES = [
   "customer",
+  "other",
   "guide",
   "front_desk",
   "management",
@@ -67,6 +68,12 @@ type AllRole = (typeof ALL_ROLES)[number];
 
 function isAllRole(r: string): r is AllRole {
   return (ALL_ROLES as readonly string[]).includes(r);
+}
+
+/** Radix Select crashes when `value` is not a listed item — coerce unknown DB roles. */
+function roleForSelect(role: string): AllRole {
+  const r = role.trim().toLowerCase();
+  return isAllRole(r) ? r : "customer";
 }
 
 function isValidEmail(v: string): boolean {
@@ -128,6 +135,7 @@ function totalCreditsRemainingActive(active: EmbeddedCreditRow[]): number {
 
 const ROLE_LABEL: Record<string, string> = {
   customer: "Customer",
+  other: "Other",
   guide: "Guide",
   front_desk: "Front Desk",
   management: "Management",
@@ -1059,7 +1067,7 @@ function CustomersPage() {
                     <td className={CUSTOMERS_COL.roleTd} onClick={(e) => e.stopPropagation()}>
                       <Select
                         key={`${m.id}-${m.role}`}
-                        value={m.role}
+                        value={roleForSelect(m.role)}
                         onValueChange={(v) => onListRoleChange(m.id, m.role, v)}
                         disabled={!canManageCustomers}
                       >

@@ -27,8 +27,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="mx-auto flex min-h-screen max-w-md flex-col pb-with-bottom-nav">
+    <div className="flex min-h-[100dvh] flex-col bg-background">
+      <div className="mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col pb-with-bottom-nav">
         <header className="safe-top sticky top-0 z-30 flex flex-col border-b border-border/60 bg-background/95 backdrop-blur">
           {showAdminCta && (
             <div className="border-b border-primary/20 bg-primary-soft/40 px-4 py-2">

@@ -125,7 +125,7 @@ export const adminNavItems: AdminNavItem[] = [
   { to: "/admin/transactions", label: "Transactions", icon: Receipt },
   { to: "/admin/waivers", label: "Waivers", icon: FileText },
   { to: "/admin/badges", label: "Badges", icon: Trophy },
-  { to: "/admin/promotions", label: "Promotions", icon: Megaphone },
+  { to: "/admin/promotions", label: "Promo codes", icon: Megaphone },
   { to: "/admin/email", label: "Email", icon: Mail },
   { to: "/admin/whatsapp", label: "WhatsApp", icon: MessageCircle },
   { to: "/admin/client-comms", label: "Client Comms", icon: Send },

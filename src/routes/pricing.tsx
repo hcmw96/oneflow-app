@@ -22,13 +22,12 @@ export const Route = createFileRoute("/pricing")({
   component: PricingPage,
 });
 
-/** Categories shown on customer pricing (excludes `staff`, which is never listed here). */
+/** Categories shown on customer pricing (excludes `staff` and `cafe` — admin only). */
 const CUSTOMER_PRICING_CATEGORY_ORDER = [
   "yoga",
   "wellzone",
   "all_access",
   "power",
-  "cafe",
   "complimentary",
 ] as const;
 
@@ -39,7 +38,6 @@ const SECTION_TITLES: Record<CustomerPricingCategory, string> = {
   wellzone: "Wellzone & Sauna",
   all_access: "All Access Memberships",
   power: "Power Memberships",
-  cafe: "Café Credits",
   complimentary: "Complimentary",
 };
 
@@ -90,11 +88,11 @@ function isCustomerPricingCategory(cat: string | null | undefined): cat is Custo
   return (CUSTOMER_PRICING_CATEGORY_ORDER as readonly string[]).includes(c);
 }
 
-/** Never surface staff-category packs on the public pricing page. */
+/** Never surface staff- or café-category packs on the public pricing page. */
 function filterCustomerPricingProducts(rows: ProductRow[]): ProductRow[] {
   return rows.filter((p) => {
     const cat = String(p.category ?? "").toLowerCase();
-    if (cat === "staff") return false;
+    if (cat === "staff" || cat === "cafe") return false;
     return isCustomerPricingCategory(cat);
   });
 }
@@ -123,7 +121,6 @@ function PricingPage() {
       wellzone: [],
       all_access: [],
       power: [],
-      cafe: [],
       complimentary: [],
     };
 
@@ -150,19 +147,6 @@ function PricingPage() {
       ),
     [itemsByCategory],
   );
-
-  useEffect(() => {
-    if (loading || sectionsToRender.length === 0) return;
-    setOpenSections((prev) => {
-      const next: Record<string, boolean> = {};
-      for (const { category } of sectionsToRender) {
-        next[category] = prev[category] ?? false;
-      }
-      const anyOpen = sectionsToRender.some(({ category }) => next[category]);
-      if (!anyOpen) next[sectionsToRender[0].category] = true;
-      return next;
-    });
-  }, [loading, sectionsToRender]);
 
   useEffect(() => {
     let cancelled = false;
@@ -310,8 +294,8 @@ function PricingPage() {
 
   return (
     <AppShell>
-      <div className="min-h-[100dvh] bg-gradient-to-b from-[#f4f7f0] to-background dark:from-background dark:to-background">
-        <header className="safe-top flex items-center gap-3 px-5 pt-4 pb-2">
+      <div className="flex flex-1 flex-col bg-gradient-to-b from-[#f4f7f0] to-background dark:from-background dark:to-background">
+        <header className="safe-top flex shrink-0 items-center gap-3 px-5 pt-4 pb-2">
           <button
             type="button"
             onClick={() => router.history.back()}
@@ -322,7 +306,7 @@ function PricingPage() {
           </button>
         </header>
 
-        <main className="relative flex-1 space-y-4 px-5 pb-6 pt-0" aria-busy={!!buyingId}>
+        <main className="flex-1 space-y-4 px-5 pb-8 pt-0 touch-pan-y">
           <h1 className="font-display text-2xl font-bold tracking-tight text-[#a3b693] dark:text-foreground">
             Buy A Pass
           </h1>
@@ -468,7 +452,7 @@ function PricingPage() {
                 return (
                   <div
                     key={category}
-                    className="overflow-hidden rounded-2xl border border-[#c5d4b8]/70 bg-card shadow-sm dark:border-border"
+                    className="rounded-2xl border border-[#c5d4b8]/70 bg-card shadow-sm dark:border-border"
                   >
                     <button
                       type="button"
@@ -476,7 +460,7 @@ function PricingPage() {
                       aria-expanded={open}
                       aria-controls={panelId}
                       onClick={() => toggleSection(category)}
-                      className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left transition-colors hover:bg-[#e8efe3]/60 dark:hover:bg-muted/40"
+                      className="flex w-full items-center justify-between gap-3 rounded-2xl px-4 py-3.5 text-left transition-colors hover:bg-[#e8efe3]/60 active:bg-[#e8efe3]/80 dark:hover:bg-muted/40"
                     >
                       <span className="min-w-0 flex-1 font-display text-sm font-bold leading-snug text-[#a3b693] dark:text-foreground sm:text-base">
                         {title}

@@ -78,6 +78,7 @@ import { cn } from "@/lib/utils";
 
 const ALL_ROLES = [
   "customer",
+  "other",
   "guide",
   "front_desk",
   "management",
@@ -93,8 +94,14 @@ function isAllRole(r: string): r is AllRole {
   return (ALL_ROLES as readonly string[]).includes(r);
 }
 
+function roleForSelect(role: string): AllRole {
+  const r = role.trim().toLowerCase();
+  return isAllRole(r) ? r : "customer";
+}
+
 const ROLE_LABEL: Record<string, string> = {
   customer: "Customer",
+  other: "Other",
   guide: "Guide",
   front_desk: "Front Desk",
   management: "Management",
@@ -251,7 +258,7 @@ export function CustomerProfileSheet({
     const pr = p as ProfileRow;
     setProfile(pr);
     setNotesDraft(pr.notes ?? "");
-    setRoleDraft((pr.role ?? "customer").toLowerCase());
+    setRoleDraft(roleForSelect(String(pr.role ?? "customer")));
 
     const [{ data: cr }, { data: bk }] = await Promise.all([
       supabase
@@ -997,7 +1004,7 @@ export function CustomerProfileSheet({
                       <div className="grid gap-1.5 sm:min-w-[200px]">
                         <Label className="text-xs">Role</Label>
                         <Select
-                          value={roleDraft}
+                          value={roleForSelect(roleDraft)}
                           onValueChange={onRoleSelectChange}
                           disabled={!canManage || savingRole}
                         >

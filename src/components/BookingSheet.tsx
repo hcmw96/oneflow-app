@@ -12,6 +12,7 @@ import {
 import { getUser, supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { cn } from "@/lib/utils";
+import { isPastScheduleClass } from "@/lib/scheduleBooking";
 import {
   bookingConfirmationEmailData,
   bookingConfirmationTemplateForClassType,
@@ -160,6 +161,7 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
 
   if (!session) return null;
 
+  const classIsPast = isPastScheduleClass(session.starts_at);
   const spots = Math.max(0, session.capacity - session.booked_count);
   const dateLine = new Date(session.starts_at).toLocaleDateString("en-ZA", {
     weekday: "long",
@@ -178,6 +180,10 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
 
   const confirm = async () => {
     if (!userId) return;
+    if (classIsPast) {
+      toast.error("This class has already passed — you can’t book it.");
+      return;
+    }
     if (!selectedCredit && !usePoints) {
       toast.error("Please select a payment method");
       return;
@@ -599,10 +605,14 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
             <button
               type="button"
               onClick={() => void confirm()}
-              disabled={loading}
+              disabled={loading || classIsPast}
               className="mt-6 w-full rounded-xl bg-primary py-3.5 text-sm font-semibold text-primary-foreground transition-opacity active:opacity-90 disabled:opacity-50"
             >
-              {loading ? "Confirming…" : "Confirm Booking"}
+              {classIsPast
+                ? "Class has passed"
+                : loading
+                  ? "Confirming…"
+                  : "Confirm Booking"}
             </button>
             <button
               type="button"

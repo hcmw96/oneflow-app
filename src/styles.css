@@ -16,6 +16,36 @@
   animation: schedule-content-enter 0.28s ease-out;
 }
 
+@keyframes schedule-slide-from-right {
+  from {
+    opacity: 0.65;
+    transform: translateX(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes schedule-slide-from-left {
+  from {
+    opacity: 0.65;
+    transform: translateX(-18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.schedule-slide-from-right {
+  animation: schedule-slide-from-right 0.28s ease-out;
+}
+
+.schedule-slide-from-left {
+  animation: schedule-slide-from-left 0.28s ease-out;
+}
+
 @custom-variant dark (&:is(.dark *));
 
 /*
@@ -161,6 +191,11 @@
     border-color: var(--color-border);
   }
 
+  html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+  }
+
   html,
   body {
     background-color: var(--color-background);
@@ -168,6 +203,19 @@
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
+    overflow-x: hidden;
+  }
+
+  body {
+    min-height: 100dvh;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
   }
 
   h1, h2, h3, .font-display {
@@ -189,4 +237,39 @@
   }
   .no-scrollbar::-webkit-scrollbar { display: none; }
   .no-scrollbar { scrollbar-width: none; }
+
+  /* Momentum scrolling for nested panes (schedule, pricing, sheets). */
+  .scroll-touch {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
+  }
+
+  /* Route enter — used by PageTransition (keyed by pathname). */
+  @keyframes page-transition-enter {
+    from {
+      opacity: 0;
+      transform: translate3d(0, 10px, 0);
+    }
+    to {
+      opacity: 1;
+      transform: translate3d(0, 0, 0);
+    }
+  }
+
+  .page-transition-enter {
+    animation: page-transition-enter 0.26s cubic-bezier(0.22, 1, 0.36, 1) both;
+    will-change: opacity, transform;
+  }
+
+  .page-transition-enter--reduced {
+    animation: none;
+    will-change: auto;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .page-transition-enter {
+      animation: none;
+      will-change: auto;
+    }
+  }
 }

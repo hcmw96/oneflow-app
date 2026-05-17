@@ -8,6 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/auth";
 import { supabase } from "@/lib/supabase";
 import { addDays, isSameDay, startOfDay, startOfWeekSunday } from "@/lib/format";
+import { isPastScheduleClass, isPastScheduleDay } from "@/lib/scheduleBooking";
 import { cn } from "@/lib/utils";
 import { TypeBadge } from "@/components/TypeBadge";
 import { displayClassType } from "@/types/studio";
@@ -68,29 +69,75 @@ function ScheduleRowsSkeleton() {
   );
 }
 
+const SWIPE_MIN_PX = 44;
+
 function useHorizontalDaySwipe(onPrev: () => void, onNext: () => void) {
-  const origin = useRef<{ x: number; y: number } | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const onPrevRef = useRef(onPrev);
+  const onNextRef = useRef(onNext);
+  onPrevRef.current = onPrev;
+  onNextRef.current = onNext;
 
-  const onTouchStart = (e: React.TouchEvent) => {
-    origin.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-  };
+  useEffect(() => {
+    const node = containerRef.current;
+    if (!node) return;
 
-  const onTouchEnd = (e: React.TouchEvent) => {
-    if (!origin.current) return;
-    const dx = e.changedTouches[0].clientX - origin.current.x;
-    const dy = e.changedTouches[0].clientY - origin.current.y;
-    origin.current = null;
-    if (Math.abs(dx) < 56) return;
-    if (Math.abs(dx) < Math.abs(dy) * 1.2) return;
-    if (dx < 0) onNext();
-    else onPrev();
-  };
+    const origin = { x: 0, y: 0 };
+    let locked: "h" | "v" | null = null;
 
-  return {
-    onTouchStart,
-    onTouchEnd,
-    style: { touchAction: "pan-y" } as const,
-  };
+    const reset = () => {
+      locked = null;
+    };
+
+    const onStart = (e: TouchEvent) => {
+      if (e.touches.length !== 1) return;
+      origin.x = e.touches[0].clientX;
+      origin.y = e.touches[0].clientY;
+      locked = null;
+    };
+
+    const onMove = (e: TouchEvent) => {
+      if (e.touches.length !== 1 || locked === "v") return;
+      const dx = e.touches[0].clientX - origin.x;
+      const dy = e.touches[0].clientY - origin.y;
+      if (!locked) {
+        if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+        locked = Math.abs(dx) > Math.abs(dy) ? "h" : "v";
+      }
+      if (locked === "h") e.preventDefault();
+    };
+
+    const onEnd = (e: TouchEvent) => {
+      if (locked !== "h") {
+        reset();
+        return;
+      }
+      const touch = e.changedTouches[0];
+      if (!touch) {
+        reset();
+        return;
+      }
+      const dx = touch.clientX - origin.x;
+      reset();
+      if (Math.abs(dx) < SWIPE_MIN_PX) return;
+      if (dx < 0) onNextRef.current();
+      else onPrevRef.current();
+    };
+
+    node.addEventListener("touchstart", onStart, { passive: true });
+    node.addEventListener("touchmove", onMove, { passive: false });
+    node.addEventListener("touchend", onEnd, { passive: true });
+    node.addEventListener("touchcancel", onEnd, { passive: true });
+
+    return () => {
+      node.removeEventListener("touchstart", onStart);
+      node.removeEventListener("touchmove", onMove);
+      node.removeEventListener("touchend", onEnd);
+      node.removeEventListener("touchcancel", onEnd);
+    };
+  }, []);
+
+  return containerRef;
 }
 
 export default function SchedulePage() {
@@ -105,17 +152,26 @@ export default function SchedulePage() {
   /** Confirmed booking `class_id`s for this user (any day — not filtered by booking `created_at`). */
   const [bookedClassIds, setBookedClassIds] = useState<Set<string>>(() => new Set());
   const [pendingOpenClassId, setPendingOpenClassId] = useState<string | null>(null);
+  const [daySlide, setDaySlide] = useState<"from-left" | "from-right" | null>(null);
   const classesCacheRef = useRef(new Map<string, ClassRow[]>());
 
   const goPrevDay = useCallback(() => {
+    setDaySlide("from-left");
     setSelectedDay((d) => startOfDay(addDays(d, -1)));
   }, []);
 
   const goNextDay = useCallback(() => {
+    setDaySlide("from-right");
     setSelectedDay((d) => startOfDay(addDays(d, 1)));
   }, []);
 
-  const swipeHandlers = useHorizontalDaySwipe(goPrevDay, goNextDay);
+  const swipeContainerRef = useHorizontalDaySwipe(goPrevDay, goNextDay);
+
+  useEffect(() => {
+    if (!daySlide) return;
+    const t = window.setTimeout(() => setDaySlide(null), 320);
+    return () => window.clearTimeout(t);
+  }, [daySlide, selectedDay]);
 
   const loadDayData = useCallback(async (day: Date, uid: string) => {
     const key = scheduleDayKey(day);
@@ -168,12 +224,11 @@ export default function SchedulePage() {
       })
       .sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime());
 
-    const graceMs = 15 * 60 * 1000;
     const nowT = now.getTime();
     const visible = isToday
       ? [
-          ...mapped.filter((c) => new Date(c.starts_at).getTime() > nowT - graceMs),
-          ...mapped.filter((c) => new Date(c.starts_at).getTime() <= nowT - graceMs),
+          ...mapped.filter((c) => !isPastScheduleClass(c.starts_at, nowT)),
+          ...mapped.filter((c) => isPastScheduleClass(c.starts_at, nowT)),
         ]
       : mapped;
 
@@ -238,7 +293,11 @@ export default function SchedulePage() {
 
     const row = classes.find((c) => c.id === pendingOpenClassId);
     if (row) {
-      setBookingFor(row);
+      if (isPastScheduleClass(row.starts_at)) {
+        toast.error("This class has already passed — you can’t book it.");
+      } else {
+        setBookingFor(row);
+      }
       setPendingOpenClassId(null);
       void navigate({ to: "/schedule", search: { class: undefined }, replace: true });
       return;
@@ -273,6 +332,7 @@ export default function SchedulePage() {
 
   const uid = user?.id;
   const today = startOfDay(new Date());
+  const selectedDayIsPast = isPastScheduleDay(selectedDay);
 
   if (!authReady || !uid) {
     return (
@@ -304,6 +364,7 @@ export default function SchedulePage() {
         <p className="mt-1 text-sm text-muted-foreground">and book classes!</p>
       </header>
 
+      <div ref={swipeContainerRef} className="flex min-h-0 flex-1 flex-col touch-pan-y">
       <div className="px-5 pt-4">
         <p className="mb-2 text-center text-sm text-muted-foreground">{monthLabel}</p>
         <div className="rounded-2xl border border-border bg-card p-2">
@@ -311,6 +372,7 @@ export default function SchedulePage() {
             {daysInWeek.map((d) => {
               const selected = isSameDay(d, selectedDay);
               const isTodayCell = isSameDay(d, today);
+              const dayIsPast = isPastScheduleDay(d);
               return (
                 <button
                   key={scheduleDayKey(d)}
@@ -318,15 +380,19 @@ export default function SchedulePage() {
                   onClick={() => setSelectedDay(d)}
                   className={cn(
                     "flex min-h-[52px] min-w-0 flex-1 flex-col items-center justify-center rounded-xl px-0.5 py-1.5 transition-all duration-200",
-                    selected && "text-white shadow-sm",
+                    selected && !dayIsPast && "text-white shadow-sm",
+                    selected && dayIsPast && "bg-muted text-muted-foreground shadow-sm",
                     !selected && isTodayCell && "ring-2 ring-[#a3b693]/80",
+                    !selected && dayIsPast && "opacity-45",
                   )}
                   style={
-                    selected
+                    selected && !dayIsPast
                       ? { backgroundColor: SAGE, color: "#fff" }
-                      : isTodayCell
-                        ? { backgroundColor: "transparent" }
-                        : undefined
+                      : selected && dayIsPast
+                        ? undefined
+                        : isTodayCell
+                          ? { backgroundColor: "transparent" }
+                          : undefined
                   }
                 >
                   <span className="font-display text-base font-bold leading-none">
@@ -335,7 +401,8 @@ export default function SchedulePage() {
                   <span
                     className={cn(
                       "mt-1 text-[10px] font-semibold uppercase tracking-wide",
-                      selected ? "text-white/90" : "text-muted-foreground",
+                      selected && !dayIsPast && "text-white/90",
+                      (!selected || dayIsPast) && "text-muted-foreground",
                     )}
                   >
                     {d.toLocaleDateString("en-ZA", { weekday: "short" }).slice(0, 3)}
@@ -345,7 +412,7 @@ export default function SchedulePage() {
             })}
           </div>
           <p className="mt-2 text-center text-[11px] text-muted-foreground">
-            Swipe the class list left or right to change day
+            Swipe left or right to change day
           </p>
         </div>
       </div>
@@ -355,50 +422,26 @@ export default function SchedulePage() {
           "flex-1 space-y-5 px-5 pt-5 transition-opacity",
           revalidating && "opacity-80",
         )}
-        {...swipeHandlers}
       >
-        <h2 className="font-display text-lg font-bold">{longDayLabel}</h2>
-        <div className="flex flex-wrap gap-2 pb-1">
-          <button
-            type="button"
-            onClick={() => setSelectedDay(startOfDay(new Date()))}
-            className={cn(
-              "rounded-full border px-3 py-1 text-xs font-semibold transition-colors",
-              isSameDay(selectedDay, today)
-                ? "border-[#a3b693] bg-[#a3b693]/15 text-[#3d4f36]"
-                : "border-border bg-card text-muted-foreground hover:bg-muted/50",
-            )}
-          >
-            Today
-          </button>
-          <button
-            type="button"
-            onClick={() => setSelectedDay(startOfDay(addDays(new Date(), -1)))}
-            className={cn(
-              "rounded-full border px-3 py-1 text-xs font-semibold transition-colors",
-              isSameDay(selectedDay, startOfDay(addDays(new Date(), -1)))
-                ? "border-[#a3b693] bg-[#a3b693]/15 text-[#3d4f36]"
-                : "border-border bg-card text-muted-foreground hover:bg-muted/50",
-            )}
-          >
-            Yesterday
-          </button>
-          <button
-            type="button"
-            onClick={() => setSelectedDay(startOfDay(addDays(new Date(), -2)))}
-            className={cn(
-              "rounded-full border px-3 py-1 text-xs font-semibold transition-colors",
-              isSameDay(selectedDay, startOfDay(addDays(new Date(), -2)))
-                ? "border-[#a3b693] bg-[#a3b693]/15 text-[#3d4f36]"
-                : "border-border bg-card text-muted-foreground hover:bg-muted/50",
-            )}
-          >
-            Day before yesterday
-          </button>
-        </div>
+        <h2
+          className={cn(
+            "font-display text-lg font-bold",
+            selectedDayIsPast && "text-muted-foreground",
+          )}
+        >
+          {longDayLabel}
+        </h2>
         <div
           key={scheduleDayKey(selectedDay)}
-          className={cn("space-y-5", !loading && "schedule-content-animate")}
+          className={cn(
+            "space-y-5",
+            !loading &&
+              (daySlide === "from-left"
+                ? "schedule-slide-from-left"
+                : daySlide === "from-right"
+                  ? "schedule-slide-from-right"
+                  : "schedule-content-animate"),
+          )}
         >
           {loading ? (
             <ScheduleRowsSkeleton />
@@ -408,23 +451,25 @@ export default function SchedulePage() {
             </div>
           ) : (
             classes.map((c) => {
-              const graceMs = 15 * 60 * 1000;
-              const greyPast =
-                isSameDay(selectedDay, today) &&
-                new Date(c.starts_at).getTime() <= Date.now() - graceMs;
+              const classIsPast =
+                selectedDayIsPast || isPastScheduleClass(c.starts_at);
               return (
                 <ScheduleRow
                   key={c.id}
                   session={c}
                   alreadyBooked={bookedClassIds.has(c.id)}
-                  greyPast={greyPast}
-                  onReserve={() => setBookingFor(c)}
+                  isPast={classIsPast}
+                  onReserve={() => {
+                    if (classIsPast) return;
+                    setBookingFor(c);
+                  }}
                 />
               );
             })
           )}
         </div>
       </main>
+      </div>
 
       <BookingSheet
         session={bookingFor}
@@ -446,12 +491,12 @@ export default function SchedulePage() {
 function ScheduleRow({
   session,
   alreadyBooked,
-  greyPast,
+  isPast,
   onReserve,
 }: {
   session: ClassRow;
   alreadyBooked: boolean;
-  greyPast?: boolean;
+  isPast?: boolean;
   onReserve: () => void;
 }) {
   const [descExpanded, setDescExpanded] = useState(false);
@@ -467,17 +512,18 @@ function ScheduleRow({
   );
   const full = session.booked_count >= session.capacity;
   const almostFull = session.booked_count / session.capacity >= 0.8;
+  const canReserve = !isPast && !alreadyBooked && !full;
 
   return (
     <div
       className={cn(
         "rounded-2xl border border-border bg-card px-5 py-5",
-        greyPast && "opacity-55 saturate-75",
+        isPast && "opacity-55 saturate-50",
       )}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          {almostFull && !full && (
+          {almostFull && !full && !isPast && (
             <span className="inline-flex rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-semibold text-orange-700">
               Almost Full
             </span>
@@ -546,17 +592,15 @@ function ScheduleRow({
       <button
         type="button"
         onClick={onReserve}
-        disabled={alreadyBooked}
+        disabled={!canReserve}
         className={cn(
           "mt-4 w-full rounded-xl py-3 text-sm font-semibold transition-opacity",
-          alreadyBooked
+          isPast || alreadyBooked || full
             ? "cursor-not-allowed bg-muted text-muted-foreground"
-            : full
-              ? "bg-muted text-muted-foreground"
-              : "bg-primary text-primary-foreground active:opacity-90",
+            : "bg-primary text-primary-foreground active:opacity-90",
         )}
       >
-        {alreadyBooked ? "Booked" : full ? "Full" : "Reserve"}
+        {isPast ? "Past" : alreadyBooked ? "Booked" : full ? "Full" : "Reserve"}
       </button>
     </div>
   );
