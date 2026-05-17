@@ -12,7 +12,7 @@ import {
 import { getUser, supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { cn } from "@/lib/utils";
-import { isPastScheduleClass } from "@/lib/scheduleBooking";
+import { isFreeBeginnerClass, isPastScheduleClass } from "@/lib/scheduleBooking";
 import {
   bookingConfirmationEmailData,
   bookingConfirmationTemplateForClassType,
@@ -97,15 +97,25 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
       setUserId(user.id);
       setUserEmail(user.email ?? null);
 
-      const [{ data: creditsData, error: creditsErr }, { data: pointsData }, { data: ships }] =
-        await Promise.all([
-          supabase
+      const isFree = isFreeBeginnerClass(session.class_type);
+
+      const creditsPromise = isFree
+        ? Promise.resolve({ data: null, error: null })
+        : supabase
             .from("user_credits")
             .select(
               "id, product_name, credits_remaining, is_unlimited, expires_at, allowed_class_types, category",
             )
-            .eq("profile_id", user.id),
-          supabase.from("profiles").select("flow_points").eq("id", user.id).maybeSingle(),
+            .eq("profile_id", user.id);
+
+      const pointsPromise = isFree
+        ? Promise.resolve({ data: null, error: null })
+        : supabase.from("profiles").select("flow_points").eq("id", user.id).maybeSingle();
+
+      const [{ data: creditsData, error: creditsErr }, { data: pointsData }, { data: ships }] =
+        await Promise.all([
+          creditsPromise,
+          pointsPromise,
           supabase
             .from("friendships")
             .select("requester_id, addressee_id")
@@ -113,34 +123,41 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
             .eq("status", "accepted"),
         ]);
 
-      if (creditsErr) {
-        console.error("[BookingSheet] user_credits query failed", creditsErr);
-      }
+      if (isFree) {
+        setCredits([]);
+        setSelectedCredit(null);
+        setUsePoints(false);
+        setFlowPoints(0);
+      } else {
+        if (creditsErr) {
+          console.error("[BookingSheet] user_credits query failed", creditsErr);
+        }
 
-      // Credits attach to profile_id (same as auth user id for all roles, including staff).
-      const nowMs = Date.now();
-      const pool = (creditsData ?? []).filter((c) => {
-        const cat = String((c as { category?: string | null }).category ?? "").toLowerCase();
-        if (cat === "cafe") return false;
-        if (c.is_unlimited) {
+        // Credits attach to profile_id (same as auth user id for all roles, including staff).
+        const nowMs = Date.now();
+        const pool = (creditsData ?? []).filter((c) => {
+          const cat = String((c as { category?: string | null }).category ?? "").toLowerCase();
+          if (cat === "cafe") return false;
+          if (c.is_unlimited) {
+            if (c.expires_at && new Date(c.expires_at).getTime() < nowMs) return false;
+            return true;
+          }
+          const rem = Number(c.credits_remaining);
+          if (!Number.isFinite(rem) || rem <= 0) return false;
           if (c.expires_at && new Date(c.expires_at).getTime() < nowMs) return false;
           return true;
-        }
-        const rem = Number(c.credits_remaining);
-        if (!Number.isFinite(rem) || rem <= 0) return false;
-        if (c.expires_at && new Date(c.expires_at).getTime() < nowMs) return false;
-        return true;
-      });
+        });
 
-      const eligible = pool.filter((c) => {
-        if (!c.allowed_class_types || c.allowed_class_types.length === 0) return true;
-        return c.allowed_class_types.includes(session.class_type);
-      });
+        const eligible = pool.filter((c) => {
+          if (!c.allowed_class_types || c.allowed_class_types.length === 0) return true;
+          return c.allowed_class_types.includes(session.class_type);
+        });
 
-      setCredits(eligible as Credit[]);
-      setSelectedCredit(eligible[0]?.id ?? null);
-      const fp = (pointsData as { flow_points?: number | null } | null)?.flow_points;
-      setFlowPoints(typeof fp === "number" && Number.isFinite(fp) ? Math.max(0, fp) : 0);
+        setCredits(eligible as Credit[]);
+        setSelectedCredit(eligible[0]?.id ?? null);
+        const fp = (pointsData as { flow_points?: number | null } | null)?.flow_points;
+        setFlowPoints(typeof fp === "number" && Number.isFinite(fp) ? Math.max(0, fp) : 0);
+      }
 
       const shipRows = (ships ?? []) as { requester_id: string; addressee_id: string }[];
       const otherIds = shipRows.map((s) =>
@@ -162,6 +179,7 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
   if (!session) return null;
 
   const classIsPast = isPastScheduleClass(session.starts_at);
+  const isFreeClass = isFreeBeginnerClass(session.class_type);
   const spots = Math.max(0, session.capacity - session.booked_count);
   const dateLine = new Date(session.starts_at).toLocaleDateString("en-ZA", {
     weekday: "long",
@@ -178,12 +196,86 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
   const isMay = new Date(session.starts_at).getMonth() === 4;
   const pointsValue = Math.floor(flowPoints / 100) * 10;
 
+  const afterBookingConfirmed = async (bookingId: string) => {
+    const fpIns = await supabase.from("flow_points").insert({
+      profile_id: userId!,
+      points: 1,
+      reason: "class_attended",
+      reference_id: bookingId,
+    });
+    if (fpIns.error) {
+      console.error("[BookingSheet] flow_points insert after booking failed", fpIns.error);
+    }
+
+    if (isMayChallenge && isMay) {
+      await supabase.from("challenge_entries").insert({
+        profile_id: userId!,
+        booking_id: bookingId,
+        challenge_month: "2026-05-01",
+      });
+    }
+
+    if (userEmail) {
+      await supabase.functions.invoke("send-email", {
+        body: {
+          to: userEmail,
+          template: bookingConfirmationTemplateForClassType(session.class_type),
+          data: bookingConfirmationEmailData({
+            className: session.name,
+            startsAtIso: session.starts_at,
+            guideName: session.guide_name,
+            location: session.location,
+            matAddon: isFreeClass ? false : matAddon,
+            towelAddon: isFreeClass ? false : towelAddon,
+          }),
+        },
+      });
+    }
+  };
+
   const confirm = async () => {
     if (!userId) return;
     if (classIsPast) {
       toast.error("This class has already passed — you can’t book it.");
       return;
     }
+    if (isFreeClass) {
+      setLoading(true);
+      const { data: booking, error } = await supabase
+        .from("bookings")
+        .insert({
+          profile_id: userId,
+          class_id: session.id,
+          status: "confirmed",
+          payment_method: "free",
+          credit_id: null,
+          flow_points_used: 0,
+          mat_addon: false,
+          towel_addon: false,
+          qr_token: globalThis.crypto.randomUUID(),
+        })
+        .select()
+        .maybeSingle();
+
+      if (error || !booking) {
+        console.error("[BookingSheet] free booking insert failed", error);
+        toast.error(
+          error?.code === "23505"
+            ? "You already have an active booking for this class."
+            : supabaseErrorMessage(error, "Could not complete booking"),
+        );
+        setLoading(false);
+        return;
+      }
+
+      await afterBookingConfirmed(booking.id as string);
+      toast.success("You're booked! See you on the mat 🌿");
+      setLoading(false);
+      onBookingConfirmed?.(session.id);
+      onOpenChange(false);
+      return;
+    }
+
     if (!selectedCredit && !usePoints) {
       toast.error("Please select a payment method");
       return;
@@ -311,40 +403,7 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
       }
     }
 
-    const fpIns = await supabase.from("flow_points").insert({
-      profile_id: userId,
-      points: 1,
-      reason: "class_attended",
-      reference_id: booking.id,
-    });
-    if (fpIns.error) {
-      console.error("[BookingSheet] flow_points insert after booking failed", fpIns.error);
-    }
-
-    if (isMayChallenge && isMay) {
-      await supabase.from("challenge_entries").insert({
-        profile_id: userId,
-        booking_id: booking.id,
-        challenge_month: "2026-05-01",
-      });
-    }
-
-    if (userEmail) {
-      await supabase.functions.invoke("send-email", {
-        body: {
-          to: userEmail,
-          template: bookingConfirmationTemplateForClassType(session.class_type),
-          data: bookingConfirmationEmailData({
-            className: session.name,
-            startsAtIso: session.starts_at,
-            guideName: session.guide_name,
-            location: session.location,
-            matAddon,
-            towelAddon,
-          }),
-        },
-      });
-    }
+    await afterBookingConfirmed(booking.id as string);
 
     toast.success("Booking confirmed!", {
       description: `${session.name} · ${dateLine} at ${timeLine}`,
@@ -485,7 +544,16 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
               </div>
             )}
 
-            {credits.length === 0 ? (
+            {isFreeClass ? (
+              <div className="mt-6 rounded-2xl border border-[#a3b693]/50 bg-[#e8efe3]/80 px-4 py-4 text-center dark:bg-[#a3b693]/10">
+                <p className="text-sm font-semibold text-[#3d4f36] dark:text-foreground">
+                  Free intro class
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  No pass or payment needed — tap below to reserve your spot.
+                </p>
+              </div>
+            ) : credits.length === 0 ? (
               <div className="mt-6 rounded-2xl border border-dashed border-border bg-card p-4 text-center text-sm text-muted-foreground">
                 No eligible credits for this class.{" "}
                 <Link to="/pricing" className="text-primary underline">
@@ -535,7 +603,7 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
               </>
             )}
 
-            {flowPoints >= 100 && (
+            {!isFreeClass && flowPoints >= 100 && (
               <button
                 type="button"
                 onClick={() => {
@@ -564,29 +632,33 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
               </button>
             )}
 
-            <p className="mt-6 text-sm font-semibold">Add-ons:</p>
-            <div className="mt-2 flex gap-2">
-              <button
-                type="button"
-                onClick={() => setMatAddon((v) => !v)}
-                className={cn(
-                  "flex-1 rounded-xl border py-2.5 text-sm font-semibold transition-colors",
-                  matAddon ? "border-primary bg-primary/10" : "border-border bg-card",
-                )}
-              >
-                🧘 Mat
-              </button>
-              <button
-                type="button"
-                onClick={() => setTowelAddon((v) => !v)}
-                className={cn(
-                  "flex-1 rounded-xl border py-2.5 text-sm font-semibold transition-colors",
-                  towelAddon ? "border-primary bg-primary/10" : "border-border bg-card",
-                )}
-              >
-                🏷️ Towel
-              </button>
-            </div>
+            {!isFreeClass && (
+              <>
+                <p className="mt-6 text-sm font-semibold">Add-ons:</p>
+                <div className="mt-2 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setMatAddon((v) => !v)}
+                    className={cn(
+                      "flex-1 rounded-xl border py-2.5 text-sm font-semibold transition-colors",
+                      matAddon ? "border-primary bg-primary/10" : "border-border bg-card",
+                    )}
+                  >
+                    🧘 Mat
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTowelAddon((v) => !v)}
+                    className={cn(
+                      "flex-1 rounded-xl border py-2.5 text-sm font-semibold transition-colors",
+                      towelAddon ? "border-primary bg-primary/10" : "border-border bg-card",
+                    )}
+                  >
+                    🏷️ Towel
+                  </button>
+                </div>
+              </>
+            )}
 
             {acceptedFriends.length > 0 ? (
               <button
@@ -606,13 +678,20 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
               type="button"
               onClick={() => void confirm()}
               disabled={loading || classIsPast}
-              className="mt-6 w-full rounded-xl bg-primary py-3.5 text-sm font-semibold text-primary-foreground transition-opacity active:opacity-90 disabled:opacity-50"
+              className={cn(
+                "mt-6 w-full rounded-xl py-3.5 text-sm font-semibold transition-opacity active:opacity-90 disabled:opacity-50",
+                isFreeClass && !classIsPast
+                  ? "bg-[#a3b693] text-white"
+                  : "bg-primary text-primary-foreground",
+              )}
             >
               {classIsPast
                 ? "Class has passed"
                 : loading
                   ? "Confirming…"
-                  : "Confirm Booking"}
+                  : isFreeClass
+                    ? "Book Free"
+                    : "Confirm Booking"}
             </button>
             <button
               type="button"

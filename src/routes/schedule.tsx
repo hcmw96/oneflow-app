@@ -8,7 +8,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/auth";
 import { supabase } from "@/lib/supabase";
 import { addDays, isSameDay, startOfDay, startOfWeekSunday } from "@/lib/format";
-import { isPastScheduleClass, isPastScheduleDay } from "@/lib/scheduleBooking";
+import {
+  isFreeBeginnerClass,
+  isPastScheduleClass,
+  isPastScheduleDay,
+} from "@/lib/scheduleBooking";
 import { cn } from "@/lib/utils";
 import { TypeBadge } from "@/components/TypeBadge";
 import { displayClassType } from "@/types/studio";
@@ -513,6 +517,7 @@ function ScheduleRow({
   const full = session.booked_count >= session.capacity;
   const almostFull = session.booked_count / session.capacity >= 0.8;
   const canReserve = !isPast && !alreadyBooked && !full;
+  const isFreeClass = isFreeBeginnerClass(session.class_type);
 
   return (
     <div
@@ -523,11 +528,18 @@ function ScheduleRow({
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          {almostFull && !full && !isPast && (
-            <span className="inline-flex rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-semibold text-orange-700">
-              Almost Full
-            </span>
-          )}
+          <div className="flex flex-wrap items-center gap-1.5">
+            {isFreeClass && (
+              <span className="inline-flex rounded-full bg-[#a3b693]/25 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#3d4f36]">
+                FREE
+              </span>
+            )}
+            {almostFull && !full && !isPast && (
+              <span className="inline-flex rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-semibold text-orange-700">
+                Almost Full
+              </span>
+            )}
+          </div>
         </div>
         <TypeBadge
           type={badgeType}
@@ -597,10 +609,20 @@ function ScheduleRow({
           "mt-4 w-full rounded-xl py-3 text-sm font-semibold transition-opacity",
           isPast || alreadyBooked || full
             ? "cursor-not-allowed bg-muted text-muted-foreground"
-            : "bg-primary text-primary-foreground active:opacity-90",
+            : isFreeClass
+              ? "bg-[#a3b693] text-white active:opacity-90"
+              : "bg-primary text-primary-foreground active:opacity-90",
         )}
       >
-        {isPast ? "Past" : alreadyBooked ? "Booked" : full ? "Full" : "Reserve"}
+        {isPast
+          ? "Past"
+          : alreadyBooked
+            ? "Booked"
+            : full
+              ? "Full"
+              : isFreeClass
+                ? "Book Free"
+                : "Reserve"}
       </button>
     </div>
   );

@@ -14,3 +14,10 @@ export function isPastScheduleClass(
 ): boolean {
   return new Date(startsAt).getTime() <= nowMs - graceMs;
 }
+
+const FREE_BEGINNER_CLASS_TYPES = new Set(["beginner", "beginner_sculpt"]);
+
+/** Intro classes booked without credits or payment. */
+export function isFreeBeginnerClass(classType: string | null | undefined): boolean {
+  return FREE_BEGINNER_CLASS_TYPES.has(String(classType ?? "").toLowerCase());
+}
