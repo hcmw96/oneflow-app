@@ -54,24 +54,44 @@ export function QRScanner({
     styleEl.setAttribute("data-qr-scanner", containerId);
     styleEl.textContent = `
       #${containerId} {
-        position: relative !important;
+        position: absolute !important;
+        inset: 0 !important;
         width: 100% !important;
         height: 100% !important;
         min-height: 0 !important;
         padding: 0 !important;
         border: none !important;
         background: #000 !important;
+        overflow: hidden !important;
+      }
+      #${containerId} > div,
+      #${containerId} > div > div {
+        position: absolute !important;
+        inset: 0 !important;
+        width: 100% !important;
+        height: 100% !important;
+        padding: 0 !important;
+        border: none !important;
       }
       #${containerId} video {
+        position: absolute !important;
+        inset: 0 !important;
         width: 100% !important;
         height: 100% !important;
         object-fit: cover !important;
         display: block !important;
       }
+      #${containerId} canvas {
+        position: absolute !important;
+        inset: 0 !important;
+        width: 100% !important;
+        height: 100% !important;
+      }
       #${containerId} img {
         display: none !important;
       }
       #${containerId} #qr-shaded-region {
+        position: absolute !important;
         border-width: 3px !important;
         border-color: rgba(163, 182, 147, 0.95) !important;
         border-radius: 12px !important;
@@ -90,8 +110,7 @@ export function QRScanner({
         {
           fps: isKiosk ? 12 : 10,
           qrbox: (w, h) => qrScanBoxSize(w, h, scanBoxRatio),
-          aspectRatio: 1.0,
-          disableFlip: cameraFacing === "environment",
+          disableFlip: cameraFacing === "user",
         },
         (decodedText: string) => {
           onScanRef.current(decodedText);

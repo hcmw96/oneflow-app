@@ -8,7 +8,10 @@ import { supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { cn } from "@/lib/utils";
 import { awardClassesAttendedBadges } from "@/lib/badges";
+import { checkInBookingByQrRpc } from "@/lib/checkInQr";
 import { fetchRosterMemberAddonAccess } from "@/components/admin/RosterAddonPills";
+import { jhbDayBounds } from "@/lib/jhbTime";
+import { upsertMayChallengeCheckIn } from "@/lib/mayChallengeCheckIn";
 import {
   type BookingRow,
   type RosterRow,
@@ -54,19 +57,15 @@ function CheckInPage() {
 
   const loadData = useCallback(async () => {
     setLoading(true);
-    const day = new Date();
-    const start = new Date(day);
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(day);
-    end.setHours(23, 59, 59, 999);
+    const { startUtcIso, endUtcIso } = jhbDayBounds();
 
     const { data: classesData, error: classesError } = await supabase
       .from("classes")
       .select(
         "id, name, class_type, starts_at, capacity, booked_count, location, guide_name, guide_id",
       )
-      .gte("starts_at", start.toISOString())
-      .lte("starts_at", end.toISOString())
+      .gte("starts_at", startUtcIso)
+      .lte("starts_at", endUtcIso)
       .eq("is_cancelled", false)
       .order("starts_at");
 
@@ -196,9 +195,36 @@ function CheckInPage() {
     }
   };
 
+  const finishQrCheckIn = async (args: {
+    bookingId: string;
+    profileId: string;
+    memberName: string;
+    classStartsAt: string | null | undefined;
+  }) => {
+    const { bookingId, profileId, memberName, classStartsAt } = args;
+    if (profileId && classStartsAt) {
+      await upsertMayChallengeCheckIn({
+        profileId,
+        bookingId,
+        classStartsAtIso: classStartsAt,
+      });
+      void awardClassesAttendedBadges(profileId);
+    }
+
+    toast.success(`Welcome ${memberName}! · +10 Flow Points`, {
+      duration: 3000,
+      className:
+        "!border-emerald-600/30 !bg-emerald-600 !px-6 !py-5 !text-lg !font-semibold !text-white !shadow-md",
+    });
+    await loadData();
+  };
+
   const handleQrScan = async (decodedText: string) => {
     const token = parseQrCheckInToken(decodedText);
-    if (!token) return;
+    if (!token) {
+      toastQrIssue("parse", "Could not read this QR code. Show the code from My Bookings in the app.");
+      return;
+    }
 
     if (qrDedupeRef.current === token) return;
     qrDedupeRef.current = token;
@@ -206,6 +232,37 @@ function CheckInPage() {
     qrDedupeTimerRef.current = setTimeout(() => {
       qrDedupeRef.current = null;
     }, 3200);
+
+    const { result: rpcResult, rpcError } = await checkInBookingByQrRpc(supabase, token);
+
+    if (rpcError) {
+      console.error("check-in: QR RPC failed", rpcError);
+      toast.error(rpcError);
+      return;
+    }
+
+    if (rpcResult) {
+      if (!rpcResult.ok) {
+        const code = rpcResult.code ?? "error";
+        const message =
+          rpcResult.message ?? "Could not check in with this code.";
+        if (code === "already") {
+          toastQrIssue("already-in", message, "warning");
+        } else {
+          toastQrIssue(`${code}:${token}`, message);
+        }
+        return;
+      }
+
+      await finishQrCheckIn({
+        bookingId: String(rpcResult.booking_id),
+        profileId: String(rpcResult.profile_id),
+        memberName: String(rpcResult.member_name ?? "Member"),
+        classStartsAt:
+          typeof rpcResult.class_starts_at === "string" ? rpcResult.class_starts_at : null,
+      });
+      return;
+    }
 
     const { data: booking, error: findError } = await supabase
       .from("bookings")
@@ -278,22 +335,12 @@ function CheckInPage() {
     }
 
     const cls = oneClass(booking.classes as BookingRow["classes"]);
-    const startsAt = cls?.starts_at;
-    if (booking.profile_id && startsAt) {
-      await supabase.from("challenge_checkins").insert({
-        profile_id: booking.profile_id as string,
-        class_date: new Date(startsAt).toISOString().split("T")[0],
-        booking_id: booking.id as string,
-      });
-      void awardClassesAttendedBadges(booking.profile_id as string);
-    }
-
-    toast.success(`Welcome ${firstName}! · +10 Flow Points`, {
-      duration: 3000,
-      className:
-        "!border-emerald-600/30 !bg-emerald-600 !px-6 !py-5 !text-lg !font-semibold !text-white !shadow-md",
+    await finishQrCheckIn({
+      bookingId: booking.id as string,
+      profileId: booking.profile_id as string,
+      memberName: firstName,
+      classStartsAt: cls?.starts_at,
     });
-    await loadData();
   };
 
   return (
