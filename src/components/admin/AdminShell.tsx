@@ -135,10 +135,10 @@ export function AdminShell({ children }: { children: ReactNode }) {
   };
 
   return (
-    <div className="flex min-h-screen w-full bg-background">
+    <div className="flex h-[100dvh] max-h-[100dvh] w-full overflow-hidden bg-background">
       <aside
         className={cn(
-          "sticky top-0 hidden h-screen flex-col border-r border-sidebar-border bg-sidebar transition-[width] md:flex",
+          "hidden h-full min-h-0 shrink-0 flex-col border-r border-sidebar-border bg-sidebar transition-[width] md:flex",
           collapsed ? "w-16" : "w-56",
         )}
       >
@@ -250,8 +250,8 @@ export function AdminShell({ children }: { children: ReactNode }) {
         </div>
       </aside>
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-border bg-background/95 px-4 backdrop-blur md:px-6">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <header className="z-20 flex h-14 shrink-0 items-center gap-3 border-b border-border bg-background/95 px-4 backdrop-blur md:px-6">
           <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
             <SheetTrigger asChild>
               <button
@@ -352,10 +352,11 @@ export function AdminShell({ children }: { children: ReactNode }) {
           </h1>
         </header>
         <main
+          data-admin-scroll
           className={cn(
-            "flex-1 px-4 py-5 md:px-6 md:py-8",
+            "min-h-0 flex-1 scroll-touch px-4 py-5 md:px-6 md:py-8",
             isCheckInKiosk
-              ? "flex min-h-0 flex-col overflow-hidden py-3 md:py-4"
+              ? "flex flex-col overflow-hidden py-3 md:py-4"
               : "overflow-y-auto",
           )}
         >

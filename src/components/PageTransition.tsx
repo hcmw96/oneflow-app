@@ -27,21 +27,30 @@ export function PageTransition({
   className?: string;
 }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const isAdmin = pathname.startsWith("/admin");
   const reducedMotion = usePrefersReducedMotion();
 
   useEffect(() => {
+    if (isAdmin) {
+      const main = document.querySelector<HTMLElement>("[data-admin-scroll]");
+      if (main) {
+        main.scrollTo({ top: 0, behavior: reducedMotion ? "auto" : "smooth" });
+      }
+      return;
+    }
     if (reducedMotion) {
       window.scrollTo(0, 0);
       return;
     }
     window.scrollTo({ top: 0, behavior: "smooth" });
-  }, [pathname, reducedMotion]);
+  }, [pathname, reducedMotion, isAdmin]);
 
   return (
     <div
       key={pathname}
       className={cn(
-        "page-transition-enter flex min-h-0 min-w-0 flex-1 flex-col",
+        "page-transition-enter min-w-0",
+        !isAdmin && "flex min-h-0 flex-1 flex-col",
         reducedMotion && "page-transition-enter--reduced",
         className,
       )}
