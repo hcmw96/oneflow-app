@@ -1,4 +1,5 @@
 import { Link, useRouterState } from "@tanstack/react-router";
+import { Home, LogOut, type LucideIcon } from "lucide-react";
 import {
   LayoutGrid,
   QrCode,
@@ -19,11 +20,11 @@ import {
   Send,
   Settings,
   Download,
-  type LucideIcon,
 } from "lucide-react";
 import {
   canAccessMarketingAdmin,
   canEnterAdminArea,
+  canViewCustomerApp,
   defaultMarketingAdminPath,
   isMarketingAdminPath,
   isMarketingScopedStaff,
@@ -137,16 +138,21 @@ export function AdminNav({
   collapsed,
   onNavigate,
   profile,
+  fill = true,
 }: {
   collapsed: boolean;
   onNavigate?: () => void;
   profile: AdminRoleProfile;
+  /** When false, parent supplies the scroll container (mobile drawer). */
+  fill?: boolean;
 }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const items = navItemsForRole(profile);
 
   return (
-    <nav className="flex-1 overflow-y-auto px-2 py-3">
+    <nav
+      className={cn("overflow-y-auto px-2 py-3", fill && "min-h-0 flex-1")}
+    >
       <ul className="space-y-0.5">
         {items.map((item) => {
           const active =
@@ -176,5 +182,77 @@ export function AdminNav({
         })}
       </ul>
     </nav>
+  );
+}
+
+export function AdminSidebarFooter({
+  collapsed,
+  profile,
+  emailLine,
+  roleLine,
+  onNavigate,
+  onSignOut,
+}: {
+  collapsed: boolean;
+  profile: AdminRoleProfile;
+  emailLine: string;
+  roleLine: string;
+  onNavigate?: () => void;
+  onSignOut: () => void;
+}) {
+  const showCustomerView = canViewCustomerApp(profile);
+
+  return (
+    <div className="flex shrink-0 flex-col border-t border-sidebar-border">
+      {showCustomerView ? (
+        <Link
+          to="/"
+          onClick={onNavigate}
+          title={collapsed ? "My Customer View" : undefined}
+          className={cn(
+            "flex w-full items-center gap-2 text-xs font-semibold text-sidebar-foreground transition-colors hover:bg-sidebar-accent/50",
+            collapsed ? "justify-center px-0 py-3" : "px-3 py-2.5 text-left",
+          )}
+        >
+          <Home className="h-4 w-4 shrink-0" aria-hidden />
+          {!collapsed && <span>My Customer View</span>}
+        </Link>
+      ) : null}
+      <div
+        className={cn(
+          "flex items-center gap-2 px-3 py-3 text-xs",
+          showCustomerView && "border-t border-sidebar-border",
+          collapsed && "justify-center px-0",
+        )}
+      >
+        {!collapsed ? (
+          <>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[11px] text-sidebar-foreground">{emailLine}</p>
+              <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                {roleLine}
+              </p>
+            </div>
+            <button
+              type="button"
+              aria-label="Sign out"
+              onClick={onSignOut}
+              className="rounded-md p-1.5 text-sidebar-foreground/70 hover:bg-sidebar-accent/50"
+            >
+              <LogOut className="h-3.5 w-3.5" />
+            </button>
+          </>
+        ) : (
+          <button
+            type="button"
+            aria-label="Sign out"
+            onClick={onSignOut}
+            className="rounded-md p-2 text-sidebar-foreground/70 hover:bg-sidebar-accent/50"
+          >
+            <LogOut className="h-4 w-4" />
+          </button>
+        )}
+      </div>
+    </div>
   );
 }

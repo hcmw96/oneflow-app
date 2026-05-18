@@ -66,3 +66,9 @@ export function isMarketingScopedStaff(profile: AdminRoleProfile): boolean {
 export function defaultMarketingAdminPath(): string {
   return "/admin/email";
 }
+
+/** Admin sidebar link to the member app (director or customer secondary role). */
+export function canViewCustomerApp(profile: AdminRoleProfile): boolean {
+  const roles = profileRoleSet(profile);
+  return roles.has("director") || roles.has("customer");
+}

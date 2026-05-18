@@ -1,8 +1,9 @@
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
-import { Home, LogOut, PanelLeftClose, PanelLeft, Menu, Inbox } from "lucide-react";
+import { PanelLeftClose, PanelLeft, Menu, Inbox } from "lucide-react";
 import {
   AdminNav,
+  AdminSidebarFooter,
   adminNavItems,
   canSeePendingLeaveRequestsBadge,
   navItemsForRole,
@@ -128,6 +129,10 @@ export function AdminShell({ children }: { children: ReactNode }) {
 
   const emailLine = profile?.email ?? "…";
   const roleLine = (profile?.role ?? "—").toString();
+  const roleProfile = {
+    role: profile?.role ?? null,
+    secondary_roles: profile?.secondary_roles ?? null,
+  };
 
   const signOut = async () => {
     await supabase.auth.signOut();
@@ -138,7 +143,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
     <div className="flex h-[100dvh] max-h-[100dvh] w-full overflow-hidden bg-background">
       <aside
         className={cn(
-          "hidden h-full min-h-0 shrink-0 flex-col border-r border-sidebar-border bg-sidebar transition-[width] md:flex",
+          "hidden h-full min-h-0 shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar transition-[width] md:flex",
           collapsed ? "w-16" : "w-56",
         )}
       >
@@ -163,13 +168,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
           </div>
         )}
 
-        <AdminNav
-          collapsed={collapsed}
-          profile={{
-            role: profile?.role ?? null,
-            secondary_roles: profile?.secondary_roles ?? null,
-          }}
-        />
+        <AdminNav collapsed={collapsed} profile={roleProfile} />
 
         {canBadge ? (
           <div className={cn("border-t border-sidebar-border px-2 py-2", collapsed && "px-0")}>
@@ -201,53 +200,13 @@ export function AdminShell({ children }: { children: ReactNode }) {
           </div>
         ) : null}
 
-        <div className="mt-auto flex flex-col border-t border-sidebar-border">
-          <Link
-            to="/"
-            title={collapsed ? "My Customer View" : undefined}
-            className={cn(
-              "flex w-full items-center gap-2 text-xs font-semibold text-sidebar-foreground transition-colors hover:bg-sidebar-accent/50",
-              collapsed ? "justify-center px-0 py-3" : "px-3 py-2.5 text-left",
-            )}
-          >
-            <Home className="h-4 w-4 shrink-0" aria-hidden />
-            {!collapsed && <span>My Customer View</span>}
-          </Link>
-          <div
-            className={cn(
-              "flex items-center gap-2 border-t border-sidebar-border px-3 py-3 text-xs",
-              collapsed && "justify-center px-0",
-            )}
-          >
-            {!collapsed ? (
-              <>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-[11px] text-sidebar-foreground">{emailLine}</p>
-                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                    {roleLine}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  aria-label="Sign out"
-                  onClick={() => void signOut()}
-                  className="rounded-md p-1.5 text-sidebar-foreground/70 hover:bg-sidebar-accent/50"
-                >
-                  <LogOut className="h-3.5 w-3.5" />
-                </button>
-              </>
-            ) : (
-              <button
-                type="button"
-                aria-label="Sign out"
-                onClick={() => void signOut()}
-                className="rounded-md p-2 text-sidebar-foreground/70 hover:bg-sidebar-accent/50"
-              >
-                <LogOut className="h-4 w-4" />
-              </button>
-            )}
-          </div>
-        </div>
+        <AdminSidebarFooter
+          collapsed={collapsed}
+          profile={roleProfile}
+          emailLine={emailLine}
+          roleLine={roleLine}
+          onSignOut={() => void signOut()}
+        />
       </aside>
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
@@ -262,74 +221,59 @@ export function AdminShell({ children }: { children: ReactNode }) {
                 <Menu className="h-5 w-5 shrink-0" />
               </button>
             </SheetTrigger>
-            <SheetContent side="left" className="w-64 bg-sidebar p-0">
-              <SheetHeader className="border-b border-sidebar-border px-4 py-4">
+            <SheetContent side="left" className="flex w-64 flex-col bg-sidebar p-0">
+              <SheetHeader className="shrink-0 border-b border-sidebar-border px-4 py-4">
                 <SheetTitle className="flex items-center gap-2 text-left">
                   <img src={logo} alt="One Flow" className="h-7 w-7 object-contain" />
                   <span className="font-display text-base font-semibold">One.flow</span>
                 </SheetTitle>
               </SheetHeader>
-              <div className="border-b border-sidebar-border px-3 py-2">
+              <div className="shrink-0 border-b border-sidebar-border px-3 py-2">
                 <AdminGlobalSearch className="max-w-none border-border bg-background text-foreground hover:bg-muted" />
               </div>
-              <div className="flex h-[calc(100vh-65px)] flex-col">
-                <AdminNav
-                  collapsed={false}
-                  profile={{
-                    role: profile?.role ?? null,
-                    secondary_roles: profile?.secondary_roles ?? null,
-                  }}
-                  onNavigate={() => setMobileOpen(false)}
-                />
-                {canBadge ? (
-                  <div className="border-t border-sidebar-border px-2 py-2">
-                    <Link
-                      to="/admin/timesheets"
-                      search={{ tab: "leave-requests" }}
-                      onClick={() => setMobileOpen(false)}
-                      className={cn(
-                        "relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
-                        leaveRequestsActive
-                          ? "bg-sidebar-accent font-semibold text-sidebar-accent-foreground"
-                          : "text-sidebar-foreground/80 hover:bg-sidebar-accent/40",
-                      )}
-                    >
-                      <Inbox className="h-4 w-4 shrink-0" strokeWidth={leaveRequestsActive ? 2.2 : 1.8} />
-                      <span className="truncate">Requests</span>
-                      {pendingLeaveCount > 0 ? (
-                        <span className="ml-auto inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold leading-none text-destructive-foreground">
-                          {pendingLeaveCount > 99 ? "99+" : pendingLeaveCount}
-                        </span>
-                      ) : null}
-                    </Link>
-                  </div>
-                ) : null}
-                <div className="mt-auto flex flex-col border-t border-sidebar-border">
-                  <Link
-                    to="/"
-                    onClick={() => setMobileOpen(false)}
-                    className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-semibold text-sidebar-foreground transition-colors hover:bg-sidebar-accent/50"
-                  >
-                    <Home className="h-4 w-4 shrink-0" aria-hidden />
-                    <span>My Customer View</span>
-                  </Link>
-                  <div className="flex items-center gap-2 border-t border-sidebar-border px-3 py-3 text-xs">
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-[11px] text-sidebar-foreground">{emailLine}</p>
-                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                        {roleLine}
-                      </p>
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                <div className="min-h-0 flex-1 overflow-y-auto">
+                  <AdminNav
+                    collapsed={false}
+                    fill={false}
+                    profile={roleProfile}
+                    onNavigate={() => setMobileOpen(false)}
+                  />
+                  {canBadge ? (
+                    <div className="border-t border-sidebar-border px-2 py-2">
+                      <Link
+                        to="/admin/timesheets"
+                        search={{ tab: "leave-requests" }}
+                        onClick={() => setMobileOpen(false)}
+                        className={cn(
+                          "relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
+                          leaveRequestsActive
+                            ? "bg-sidebar-accent font-semibold text-sidebar-accent-foreground"
+                            : "text-sidebar-foreground/80 hover:bg-sidebar-accent/40",
+                        )}
+                      >
+                        <Inbox
+                          className="h-4 w-4 shrink-0"
+                          strokeWidth={leaveRequestsActive ? 2.2 : 1.8}
+                        />
+                        <span className="truncate">Requests</span>
+                        {pendingLeaveCount > 0 ? (
+                          <span className="ml-auto inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold leading-none text-destructive-foreground">
+                            {pendingLeaveCount > 99 ? "99+" : pendingLeaveCount}
+                          </span>
+                        ) : null}
+                      </Link>
                     </div>
-                    <button
-                      type="button"
-                      aria-label="Sign out"
-                      onClick={() => void signOut()}
-                      className="rounded-md p-1.5 text-sidebar-foreground/70 hover:bg-sidebar-accent/50"
-                    >
-                      <LogOut className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
+                  ) : null}
                 </div>
+                <AdminSidebarFooter
+                  collapsed={false}
+                  profile={roleProfile}
+                  emailLine={emailLine}
+                  roleLine={roleLine}
+                  onNavigate={() => setMobileOpen(false)}
+                  onSignOut={() => void signOut()}
+                />
               </div>
             </SheetContent>
           </Sheet>

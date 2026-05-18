@@ -5,6 +5,7 @@ import { BottomNav } from "@/components/BottomNav";
 import { PageTransition } from "@/components/PageTransition";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider, useAuth } from "@/contexts/auth";
+import { canViewCustomerApp } from "@/lib/adminMarketingAccess";
 import { captureReferrerFromSearch } from "@/lib/referral";
 
 function CustomerBottomNav() {
@@ -93,6 +94,11 @@ function ProtectedOutlet() {
   const onboardingDone = profile?.onboarding_complete === true;
   const role = (profile?.role ?? "").toLowerCase();
   const secondary = (profile?.secondary_roles ?? []).map((r) => String(r).toLowerCase());
+  const roleProfile = {
+    role: profile?.role ?? null,
+    secondary_roles: profile?.secondary_roles ?? null,
+  };
+  const viewCustomerApp = canViewCustomerApp(roleProfile);
   const isStaff =
     role === "director" ||
     role === "management" ||
@@ -144,8 +150,22 @@ function ProtectedOutlet() {
       return;
     }
 
+    if (
+      isStaff &&
+      !viewCustomerApp &&
+      !onAdmin &&
+      !onAuth &&
+      !onOnboarding &&
+      !publicPath
+    ) {
+      target = "/admin";
+      initialRouteResolved.current = true;
+      if (target !== pathname) navigate({ to: target, replace: true });
+      return;
+    }
+
     initialRouteResolved.current = true;
-  }, [authReady, user?.id, profileReady, onboardingDone, isStaff, navigate]);
+  }, [authReady, user?.id, profileReady, onboardingDone, isStaff, viewCustomerApp, navigate]);
 
   const sessionResolving = !authReady || (!!user && !profileReady);
 
