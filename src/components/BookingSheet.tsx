@@ -23,6 +23,7 @@ import {
   bookingConfirmationEmailData,
   bookingConfirmationTemplateForClassType,
 } from "@/lib/bookingConfirmationEmail";
+import { bookingCreditInsertErrorMessage } from "@/lib/bookingCredits";
 import { profileEarnsFlowPoints } from "@/lib/flowPoints";
 
 interface ClassRow {
@@ -333,94 +334,14 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
         error
           ? error.code === "23505"
             ? "You already have an active booking for this class."
-            : supabaseErrorMessage(error, "Could not complete booking")
+            : bookingCreditInsertErrorMessage(
+                error,
+                supabaseErrorMessage(error, "Could not complete booking"),
+              )
           : "Booking failed — no row returned. This is often RLS or a missing database field.",
       );
       setLoading(false);
       return;
-    }
-
-    if (selectedCredit && !usePoints) {
-      const selMeta = credits.find((c) => c.id === selectedCredit);
-      const skipDecrement = Boolean(selMeta?.is_unlimited);
-      if (!skipDecrement) {
-        const { data: creditRow, error: creditReadErr } = await supabase
-          .from("user_credits")
-          .select("id, credits_remaining, is_unlimited, profile_id")
-          .eq("id", selectedCredit)
-          .eq("profile_id", userId)
-          .maybeSingle();
-
-        if (creditReadErr || !creditRow) {
-          console.error("[BookingSheet] credit row read failed after booking insert", {
-            creditReadErr,
-            selectedCredit,
-            userId,
-            bookingId: booking.id,
-          });
-          await supabase.from("bookings").delete().eq("id", booking.id);
-          toast.error(
-            creditReadErr
-              ? supabaseErrorMessage(
-                  creditReadErr,
-                  "Could not verify your pass — booking was cancelled.",
-                )
-              : "Could not find your pass to deduct a credit — booking was cancelled.",
-          );
-          setLoading(false);
-          return;
-        }
-
-        if (creditRow.is_unlimited) {
-          // unlimited pack — no decrement
-        } else {
-          const rem = Number(creditRow.credits_remaining);
-          if (!Number.isFinite(rem) || rem < 1) {
-            console.error("[BookingSheet] no credits remaining on pass after booking insert", {
-              selectedCredit,
-              rem,
-              bookingId: booking.id,
-            });
-            await supabase.from("bookings").delete().eq("id", booking.id);
-            toast.error("This pass has no credits left — booking was cancelled.");
-            setLoading(false);
-            return;
-          }
-
-          const nextRem = rem - 1;
-          const { data: afterRows, error: decErr } = await supabase
-            .from("user_credits")
-            .update({ credits_remaining: nextRem })
-            .eq("id", selectedCredit)
-            .eq("profile_id", userId)
-            .gt("credits_remaining", 0)
-            .select("id, credits_remaining");
-
-          if (decErr || !afterRows?.length) {
-            console.error("[BookingSheet] credit decrement failed after booking insert", {
-              decErr,
-              selectedCredit,
-              userId,
-              bookingId: booking.id,
-              message: decErr?.message,
-              code: decErr?.code,
-              details: decErr?.details,
-              hint: decErr?.hint,
-            });
-            await supabase.from("bookings").delete().eq("id", booking.id);
-            toast.error(
-              decErr
-                ? supabaseErrorMessage(
-                    decErr,
-                    "Could not deduct a credit (check pass permissions). Booking was cancelled.",
-                  )
-                : "Could not deduct a credit — booking was cancelled. Ask the studio to enable pass updates for your account.",
-            );
-            setLoading(false);
-            return;
-          }
-        }
-      }
     }
 
     await afterBookingConfirmed(booking.id as string);
