@@ -1,25 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
-import { Check, ExternalLink, Loader2, Undo2 } from "lucide-react";
+import { ExternalLink } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
-import {
-  type BookingRow,
-  type RosterRow,
-  normalizeBooking,
-  patchBookingAttendance,
-} from "@/lib/checkInRoster";
-import {
-  fetchRosterMemberAddonAccess,
-  RosterAddonPills,
-} from "@/components/admin/RosterAddonPills";
-import { CheckInRosterMemberAvatar } from "@/components/admin/CheckInRosterMemberAvatar";
-import { CheckInRosterStatusPill } from "@/components/admin/CheckInRosterStatusPill";
+import { type BookingRow, type RosterRow, normalizeBooking } from "@/lib/checkInRoster";
+import { fetchRosterMemberAddonAccess } from "@/components/admin/RosterAddonPills";
+import { CheckInRosterList } from "@/components/admin/CheckInRosterList";
 import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
-
 const TZ = "Africa/Johannesburg";
 
 export type ClassRosterSession = {
@@ -42,8 +31,6 @@ export function ClassRosterSheet({
   const navigate = useNavigate();
   const [roster, setRoster] = useState<RosterRow[]>([]);
   const [loading, setLoading] = useState(false);
-  const [busyId, setBusyId] = useState<string | null>(null);
-
   const loadRoster = useCallback(async () => {
     if (!session?.id) {
       setRoster([]);
@@ -64,7 +51,7 @@ export function ClassRosterSheet({
         payment_method,
         mat_addon,
         towel_addon,
-        profiles ( first_name, last_name, avatar_url ),
+        profiles ( first_name, last_name, avatar_url, role ),
         classes ( id, name, starts_at, guide_name )
       `,
           )
@@ -97,31 +84,6 @@ export function ClassRosterSheet({
   const bookedNonCancelled = roster.filter((r) => r.status !== "cancelled").length;
   const capacity = session?.capacity ?? 0;
 
-  const updateBookingStatus = async (id: string, status: "attended" | "confirmed") => {
-    const row = roster.find((r) => r.id === id);
-    const ctx =
-      row?.profileId && row.classStartsAt
-        ? { profileId: row.profileId, classStartsAt: row.classStartsAt }
-        : null;
-    setBusyId(id);
-    const { error } = await patchBookingAttendance(supabase, {
-      bookingId: id,
-      status,
-      context: ctx,
-    });
-    setBusyId(null);
-    if (error) {
-      toast.error(error);
-      return;
-    }
-    if (status === "attended") {
-      toast.success("Checked in · +10 Flow Points");
-    } else {
-      toast.success("Reverted to confirmed");
-    }
-    await loadRoster();
-  };
-
   const timeLabel =
     session?.starts_at &&
     new Date(session.starts_at).toLocaleTimeString("en-ZA", {
@@ -144,74 +106,11 @@ export function ClassRosterSheet({
         </SheetHeader>
 
         <div className="mt-4 flex-1">
-          {loading ? (
-            <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
-              <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
-              Loading roster…
-            </div>
-          ) : roster.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">
-              No bookings for this class.
-            </p>
-          ) : (
-            <ul className="divide-y divide-border">
-              {roster.map((b) => {
-                const isIn = b.status === "attended";
-                const isNoShow = b.status === "no-show";
-                const isCancelled = b.status === "cancelled";
-                return (
-                  <li key={b.id} className="flex flex-wrap items-center gap-3 py-3 sm:flex-nowrap">
-                    <CheckInRosterMemberAvatar row={b} />
-                    <div className="min-w-0 flex-1">
-                      <p className="flex min-w-0 flex-wrap items-center gap-1.5 text-sm font-semibold">
-                        <span className="min-w-0 truncate">{b.member}</span>
-                        <RosterAddonPills
-                          mat={b.matAddon}
-                          towel={b.towelAddon}
-                          cafe={b.hasSageCredit}
-                        />
-                      </p>
-                      <p className="truncate text-xs text-muted-foreground">{b.creditLabel}</p>
-                    </div>
-                    <div className="flex w-full items-center gap-2 sm:w-auto">
-                      <CheckInRosterStatusPill status={b.status} />
-                      {isIn ? (
-                        <button
-                          type="button"
-                          disabled={busyId === b.id}
-                          onClick={() => void updateBookingStatus(b.id, "confirmed")}
-                          className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-full border border-border bg-background px-3 py-1.5 text-xs font-semibold hover:bg-muted sm:flex-none"
-                        >
-                          <Undo2 className="h-3.5 w-3.5 shrink-0" aria-hidden /> Undo
-                        </button>
-                      ) : isCancelled ? (
-                        <span className="text-xs text-muted-foreground">—</span>
-                      ) : (
-                        <button
-                          type="button"
-                          disabled={busyId === b.id}
-                          onClick={() => void updateBookingStatus(b.id, "attended")}
-                          className={cn(
-                            "inline-flex flex-1 items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors sm:flex-none",
-                            isNoShow
-                              ? "border border-border bg-background hover:bg-muted"
-                              : "bg-primary text-primary-foreground hover:opacity-90",
-                          )}
-                        >
-                          {busyId === b.id ? (
-                            <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" aria-hidden />
-                          ) : (
-                            <Check className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                          )}
-                          {isNoShow ? "Mark attended" : "Check in"}
-                        </button>
-                      )}
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
+          <CheckInRosterList
+            roster={roster.filter((r) => r.status !== "cancelled")}
+            loading={loading}
+            onUpdated={loadRoster}
+          />
         </div>
 
         <SheetFooter className="mt-auto flex-col gap-2 border-t border-border pt-4 sm:flex-col">

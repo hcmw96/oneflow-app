@@ -7,6 +7,7 @@ import { ClassRosterSheet, type ClassRosterSession } from "@/components/admin/Cl
 import { Skeleton } from "@/components/ui/skeleton";
 import { getUser, supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
+import { jhbDayBounds } from "@/lib/jhbTime";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/admin/")({
@@ -44,20 +45,6 @@ function AdminDashboardSkeleton() {
       </div>
     </>
   );
-}
-
-// Africa/Johannesburg is UTC+2 with no DST, so we can derive day boundaries reliably.
-function jhbDayBounds(): { startUtcIso: string; endUtcIso: string; dateKey: string } {
-  const now = new Date();
-  const jhbNow = new Date(now.toLocaleString("en-US", { timeZone: TZ }));
-  const y = jhbNow.getFullYear();
-  const m = jhbNow.getMonth();
-  const d = jhbNow.getDate();
-  // 00:00 JHB = 22:00 UTC previous day
-  const startUtc = new Date(Date.UTC(y, m, d, -2, 0, 0, 0));
-  const endUtc = new Date(Date.UTC(y, m, d + 1, -2, 0, 0, -1));
-  const dateKey = `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-  return { startUtcIso: startUtc.toISOString(), endUtcIso: endUtc.toISOString(), dateKey };
 }
 
 function AdminDashboard() {

@@ -5,15 +5,13 @@ import { toast } from "sonner";
 import { PageHeader } from "@/components/admin/PageHeader";
 import { Button } from "@/components/ui/button";
 import { ensureMarketingAdminAccess } from "@/lib/ensureMarketingAdminAccess";
+import { STUDIO_PHONE_DISPLAY, STUDIO_WHATSAPP_URL } from "@/lib/studioContact";
 
 export const Route = createFileRoute("/admin/whatsapp")({
   beforeLoad: () => ensureMarketingAdminAccess(),
   head: () => ({ meta: [{ title: "WhatsApp — One Flow Admin" }] }),
   component: WhatsAppPage,
 });
-
-const SUPPORT_NUMBER_DISPLAY = "+27 82 553 3032";
-const SUPPORT_NUMBER_LINK = "27825533032";
 
 const QUICK_REPLIES: { label: string; body: string }[] = [
   {
@@ -62,11 +60,11 @@ function WhatsAppPage() {
               Support number
             </p>
             <p className="mt-1 font-display text-2xl font-bold text-foreground sm:text-3xl">
-              {SUPPORT_NUMBER_DISPLAY}
+              {STUDIO_PHONE_DISPLAY}
             </p>
           </div>
           <a
-            href={`https://wa.me/${SUPPORT_NUMBER_LINK}`}
+            href={STUDIO_WHATSAPP_URL}
             target="_blank"
             rel="noreferrer noopener"
             className="inline-flex items-center gap-2 rounded-full bg-[#a3b693] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-opacity hover:opacity-95"

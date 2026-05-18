@@ -7,7 +7,8 @@ import { AppShell } from "@/components/AppShell";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TypeBadge } from "@/components/TypeBadge";
 import { cancelBookingWithPolicy } from "@/lib/bookingCancellation";
-import { formatTime, formatDayLabel } from "@/lib/format";
+import { useTimezone } from "@/hooks/use-timezone";
+import { formatClassDateTime, formatShortDateInZone } from "@/lib/timezone";
 import { cn } from "@/lib/utils";
 import { getUser, supabase } from "@/lib/supabase";
 import { displayClassType, type ClassType } from "@/types/studio";
@@ -67,6 +68,7 @@ function guideFirstFromClass(cls: ClassJoin | null): string | null {
 }
 
 function BookingsPage() {
+  const { timeZone, studioTimeZone } = useTimezone();
   const search = Route.useSearch();
   const bookingHighlightId = search.booking;
   const highlightedRef = useRef<HTMLElement | null>(null);
@@ -234,11 +236,12 @@ Are you sure you want to cancel?`;
                   </div>
                   <h3 className="truncate font-display text-lg font-semibold">{b.className}</h3>
                   <div className="mt-1 text-xs text-muted-foreground">
-                    {formatDayLabel(b.startsAt)}
+                    {formatShortDateInZone(b.startsAt, timeZone)}
                   </div>
                   <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
                     <span className="inline-flex min-w-0 max-w-full items-center gap-1">
-                      <Clock className="h-3 w-3 shrink-0" aria-hidden /> {formatTime(b.startsAt)}
+                      <Clock className="h-3 w-3 shrink-0" aria-hidden />{" "}
+                      {formatClassDateTime(b.startsAt.toISOString(), timeZone, studioTimeZone).time}
                     </span>
                     <span className="inline-flex min-w-0 max-w-full items-center gap-1">
                       <MapPin className="h-3 w-3 shrink-0" aria-hidden />{" "}
@@ -289,7 +292,7 @@ Are you sure you want to cancel?`;
                   </div>
                   <h3 className="truncate font-display text-lg font-semibold">{b.className}</h3>
                   <div className="mt-1 text-xs text-muted-foreground">
-                    {formatDayLabel(b.startsAt)}
+                    {formatShortDateInZone(b.startsAt, timeZone)}
                   </div>
                 </article>
               ))}

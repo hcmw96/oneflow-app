@@ -19,6 +19,7 @@ import { Route as MeRouteImport } from './routes/me'
 import { Route as GoalsRouteImport } from './routes/goals'
 import { Route as FaqRouteImport } from './routes/faq'
 import { Route as ChallengeRouteImport } from './routes/challenge'
+import { Route as CafeRouteImport } from './routes/cafe'
 import { Route as BookingsRouteImport } from './routes/bookings'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AdminRouteImport } from './routes/admin'
@@ -99,6 +100,11 @@ const FaqRoute = FaqRouteImport.update({
 const ChallengeRoute = ChallengeRouteImport.update({
   id: '/challenge',
   path: '/challenge',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CafeRoute = CafeRouteImport.update({
+  id: '/cafe',
+  path: '/cafe',
   getParentRoute: () => rootRouteImport,
 } as any)
 const BookingsRoute = BookingsRouteImport.update({
@@ -263,6 +269,7 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AdminRouteWithChildren
   '/auth': typeof AuthRouteWithChildren
   '/bookings': typeof BookingsRoute
+  '/cafe': typeof CafeRoute
   '/challenge': typeof ChallengeRoute
   '/faq': typeof FaqRoute
   '/goals': typeof GoalsRoute
@@ -305,6 +312,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRouteWithChildren
   '/bookings': typeof BookingsRoute
+  '/cafe': typeof CafeRoute
   '/challenge': typeof ChallengeRoute
   '/faq': typeof FaqRoute
   '/goals': typeof GoalsRoute
@@ -349,6 +357,7 @@ export interface FileRoutesById {
   '/admin': typeof AdminRouteWithChildren
   '/auth': typeof AuthRouteWithChildren
   '/bookings': typeof BookingsRoute
+  '/cafe': typeof CafeRoute
   '/challenge': typeof ChallengeRoute
   '/faq': typeof FaqRoute
   '/goals': typeof GoalsRoute
@@ -394,6 +403,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/auth'
     | '/bookings'
+    | '/cafe'
     | '/challenge'
     | '/faq'
     | '/goals'
@@ -436,6 +446,7 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/bookings'
+    | '/cafe'
     | '/challenge'
     | '/faq'
     | '/goals'
@@ -479,6 +490,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/auth'
     | '/bookings'
+    | '/cafe'
     | '/challenge'
     | '/faq'
     | '/goals'
@@ -523,6 +535,7 @@ export interface RootRouteChildren {
   AdminRoute: typeof AdminRouteWithChildren
   AuthRoute: typeof AuthRouteWithChildren
   BookingsRoute: typeof BookingsRoute
+  CafeRoute: typeof CafeRoute
   ChallengeRoute: typeof ChallengeRoute
   FaqRoute: typeof FaqRoute
   GoalsRoute: typeof GoalsRoute
@@ -607,6 +620,13 @@ declare module '@tanstack/react-router' {
       path: '/challenge'
       fullPath: '/challenge'
       preLoaderRoute: typeof ChallengeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/cafe': {
+      id: '/cafe'
+      path: '/cafe'
+      fullPath: '/cafe'
+      preLoaderRoute: typeof CafeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/bookings': {
@@ -918,6 +938,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminRoute: AdminRouteWithChildren,
   AuthRoute: AuthRouteWithChildren,
   BookingsRoute: BookingsRoute,
+  CafeRoute: CafeRoute,
   ChallengeRoute: ChallengeRoute,
   FaqRoute: FaqRoute,
   GoalsRoute: GoalsRoute,

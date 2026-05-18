@@ -7,6 +7,7 @@ export type QrCheckInRpcResult = {
   booking_id?: string;
   profile_id?: string;
   member_name?: string;
+  member_role?: string | null;
   class_starts_at?: string | null;
 };
 

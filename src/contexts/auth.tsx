@@ -6,6 +6,7 @@ type AuthProfile = {
   onboarding_complete: boolean | null;
   role: string | null;
   secondary_roles: string[] | null;
+  timezone: string | null;
 };
 
 type AuthState = {
@@ -34,7 +35,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setProfileReady(false);
       const { data, error } = await supabase
         .from("profiles")
-        .select("onboarding_complete, role, secondary_roles")
+        .select("onboarding_complete, role, secondary_roles, timezone")
         .eq("id", user.id)
         .maybeSingle();
       if (cancelled) return;

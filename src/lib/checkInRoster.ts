@@ -9,6 +9,7 @@ export type ProfileJoinRow = {
   first_name: string | null;
   last_name: string | null;
   avatar_url?: string | null;
+  role?: string | null;
 };
 
 export type BookingRow = {
@@ -43,6 +44,7 @@ export type RosterRow = {
   towelAddon: boolean;
   hasSageCredit: boolean;
   avatarUrl: string | null;
+  memberRole: string | null;
 };
 
 export function oneProfile(p: BookingRow["profiles"]): ProfileJoinRow | null {
@@ -117,6 +119,7 @@ export function normalizeBooking(raw: BookingRow, addonAccess: RosterAddonAccess
     towelAddon,
     hasSageCredit: addonAccess.cafeProfileIds.has(raw.profile_id),
     avatarUrl,
+    memberRole: prof?.role ?? null,
   };
 }
 

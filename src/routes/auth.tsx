@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { getUser, supabase } from "@/lib/supabase";
 import { ensureProfileNamesFromOAuth } from "@/lib/oauthProfileNames";
 import { applyStoredReferrerToProfile, captureReferrerFromSearch } from "@/lib/referral";
+import { STUDIO_WHATSAPP_URL } from "@/lib/studioContact";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -339,7 +340,7 @@ export default function AuthPage() {
       <p className="mt-8 text-center text-xs text-muted-foreground">
         Need help?{" "}
         <a
-          href="https://wa.me/27825533032"
+          href={STUDIO_WHATSAPP_URL}
           target="_blank"
           rel="noopener noreferrer"
           className="text-foreground underline-offset-4 hover:underline"

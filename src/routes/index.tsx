@@ -1,62 +1,39 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { Calendar, MapPin, QrCode, Sparkles, Ticket } from "lucide-react";
+import { Calendar, Coffee, MapPin, QrCode, Sparkles, Ticket } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { Skeleton } from "@/components/ui/skeleton";
 import challengeBg from "@/assets/challenge-bg.jpg";
 import { useAuth } from "@/contexts/auth";
 import { countMayChallengeStampedDays } from "@/lib/mayChallengeCheckIn";
 import { supabase } from "@/lib/supabase";
+import {
+  fetchCafeCredits,
+  hasActiveCafeCredits,
+  isCafeCredit,
+  sumCafeCreditsRemaining,
+} from "@/lib/cafeCredits";
 import { addDays, startOfWeekSunday } from "@/lib/format";
+import { useTimezone } from "@/hooks/use-timezone";
+import {
+  civilAddDaysYmd,
+  formatClassDateTime,
+  formatShortDateInZone,
+  STUDIO_TIMEZONE,
+  todayDateKey,
+  ymdInTimeZone,
+} from "@/lib/timezone";
 
 export const Route = createFileRoute("/")({
   component: HomePage,
 });
 
-const HOME_TZ = "Africa/Johannesburg";
-
-function ymdInTimeZone(iso: string, timeZone: string): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date(iso));
-}
-
-/** Civil calendar +1 day for YYYY-MM-DD strings (Gregorian). */
-function civilAddOneDayYmd(ymd: string): string {
-  const [y, M, d] = ymd.split("-").map(Number);
-  const dt = new Date(Date.UTC(y, M - 1, d + 1));
-  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`;
-}
-
-function upcomingDayLabel(iso: string): string {
-  const classYmd = ymdInTimeZone(iso, HOME_TZ);
-  const todayYmd = ymdInTimeZone(new Date().toISOString(), HOME_TZ);
-  const tomorrowYmd = civilAddOneDayYmd(todayYmd);
+function upcomingDayLabel(iso: string, timeZone: string): string {
+  const classYmd = ymdInTimeZone(iso, STUDIO_TIMEZONE);
+  const todayYmd = todayDateKey(STUDIO_TIMEZONE);
+  const tomorrowYmd = civilAddDaysYmd(todayYmd, 1);
   if (classYmd === tomorrowYmd) return "Tomorrow";
-  const d = new Date(iso);
-  return d
-    .toLocaleDateString("en-ZA", {
-      weekday: "short",
-      day: "numeric",
-      month: "short",
-      timeZone: HOME_TZ,
-    })
-    .replace(/,/g, "")
-    .trim();
-}
-
-function upcomingTimeSast(iso: string): string {
-  return new Date(iso)
-    .toLocaleTimeString("en-ZA", {
-      hour: "numeric",
-      minute: "2-digit",
-      hour12: true,
-      timeZone: HOME_TZ,
-    })
-    .toUpperCase();
+  return formatShortDateInZone(iso, timeZone);
 }
 
 function HomeSkeleton() {
@@ -81,14 +58,18 @@ type UserCreditHomeRow = {
   is_unlimited: boolean | null;
   expires_at: string | null;
   product_name: string | null;
+  category: string | null;
 };
 
 function HomePage() {
   const navigate = useNavigate();
   const { user, authReady } = useAuth();
+  const { timeZone, studioTimeZone } = useTimezone();
   const [loading, setLoading] = useState(true);
   const [firstName, setFirstName] = useState<string | null>(null);
   const [creditRows, setCreditRows] = useState<UserCreditHomeRow[]>([]);
+  const [cafeCreditTotal, setCafeCreditTotal] = useState(0);
+  const [cafeUnlimited, setCafeUnlimited] = useState(false);
   const [completed, setCompleted] = useState(0);
   const [points, setPoints] = useState(0);
   const [weeklyGoal, setWeeklyGoal] = useState(3);
@@ -107,6 +88,7 @@ function HomePage() {
   const SAGE = "#a3b693";
   const goalPct = weeklyGoal > 0 ? Math.min(100, (weeklyDone / weeklyGoal) * 100) : 0;
   const remaining = Math.max(0, weeklyGoal - weeklyDone);
+  const showCafeTile = cafeUnlimited || cafeCreditTotal > 0;
 
   const { hasUnlimited, totalCredits } = useMemo(() => {
     const credits = creditRows;
@@ -118,13 +100,17 @@ function HomePage() {
     const hasUnlimited = (credits ?? []).some(
       (c) => Boolean(c.is_unlimited) && notExpired(c.expires_at),
     );
-    const totalCredits = (credits ?? [])
+    const classCredits = (credits ?? []).filter((c) => !isCafeCredit(c));
+    const hasUnlimitedClass = classCredits.some(
+      (c) => Boolean(c.is_unlimited) && notExpired(c.expires_at),
+    );
+    const totalCredits = classCredits
       .filter((c) => !c.is_unlimited && notExpired(c.expires_at))
       .reduce((sum, c) => {
         const n = Number(c.credits_remaining);
         return sum + (Number.isFinite(n) ? n : 0);
       }, 0);
-    return { hasUnlimited, totalCredits };
+    return { hasUnlimited: hasUnlimitedClass, totalCredits };
   }, [creditRows]);
 
   useEffect(() => {
@@ -135,6 +121,8 @@ function HomePage() {
     async function load() {
       setLoading(true);
       setCreditRows([]);
+      setCafeCreditTotal(0);
+      setCafeUnlimited(false);
       setCompleted(0);
       setPoints(0);
       setFirstName(null);
@@ -155,6 +143,7 @@ function HomePage() {
       const [
         { data: profile },
         { data: fetchedUserCredits },
+        cafeCredits,
         { count: attendedCount, error: attendedErr },
         { count: weeklyAttended, error: weeklyErr },
         { data: bookingRows },
@@ -167,8 +156,9 @@ function HomePage() {
           .maybeSingle(),
         supabase
           .from("user_credits")
-          .select("id, credits_remaining, is_unlimited, expires_at, product_name")
+          .select("id, credits_remaining, is_unlimited, expires_at, product_name, category")
           .eq("profile_id", uid),
+        fetchCafeCredits(uid),
         supabase
           .from("bookings")
           .select("id", { count: "exact", head: true })
@@ -203,6 +193,10 @@ function HomePage() {
 
       setFirstName(profile?.first_name?.trim() || null);
       setCreditRows((fetchedUserCredits ?? []) as UserCreditHomeRow[]);
+      const cafeSum = sumCafeCreditsRemaining(cafeCredits);
+      const cafeActive = hasActiveCafeCredits(cafeCredits);
+      setCafeUnlimited(cafeActive && cafeSum === -1);
+      setCafeCreditTotal(cafeActive && cafeSum > 0 ? cafeSum : 0);
       setCompleted(attendedCount ?? 0);
       const wgRaw = (profile as { weekly_goal?: number | null } | null)?.weekly_goal;
       const wg =
@@ -282,8 +276,13 @@ function HomePage() {
             </div>
             <ul className="space-y-3">
               {upcomingBookings.map((b) => {
-                const dateStr = upcomingDayLabel(b.startsAt);
-                const timeStr = upcomingTimeSast(b.startsAt);
+                const dateStr = upcomingDayLabel(b.startsAt, timeZone);
+                const { time: timeStr } = formatClassDateTime(
+                  b.startsAt,
+                  timeZone,
+                  studioTimeZone,
+                );
+                const timeLabel = timeStr.toUpperCase();
                 return (
                   <li key={b.id}>
                     <Link
@@ -312,7 +311,7 @@ function HomePage() {
                       <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
                         <span className="inline-flex items-center gap-1">
                           <Calendar className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                          {dateStr} · {timeStr}
+                          {dateStr} · {timeLabel}
                         </span>
                         <span className="inline-flex items-center gap-1">
                           <MapPin className="h-3.5 w-3.5 shrink-0" aria-hidden />
@@ -385,11 +384,42 @@ function HomePage() {
           </div>
         </section>
 
+        {showCafeTile ? (
+          <Link
+            to="/cafe"
+            className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-card px-5 py-4 transition-colors active:bg-muted/40"
+          >
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <span
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl"
+              style={{ backgroundColor: `${SAGE}22` }}
+            >
+              <Coffee className="h-5 w-5" style={{ color: SAGE }} aria-hidden />
+            </span>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold">Café</p>
+              <p className="text-xs text-muted-foreground">
+                {cafeUnlimited
+                  ? "Unlimited café credits"
+                  : `${cafeCreditTotal} café credit${cafeCreditTotal === 1 ? "" : "s"}`}
+              </p>
+            </div>
+          </div>
+          <span
+            className="inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-semibold text-white"
+            style={{ backgroundColor: SAGE }}
+          >
+            <QrCode className="h-3.5 w-3.5" aria-hidden />
+            QR
+          </span>
+          </Link>
+        ) : null}
+
         <div className="rounded-2xl border border-border bg-card px-5 py-5">
           <div className="mb-3 flex items-center gap-2">
             <Ticket className="h-4 w-4 text-[#a3b693]" />
             <span className="text-sm font-semibold tracking-wide text-muted-foreground uppercase">
-              Credits
+              Class credits
             </span>
           </div>
 

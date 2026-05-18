@@ -23,13 +23,14 @@ import {
 } from "@/components/ui/select";
 import { supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
+import { civilAddDaysYmd, dayBoundsForDateKey, STUDIO_TIMEZONE, todayDateKey } from "@/lib/timezone";
 
 export const Route = createFileRoute("/admin/transactions")({
   head: () => ({ meta: [{ title: "Transactions — One Flow Admin" }] }),
   component: TransactionsPage,
 });
 
-const TZ = "Africa/Johannesburg";
+const TZ = STUDIO_TIMEZONE;
 const PAGE_SIZE = 20;
 
 type TxRow = {
@@ -62,14 +63,9 @@ function formatDate(iso: string): string {
 }
 
 function jhbDayBoundsAt(daysAgo: number): { start: string; end: string } {
-  const now = new Date();
-  const jhbNow = new Date(now.toLocaleString("en-US", { timeZone: TZ }));
-  const y = jhbNow.getFullYear();
-  const m = jhbNow.getMonth();
-  const d = jhbNow.getDate() - daysAgo;
-  const startUtc = new Date(Date.UTC(y, m, d, -2, 0, 0, 0));
-  const endUtc = new Date(Date.UTC(y, m, d + 1, -2, 0, 0, -1));
-  return { start: startUtc.toISOString(), end: endUtc.toISOString() };
+  const dateKey = civilAddDaysYmd(todayDateKey(TZ), -daysAgo);
+  const { startUtcIso, endUtcIso } = dayBoundsForDateKey(dateKey, TZ);
+  return { start: startUtcIso, end: endUtcIso };
 }
 
 function csvEscape(s: string): string {

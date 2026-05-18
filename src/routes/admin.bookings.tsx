@@ -36,6 +36,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { cancelBookingWithPolicy } from "@/lib/bookingCancellation";
 import { deleteMayChallengeCheckInForBooking } from "@/lib/mayChallengeCheckIn";
+import { manualCheckInToastMessage, walkInCheckInToastMessage } from "@/lib/flowPoints";
 import {
   bookingConfirmationEmailData,
   bookingConfirmationTemplateForClassType,
@@ -82,8 +83,8 @@ type BookingRowRaw = {
   mat_addon: boolean | null;
   towel_addon: boolean | null;
   profiles:
-    | { first_name: string; last_name: string }
-    | { first_name: string; last_name: string }[]
+    | { first_name: string; last_name: string; role?: string | null }
+    | { first_name: string; last_name: string; role?: string | null }[]
     | null;
   classes:
     | { id: string; name: string; starts_at: string; ends_at: string }
@@ -103,6 +104,7 @@ type AdminBookingRow = {
   matAddon: boolean;
   towelAddon: boolean;
   hasSageCredit: boolean;
+  memberRole: string | null;
 };
 
 function startOfCalendarWeekSunday(d: Date) {
@@ -157,6 +159,7 @@ function normalizeBooking(
     matAddon: Boolean(pid && addonAccess.matProfileIds.has(pid)),
     towelAddon: Boolean(pid && addonAccess.towelProfileIds.has(pid)),
     hasSageCredit: Boolean(pid && addonAccess.cafeProfileIds.has(pid)),
+    memberRole: prof?.role ?? null,
   };
 }
 
@@ -325,7 +328,7 @@ function BookingsPage() {
         payment_method,
         mat_addon,
         towel_addon,
-        profiles ( first_name, last_name ),
+        profiles ( first_name, last_name, role ),
         classes ( id, name, starts_at, ends_at )
       `,
         )
@@ -509,7 +512,7 @@ function BookingsPage() {
           booking_id: id,
         });
       }
-      toast.success("Checked in · +10 Flow Points");
+      toast.success(manualCheckInToastMessage(row?.memberRole));
     } else {
       await deleteMayChallengeCheckInForBooking(id);
       toast.success("Undone");
@@ -1002,7 +1005,7 @@ function WalkInSheet({
 
     const { data: existing, error: findErr } = await supabase
       .from("profiles")
-      .select("id")
+      .select("id, role")
       .ilike("email", em)
       .maybeSingle();
 
@@ -1080,7 +1083,9 @@ function WalkInSheet({
         },
       });
     }
-    toast.success(`${displayName} checked in · +10 Flow Points`);
+    const walkInRole =
+      (existing as { role?: string | null } | null)?.role ?? "customer";
+    toast.success(walkInCheckInToastMessage(displayName, walkInRole));
     onOpenChange(false);
     onDone();
   };

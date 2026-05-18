@@ -7,7 +7,20 @@ import { BookingSheet } from "@/components/BookingSheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/auth";
 import { supabase } from "@/lib/supabase";
-import { addDays, isSameDay, startOfDay, startOfWeekSunday } from "@/lib/format";
+import { useTimezone } from "@/hooks/use-timezone";
+import {
+  civilAddDaysYmd,
+  dayBoundsForDateKey,
+  dayOfMonthFromDateKey,
+  formatClassDateTime,
+  formatLongDayFromDateKey,
+  formatMonthYearFromDateKey,
+  formatWeekdayShortFromDateKey,
+  todayDateKey,
+  weekDateKeysFromSunday,
+  weekSundayDateKey,
+  ymdInTimeZone,
+} from "@/lib/timezone";
 import {
   type BookedClassInterval,
   fetchConfirmedBookingIntervals,
@@ -58,12 +71,6 @@ function guideNameFromRow(value: unknown): string | null {
   const s = typeof value === "string" ? value : String(value);
   const t = s.trim();
   return t.length > 0 ? t : null;
-}
-
-function scheduleDayKey(day: Date): string {
-  const x = new Date(day);
-  x.setHours(0, 0, 0, 0);
-  return x.toISOString();
 }
 
 function ScheduleRowsSkeleton() {
@@ -151,7 +158,8 @@ export default function SchedulePage() {
   const { user, authReady } = useAuth();
   const navigate = useNavigate();
   const search = Route.useSearch();
-  const [selectedDay, setSelectedDay] = useState(() => startOfDay(new Date()));
+  const { timeZone, studioTimeZone } = useTimezone();
+  const [selectedDateKey, setSelectedDateKey] = useState(() => todayDateKey(studioTimeZone));
   const [classes, setClasses] = useState<ClassRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [revalidating, setRevalidating] = useState(false);
@@ -165,12 +173,12 @@ export default function SchedulePage() {
 
   const goPrevDay = useCallback(() => {
     setDaySlide("from-left");
-    setSelectedDay((d) => startOfDay(addDays(d, -1)));
+    setSelectedDateKey((k) => civilAddDaysYmd(k, -1));
   }, []);
 
   const goNextDay = useCallback(() => {
     setDaySlide("from-right");
-    setSelectedDay((d) => startOfDay(addDays(d, 1)));
+    setSelectedDateKey((k) => civilAddDaysYmd(k, 1));
   }, []);
 
   const swipeContainerRef = useHorizontalDaySwipe(goPrevDay, goNextDay);
@@ -179,11 +187,11 @@ export default function SchedulePage() {
     if (!daySlide) return;
     const t = window.setTimeout(() => setDaySlide(null), 320);
     return () => window.clearTimeout(t);
-  }, [daySlide, selectedDay]);
+  }, [daySlide, selectedDateKey]);
 
-  const loadDayData = useCallback(async (day: Date, uid: string) => {
-    const key = scheduleDayKey(day);
-    const cached = classesCacheRef.current.get(key);
+  const loadDayData = useCallback(
+    async (dateKey: string, uid: string) => {
+    const cached = classesCacheRef.current.get(dateKey);
     if (cached !== undefined) {
       setClasses(cached);
       setLoading(false);
@@ -192,12 +200,7 @@ export default function SchedulePage() {
       setLoading(true);
     }
 
-    const start = new Date(day);
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(day);
-    end.setHours(23, 59, 59, 999);
-    const isoStart = start.toISOString();
-    const isoEnd = end.toISOString();
+    const { startUtcIso: isoStart, endUtcIso: isoEnd } = dayBoundsForDateKey(dateKey, studioTimeZone);
 
     const now = new Date();
     const nowT = now.getTime();
@@ -231,18 +234,20 @@ export default function SchedulePage() {
 
     const visible = mapped.filter((c) => !isPastScheduleClass(c.starts_at, nowT));
 
-    classesCacheRef.current.set(key, visible);
+    classesCacheRef.current.set(dateKey, visible);
     setClasses(visible);
     setBookedClassIds(new Set(nextIntervals.map((b) => b.class_id)));
     setBookedIntervals(nextIntervals);
     setLoading(false);
     setRevalidating(false);
-  }, []);
+  },
+    [studioTimeZone],
+  );
 
   useEffect(() => {
     if (!authReady || !user?.id) return;
-    void loadDayData(selectedDay, user.id);
-  }, [authReady, user?.id, selectedDay, loadDayData]);
+    void loadDayData(selectedDateKey, user.id);
+  }, [authReady, user?.id, selectedDateKey, loadDayData]);
 
   useEffect(() => {
     const classId = search.class;
@@ -274,14 +279,14 @@ export default function SchedulePage() {
       }
 
       const ts = String(data.starts_at);
-      setSelectedDay(startOfDay(new Date(ts)));
+      setSelectedDateKey(ymdInTimeZone(ts, studioTimeZone));
       setPendingOpenClassId(classId);
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [authReady, user?.id, search.class, navigate]);
+  }, [authReady, user?.id, search.class, navigate, studioTimeZone]);
 
   useEffect(() => {
     if (!pendingOpenClassId || loading || revalidating || !user?.id) return;
@@ -308,26 +313,19 @@ export default function SchedulePage() {
     );
   }, [pendingOpenClassId, loading, revalidating, classes, navigate, user?.id]);
 
-  const weekStartSunday = useMemo(() => startOfWeekSunday(selectedDay), [selectedDay]);
-
-  const daysInWeek = useMemo(
-    () => Array.from({ length: 7 }, (_, i) => startOfDay(addDays(weekStartSunday, i))),
-    [weekStartSunday],
+  const weekSundayKey = useMemo(
+    () => weekSundayDateKey(selectedDateKey, studioTimeZone),
+    [selectedDateKey, studioTimeZone],
   );
 
-  const monthLabel = selectedDay.toLocaleDateString("en-ZA", {
-    month: "long",
-    year: "numeric",
-  });
-  const longDayLabel = selectedDay.toLocaleDateString("en-ZA", {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-  });
+  const daysInWeek = useMemo(() => weekDateKeysFromSunday(weekSundayKey), [weekSundayKey]);
+
+  const monthLabel = formatMonthYearFromDateKey(selectedDateKey, studioTimeZone);
+  const longDayLabel = formatLongDayFromDateKey(selectedDateKey, studioTimeZone);
 
   const uid = user?.id;
-  const today = startOfDay(new Date());
-  const selectedDayIsPast = isPastScheduleDay(selectedDay);
+  const todayKey = todayDateKey(studioTimeZone);
+  const selectedDayIsPast = isPastScheduleDay(selectedDateKey, studioTimeZone);
 
   if (!authReady || !uid) {
     return (
@@ -364,15 +362,15 @@ export default function SchedulePage() {
         <p className="mb-2 text-center text-sm text-muted-foreground">{monthLabel}</p>
         <div className="rounded-2xl border border-border bg-card p-2">
           <div className="flex items-stretch justify-between gap-0.5">
-            {daysInWeek.map((d) => {
-              const selected = isSameDay(d, selectedDay);
-              const isTodayCell = isSameDay(d, today);
-              const dayIsPast = isPastScheduleDay(d);
+            {daysInWeek.map((dayKey) => {
+              const selected = dayKey === selectedDateKey;
+              const isTodayCell = dayKey === todayKey;
+              const dayIsPast = isPastScheduleDay(dayKey, studioTimeZone);
               return (
                 <button
-                  key={scheduleDayKey(d)}
+                  key={dayKey}
                   type="button"
-                  onClick={() => setSelectedDay(d)}
+                  onClick={() => setSelectedDateKey(dayKey)}
                   className={cn(
                     "flex min-h-[52px] min-w-0 flex-1 flex-col items-center justify-center rounded-xl px-0.5 py-1.5 transition-all duration-200",
                     selected && !dayIsPast && "text-white shadow-sm",
@@ -391,7 +389,7 @@ export default function SchedulePage() {
                   }
                 >
                   <span className="font-display text-base font-bold leading-none">
-                    {d.getDate()}
+                    {dayOfMonthFromDateKey(dayKey)}
                   </span>
                   <span
                     className={cn(
@@ -400,7 +398,7 @@ export default function SchedulePage() {
                       (!selected || dayIsPast) && "text-muted-foreground",
                     )}
                   >
-                    {d.toLocaleDateString("en-ZA", { weekday: "short" }).slice(0, 3)}
+                    {formatWeekdayShortFromDateKey(dayKey, studioTimeZone)}
                   </span>
                 </button>
               );
@@ -427,7 +425,7 @@ export default function SchedulePage() {
           {longDayLabel}
         </h2>
         <div
-          key={scheduleDayKey(selectedDay)}
+          key={selectedDateKey}
           className={cn(
             "space-y-5",
             !loading &&
@@ -453,6 +451,8 @@ export default function SchedulePage() {
                 <ScheduleRow
                   key={c.id}
                   session={c}
+                  displayTimeZone={timeZone}
+                  studioTimeZone={studioTimeZone}
                   alreadyBooked={bookedClassIds.has(c.id)}
                   overlapBooking={overlapBooking}
                   isPast={classIsPast}
@@ -488,7 +488,7 @@ export default function SchedulePage() {
         onOpenChange={(o) => {
           if (!o) {
             setBookingFor(null);
-            void loadDayData(selectedDay, uid);
+            void loadDayData(selectedDateKey, uid);
           }
         }}
       />
@@ -498,12 +498,16 @@ export default function SchedulePage() {
 
 function ScheduleRow({
   session,
+  displayTimeZone,
+  studioTimeZone,
   alreadyBooked,
   overlapBooking,
   isPast,
   onReserve,
 }: {
   session: ClassRow;
+  displayTimeZone: string;
+  studioTimeZone: string;
   alreadyBooked: boolean;
   overlapBooking: BookedClassInterval | null;
   isPast?: boolean;
@@ -514,9 +518,12 @@ function ScheduleRow({
 
   const guideName = guideNameFromRow(session.guide_name);
   const badgeType = displayClassType(session.class_type);
-  const time = new Date(session.starts_at)
-    .toLocaleTimeString("en-ZA", { hour: "numeric", minute: "2-digit", hour12: true })
-    .toUpperCase();
+  const { time, zoneLabel } = formatClassDateTime(
+    session.starts_at,
+    displayTimeZone,
+    studioTimeZone,
+  );
+  const timeLabel = time.toUpperCase();
   const durationMin = Math.round(
     (new Date(session.ends_at).getTime() - new Date(session.starts_at).getTime()) / 60000,
   );
@@ -565,9 +572,12 @@ function ScheduleRow({
       ) : null}
 
       <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs leading-relaxed text-muted-foreground">
-        <span className="inline-flex items-center gap-1 font-medium tabular-nums">
+        <span className="inline-flex flex-wrap items-center gap-1 font-medium tabular-nums">
           <Clock className="h-3.5 w-3.5 shrink-0" aria-hidden />
-          {time}
+          {timeLabel}
+          {zoneLabel ? (
+            <span className="font-normal text-muted-foreground/80">({zoneLabel})</span>
+          ) : null}
         </span>
         <span className="text-muted-foreground/40" aria-hidden>
           ·

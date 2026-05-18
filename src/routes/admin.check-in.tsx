@@ -22,6 +22,9 @@ import {
   oneProfile,
 } from "@/lib/checkInRoster";
 import { parseQrCheckInToken } from "@/lib/qrCheckIn";
+import { pickNextUpcomingClassId } from "@/lib/checkInUpcoming";
+import { welcomeCheckInToastMessage } from "@/lib/flowPoints";
+import { CheckInRosterList } from "@/components/admin/CheckInRosterList";
 
 export const Route = createFileRoute("/admin/check-in")({
   validateSearch: (raw: Record<string, unknown>) => ({
@@ -35,6 +38,7 @@ type TodayClass = {
   name: string;
   class_type: string;
   starts_at: string;
+  ends_at: string;
   capacity: number;
   booked_count: number;
   location: string | null;
@@ -57,6 +61,30 @@ function CheckInPage() {
     if (search.class) setActiveSession(search.class);
   }, [search.class]);
 
+  const nextUpcomingClassId = useMemo(
+    () => pickNextUpcomingClassId(todayClasses),
+    [todayClasses],
+  );
+
+  useEffect(() => {
+    if (search.class || loading || todayClasses.length === 0) return;
+    const nextId = pickNextUpcomingClassId(todayClasses);
+    if (nextId) setActiveSession(nextId);
+  }, [search.class, loading, todayClasses]);
+
+  const rosterClassId =
+    activeSession === "all" ? nextUpcomingClassId : activeSession;
+
+  const rosterForClass = useMemo(() => {
+    if (!rosterClassId) return [];
+    return roster.filter((b) => b.class_id === rosterClassId && b.status !== "cancelled");
+  }, [roster, rosterClassId]);
+
+  const rosterClassLabel = useMemo(() => {
+    if (!rosterClassId) return null;
+    return todayClasses.find((c) => c.id === rosterClassId) ?? null;
+  }, [rosterClassId, todayClasses]);
+
   const loadData = useCallback(async () => {
     setLoading(true);
     const { startUtcIso, endUtcIso } = jhbDayBounds();
@@ -64,7 +92,7 @@ function CheckInPage() {
     const { data: classesData, error: classesError } = await supabase
       .from("classes")
       .select(
-        "id, name, class_type, starts_at, capacity, booked_count, location, guide_name, guide_id",
+        "id, name, class_type, starts_at, ends_at, capacity, booked_count, location, guide_name, guide_id",
       )
       .gte("starts_at", startUtcIso)
       .lte("starts_at", endUtcIso)
@@ -86,6 +114,7 @@ function CheckInPage() {
       name: String(row.name ?? ""),
       class_type: String(row.class_type ?? ""),
       starts_at: String(row.starts_at ?? ""),
+      ends_at: String(row.ends_at ?? ""),
       capacity: Number(row.capacity ?? 0),
       booked_count: Number(row.booked_count ?? 0),
       location: (row.location as string | null) ?? null,
@@ -115,7 +144,7 @@ function CheckInPage() {
         payment_method,
         mat_addon,
         towel_addon,
-        profiles ( first_name, last_name, avatar_url ),
+        profiles ( first_name, last_name, avatar_url, role ),
         classes ( id, name, starts_at, guide_name )
       `,
         )
@@ -173,10 +202,6 @@ function CheckInPage() {
     });
   }, [todayClasses, roster]);
 
-  const checkedInCount = roster.filter((r) => r.status === "attended").length;
-  const totalCapacity = sessions.reduce((s, x) => s + x.capacity, 0);
-  const utilisation = totalCapacity ? Math.round((checkedInCount / totalCapacity) * 100) : 0;
-
   const toastQrIssue = (key: string, message: string, variant: "error" | "warning" = "error") => {
     if (qrInvalidToastRef.current === key) return;
     qrInvalidToastRef.current = key;
@@ -201,9 +226,10 @@ function CheckInPage() {
     bookingId: string;
     profileId: string;
     memberName: string;
+    memberRole?: string | null;
     classStartsAt: string | null | undefined;
   }) => {
-    const { bookingId, profileId, memberName, classStartsAt } = args;
+    const { bookingId, profileId, memberName, memberRole, classStartsAt } = args;
     if (profileId && classStartsAt) {
       await upsertMayChallengeCheckIn({
         profileId,
@@ -213,7 +239,7 @@ function CheckInPage() {
       void awardClassesAttendedBadges(profileId);
     }
 
-    toast.success(`Welcome ${memberName}! · +10 Flow Points`, {
+    toast.success(welcomeCheckInToastMessage(memberName, memberRole), {
       duration: 3000,
       className:
         "!border-emerald-600/30 !bg-emerald-600 !px-6 !py-5 !text-lg !font-semibold !text-white !shadow-md",
@@ -260,6 +286,8 @@ function CheckInPage() {
         bookingId: String(rpcResult.booking_id),
         profileId: String(rpcResult.profile_id),
         memberName: String(rpcResult.member_name ?? "Member"),
+        memberRole:
+          typeof rpcResult.member_role === "string" ? rpcResult.member_role : null,
         classStartsAt:
           typeof rpcResult.class_starts_at === "string" ? rpcResult.class_starts_at : null,
       });
@@ -276,7 +304,7 @@ function CheckInPage() {
         checked_in,
         qr_used,
         classes ( starts_at ),
-        profiles ( first_name, last_name )
+        profiles ( first_name, last_name, role )
       `,
       )
       .eq("qr_token", token)
@@ -341,6 +369,7 @@ function CheckInPage() {
       bookingId: booking.id as string,
       profileId: booking.profile_id as string,
       memberName: firstName,
+      memberRole: prof?.role ?? null,
       classStartsAt: cls?.starts_at,
     });
   };
@@ -422,10 +451,37 @@ function CheckInPage() {
               </p>
             </div>
 
-            <div className="grid shrink-0 grid-cols-2 gap-2 max-md:pb-1">
-              <Stat label="Checked in" value={checkedInCount} />
-              <Stat label="Capacity" value={`${utilisation}%`} />
-            </div>
+            {rosterClassId ? (
+              <div
+                className={cn(
+                  "flex min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-card p-3",
+                  "max-md:max-h-72 md:min-h-0 md:flex-1",
+                )}
+              >
+                <div className="mb-2 shrink-0">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Roster · check in manually
+                  </p>
+                  {rosterClassLabel ? (
+                    <p className="mt-0.5 text-sm font-semibold">
+                      {rosterClassLabel.name}
+                      <span className="font-normal text-muted-foreground">
+                        {" "}
+                        · {formatClassTime(rosterClassLabel.starts_at)}
+                      </span>
+                    </p>
+                  ) : null}
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto pr-0.5">
+                  <CheckInRosterList
+                    roster={rosterForClass}
+                    loading={loading}
+                    compact
+                    onUpdated={loadData}
+                  />
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
       )}
@@ -461,15 +517,6 @@ function SessionChip({
         <p className="mt-1 text-[10px] font-medium text-[#4a5a42]">Guide · {guideName}</p>
       ) : null}
     </button>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="rounded-2xl border border-border bg-card p-4">
-      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className="mt-1 font-display text-2xl font-bold">{value}</p>
-    </div>
   );
 }
 

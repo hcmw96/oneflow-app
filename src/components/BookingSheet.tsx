@@ -23,6 +23,7 @@ import {
   bookingConfirmationEmailData,
   bookingConfirmationTemplateForClassType,
 } from "@/lib/bookingConfirmationEmail";
+import { profileEarnsFlowPoints } from "@/lib/flowPoints";
 
 interface ClassRow {
   id: string;
@@ -81,6 +82,7 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
   const [towelAddon, setTowelAddon] = useState(false);
   const [loading, setLoading] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
+  const [userRole, setUserRole] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [acceptedFriends, setAcceptedFriends] = useState<FriendOption[]>([]);
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -116,7 +118,7 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
 
       const pointsPromise = isFree
         ? Promise.resolve({ data: null, error: null })
-        : supabase.from("profiles").select("flow_points").eq("id", user.id).maybeSingle();
+        : supabase.from("profiles").select("flow_points, role").eq("id", user.id).maybeSingle();
 
       const [{ data: creditsData, error: creditsErr }, { data: pointsData }, { data: ships }] =
         await Promise.all([
@@ -161,8 +163,10 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
 
         setCredits(eligible as Credit[]);
         setSelectedCredit(eligible[0]?.id ?? null);
-        const fp = (pointsData as { flow_points?: number | null } | null)?.flow_points;
+        const prof = pointsData as { flow_points?: number | null; role?: string | null } | null;
+        const fp = prof?.flow_points;
         setFlowPoints(typeof fp === "number" && Number.isFinite(fp) ? Math.max(0, fp) : 0);
+        setUserRole(prof?.role ?? null);
       }
 
       const shipRows = (ships ?? []) as { requester_id: string; addressee_id: string }[];
@@ -203,14 +207,16 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
   const pointsValue = Math.floor(flowPoints / 100) * 10;
 
   const afterBookingConfirmed = async (bookingId: string) => {
-    const fpIns = await supabase.from("flow_points").insert({
-      profile_id: userId!,
-      points: 1,
-      reason: "class_attended",
-      reference_id: bookingId,
-    });
-    if (fpIns.error) {
-      console.error("[BookingSheet] flow_points insert after booking failed", fpIns.error);
+    if (profileEarnsFlowPoints(userRole)) {
+      const fpIns = await supabase.from("flow_points").insert({
+        profile_id: userId!,
+        points: 1,
+        reason: "class_attended",
+        reference_id: bookingId,
+      });
+      if (fpIns.error) {
+        console.error("[BookingSheet] flow_points insert after booking failed", fpIns.error);
+      }
     }
 
     if (isMayChallenge && isMay) {

@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { startOfDay } from "@/lib/format";
+import { isPastDateKey, STUDIO_TIMEZONE } from "@/lib/timezone";
 
 export type BookedClassInterval = {
   class_id: string;
@@ -93,8 +93,9 @@ export function overlapBookingMessage(conflict: BookedClassInterval): string {
 /** Minutes after class start before it is treated as past (no new bookings). */
 export const CLASS_BOOKING_GRACE_MS = 15 * 60 * 1000;
 
-export function isPastScheduleDay(day: Date, now = new Date()): boolean {
-  return startOfDay(day).getTime() < startOfDay(now).getTime();
+/** Calendar day before studio “today” (YYYY-MM-DD in studio TZ). */
+export function isPastScheduleDay(dayKey: string, timeZone: string = STUDIO_TIMEZONE): boolean {
+  return isPastDateKey(dayKey, timeZone);
 }
 
 export function isPastScheduleClass(
