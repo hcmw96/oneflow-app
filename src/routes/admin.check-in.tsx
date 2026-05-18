@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/admin/PageHeader";
 import { QRScanner } from "@/components/admin/QRScanner";
 import { supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
 import { awardClassesAttendedBadges } from "@/lib/badges";
 import { checkInBookingByQrRpc } from "@/lib/checkInQr";
@@ -42,6 +43,7 @@ type TodayClass = {
 };
 
 function CheckInPage() {
+  const isMobile = useIsMobile();
   const search = Route.useSearch();
   const [todayClasses, setTodayClasses] = useState<TodayClass[]>([]);
   const [roster, setRoster] = useState<RosterRow[]>([]);
@@ -344,14 +346,26 @@ function CheckInPage() {
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden max-md:overflow-y-auto max-md:scroll-touch">
       <PageHeader title="Check-In" />
 
       {loading ? (
         <div className="py-16 text-center text-sm text-muted-foreground">Loading check-in…</div>
       ) : (
-        <div className="grid min-h-0 flex-1 grid-cols-[minmax(200px,260px)_minmax(0,1fr)] gap-3 overflow-hidden">
-          <div className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-card p-3">
+        <div
+          className={cn(
+            "flex min-h-0 flex-1 flex-col gap-3",
+            "max-md:overflow-visible",
+            "md:grid md:grid-cols-[minmax(200px,260px)_minmax(0,1fr)] md:overflow-hidden",
+          )}
+        >
+          <div
+            className={cn(
+              "flex flex-col overflow-hidden rounded-2xl border border-border bg-card p-3",
+              "max-md:max-h-52 max-md:shrink-0",
+              "md:min-h-0 md:flex-1",
+            )}
+          >
             <p className="mb-2 shrink-0 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Today&apos;s classes
             </p>
@@ -375,22 +389,30 @@ function CheckInPage() {
             </div>
           </div>
 
-          <div className="flex min-h-0 flex-col gap-2 overflow-hidden">
+          <div
+            className={cn(
+              "flex flex-col gap-2",
+              "max-md:shrink-0",
+              "md:min-h-0 md:overflow-hidden",
+            )}
+          >
             <div
               className={cn(
-                "flex min-h-0 flex-1 flex-col rounded-2xl border border-border bg-card p-3",
+                "flex flex-col rounded-2xl border border-border bg-card p-3",
+                "max-md:shrink-0",
+                "md:min-h-0 md:flex-1",
               )}
             >
-              <div className="mb-4 flex w-full items-center gap-2 text-sm font-semibold">
+              <div className="mb-3 flex w-full items-center gap-2 text-sm font-semibold md:mb-4">
                 <QrCode className="h-4 w-4 shrink-0 text-[#a3b693]" aria-hidden />
                 Self check-in QR
               </div>
-              <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-1">
+              <div className="flex flex-col items-center justify-center px-1 md:min-h-0 md:flex-1">
                 <QRScanner
                   defaultFacing="user"
-                  size="large"
+                  size={isMobile ? "default" : "large"}
                   showFlipButton
-                  className="w-full"
+                  className="w-full max-md:max-w-sm"
                   onScan={(text: string) => void handleQrScan(text)}
                 />
               </div>
@@ -400,7 +422,7 @@ function CheckInPage() {
               </p>
             </div>
 
-            <div className="grid shrink-0 grid-cols-2 gap-2">
+            <div className="grid shrink-0 grid-cols-2 gap-2 max-md:pb-1">
               <Stat label="Checked in" value={checkedInCount} />
               <Stat label="Capacity" value={`${utilisation}%`} />
             </div>
