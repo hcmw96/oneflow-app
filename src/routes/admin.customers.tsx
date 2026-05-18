@@ -80,11 +80,37 @@ function isValidEmail(v: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
 }
 
-function mergeCreditsAfterAssign(prev: number, row: AssignedCreditRow): number {
-  if (row.is_unlimited) return 999;
-  const add = row.credits_remaining ?? 0;
-  if (prev >= 999) return 999;
-  return prev + add;
+function creditsDisplayFromActive(active: EmbeddedCreditRow[]): {
+  display: string;
+  hasActiveCredits: boolean;
+} {
+  if (active.length === 0) return { display: "—", hasActiveCredits: false };
+  if (active.some((c) => c.is_unlimited)) {
+    return { display: "Unlimited", hasActiveCredits: true };
+  }
+  const total = active.reduce(
+    (sum, c) => sum + Math.max(0, Math.round(Number(c.credits_remaining) || 0)),
+    0,
+  );
+  if (total <= 0) return { display: "—", hasActiveCredits: false };
+  return { display: String(total), hasActiveCredits: true };
+}
+
+function mergeCreditsAfterAssign(
+  member: Pick<MemberRow, "creditsDisplay" | "hasActiveCredits">,
+  row: AssignedCreditRow,
+): Pick<MemberRow, "creditsDisplay" | "hasActiveCredits"> {
+  if (row.is_unlimited || member.creditsDisplay === "Unlimited") {
+    return { creditsDisplay: "Unlimited", hasActiveCredits: true };
+  }
+  const add = Math.max(0, Math.round(Number(row.credits_remaining) || 0));
+  const prevTotal =
+    member.hasActiveCredits && member.creditsDisplay !== "—"
+      ? Math.round(Number(member.creditsDisplay) || 0)
+      : 0;
+  const total = prevTotal + add;
+  if (total <= 0) return { creditsDisplay: "—", hasActiveCredits: false };
+  return { creditsDisplay: String(total), hasActiveCredits: true };
 }
 
 type EmbeddedCreditRow = {
@@ -128,11 +154,6 @@ function planLabelFromActiveCredits(active: EmbeddedCreditRow[]): string {
   return name || "—";
 }
 
-function totalCreditsRemainingActive(active: EmbeddedCreditRow[]): number {
-  if (active.some((c) => c.is_unlimited)) return 999;
-  return active.reduce((sum, c) => sum + (Number(c.credits_remaining) || 0), 0);
-}
-
 const ROLE_LABEL: Record<string, string> = {
   customer: "Customer",
   other: "Other",
@@ -152,7 +173,8 @@ type MemberRow = {
   phone: string;
   role: string;
   plan: string;
-  credits: number;
+  creditsDisplay: string;
+  hasActiveCredits: boolean;
   lastVisit: string;
   status: "active" | "paused" | "trial";
   waiverSigned: boolean;
@@ -406,6 +428,7 @@ function CustomersPage() {
       const waiverAt = p.waiver_accepted_at as string | null | undefined;
       const embedded = creditsByProfile.get(id) ?? [];
       const active = activeCreditsForProfile(embedded, nowMs);
+      const { display: creditsDisplay, hasActiveCredits } = creditsDisplayFromActive(active);
       return {
         id,
         name,
@@ -413,7 +436,8 @@ function CustomersPage() {
         phone: String(p.phone ?? "—"),
         role: String(p.role ?? "customer").toLowerCase(),
         plan: planLabelFromActiveCredits(active),
-        credits: totalCreditsRemainingActive(active),
+        creditsDisplay,
+        hasActiveCredits,
         lastVisit: "—",
         status: "active" as const,
         waiverSigned: Boolean(waiverAt),
@@ -454,8 +478,8 @@ function CustomersPage() {
         if (!hay.includes(ql)) return false;
       }
       if (roleFilter !== "all" && m.role !== roleFilter) return false;
-      if (chipHasCredits && !(m.credits > 0)) return false;
-      if (chipNoCredits && m.credits !== 0) return false;
+      if (chipHasCredits && !m.hasActiveCredits) return false;
+      if (chipNoCredits && m.hasActiveCredits) return false;
       if (chipNeverBooked && m.hasBooking) return false;
       if (chipWaiverUnsigned && m.waiverSigned) return false;
       if (
@@ -545,7 +569,7 @@ function CustomersPage() {
           esc(m.email),
           esc(m.phone),
           esc(m.role),
-          String(m.credits >= 999 ? "Unlimited" : m.credits),
+          esc(m.creditsDisplay),
         ].join(","),
       )
       .join("\n");
@@ -608,7 +632,7 @@ function CustomersPage() {
   const bumpMemberCreditsAfterAssign = (profileId: string, row: AssignedCreditRow) => {
     setMembers((prev) =>
       prev.map((m) =>
-        m.id === profileId ? { ...m, credits: mergeCreditsAfterAssign(m.credits, row) } : m,
+        m.id === profileId ? { ...m, ...mergeCreditsAfterAssign(m, row) } : m,
       ),
     );
   };
@@ -1088,9 +1112,7 @@ function CustomersPage() {
                     <td className={CUSTOMERS_COL.planTd} title={m.plan}>
                       {m.plan}
                     </td>
-                    <td className={CUSTOMERS_COL.creditsTd}>
-                      {m.credits >= 999 ? "∞" : m.credits}
-                    </td>
+                    <td className={CUSTOMERS_COL.creditsTd}>{m.creditsDisplay}</td>
                     <td className={CUSTOMERS_COL.lastVisitTd}>{m.lastVisit}</td>
                     <td className={CUSTOMERS_COL.statusTd}>
                       <span
