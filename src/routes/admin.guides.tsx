@@ -469,6 +469,7 @@ function GuidesPage() {
           email: payload.email,
           first_name: payload.first_name,
           last_name: payload.last_name,
+          role: "guide",
           disciplines: slugsToInviteLabels(disciplines),
         },
       });

@@ -6,6 +6,32 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+const APP_CALLBACK_URL = "https://oneflow1.netlify.app/auth/callback";
+
+const ALLOWED_ROLES = new Set([
+  "customer",
+  "other",
+  "guide",
+  "management",
+  "director",
+  "boh",
+  "front_desk",
+  "marketing",
+  "team",
+]);
+
+const ROLE_EMAIL_LABEL: Record<string, string> = {
+  customer: "member",
+  other: "member",
+  guide: "guide",
+  management: "team member",
+  director: "director",
+  boh: "team member",
+  front_desk: "team member",
+  marketing: "team member",
+  team: "team member",
+};
+
 const DISCIPLINE_OPTIONS = new Set([
   "Yoga",
   "Sculpt",
@@ -31,6 +57,31 @@ function normalizeDisciplines(raw: unknown): string[] {
     })
     .filter((value) => DISCIPLINE_OPTIONS.has(value))
     .filter((value, idx, arr) => arr.indexOf(value) === idx);
+}
+
+async function sendBrandedInviteEmail(
+  supabaseUrl: string,
+  anonKey: string,
+  to: string,
+  data: Record<string, unknown>,
+): Promise<void> {
+  const emailRes = await fetch(`${supabaseUrl}/functions/v1/send-email`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${anonKey}`,
+      apikey: anonKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      to,
+      template: "user_invite",
+      data,
+    }),
+  });
+  if (!emailRes.ok) {
+    const errText = await emailRes.text();
+    console.error("send-email user_invite failed:", errText);
+  }
 }
 
 serve(async (req) => {
@@ -79,8 +130,9 @@ serve(async (req) => {
       .eq("id", callerUser.id)
       .maybeSingle();
 
-    if ((callerProfile?.role ?? "").toLowerCase() !== "director") {
-      return new Response(JSON.stringify({ error: "Only directors can invite guides" }), {
+    const callerRole = (callerProfile?.role ?? "").toLowerCase();
+    if (callerRole !== "director" && callerRole !== "management") {
+      return new Response(JSON.stringify({ error: "Only admins can send invites" }), {
         status: 403,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -93,17 +145,20 @@ serve(async (req) => {
     const first_name = String(body?.first_name ?? "").trim();
     const last_name = String(body?.last_name ?? "").trim();
     const disciplines = normalizeDisciplines(body?.disciplines);
-    const ALLOWED_ROLES = new Set([
-      "director",
-      "management",
-      "guide",
-      "boh",
-      "marketing",
-      "team",
-    ]);
-    const requestedRole = String(body?.role ?? "guide").toLowerCase();
-    const role = ALLOWED_ROLES.has(requestedRole) ? requestedRole : "guide";
-    const phone = String(body?.phone ?? "").trim() || null;
+    const requestedRole = String(body?.role ?? "guide").trim().toLowerCase();
+    const role = ALLOWED_ROLES.has(requestedRole) ? requestedRole : "customer";
+    const phone = body?.phone != null ? String(body.phone).trim() : "";
+    const date_of_birth = body?.date_of_birth != null ? String(body.date_of_birth).trim() : "";
+
+    if (callerRole !== "director" && (role === "director" || role === "management")) {
+      return new Response(
+        JSON.stringify({ error: "Only directors can invite management or director roles" }),
+        {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
 
     if (!email || !first_name || !last_name) {
       return new Response(
@@ -117,7 +172,10 @@ serve(async (req) => {
 
     const admin = createClient(SUPABASE_URL, adminApiKey);
 
-    const { data: inviteData, error: inviteErr } = await admin.auth.admin.inviteUserByEmail(email);
+    const { data: inviteData, error: inviteErr } = await admin.auth.admin.inviteUserByEmail(email, {
+      redirectTo: APP_CALLBACK_URL,
+      data: { first_name, last_name, role },
+    });
     if (inviteErr) {
       return new Response(JSON.stringify({ error: inviteErr.message }), {
         status: 400,
@@ -141,6 +199,7 @@ serve(async (req) => {
       role,
     };
     if (phone) profilePayload.phone = phone;
+    if (date_of_birth) profilePayload.date_of_birth = date_of_birth;
 
     const { error: profileErr } = await admin
       .from("profiles")
@@ -170,6 +229,13 @@ serve(async (req) => {
       }
     }
 
+    await sendBrandedInviteEmail(SUPABASE_URL, SUPABASE_ANON_KEY, email, {
+      first_name,
+      last_name,
+      role_label: ROLE_EMAIL_LABEL[role] ?? "member",
+      invite_url: APP_CALLBACK_URL,
+    });
+
     return new Response(
       JSON.stringify({
         success: true,
@@ -177,6 +243,7 @@ serve(async (req) => {
         email,
         first_name,
         last_name,
+        full_name: `${first_name} ${last_name}`.trim(),
         role,
         disciplines,
       }),

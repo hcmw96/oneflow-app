@@ -627,14 +627,14 @@ function CustomersPage() {
       success?: boolean;
       full_name?: string;
       error?: string;
-    }>("invite-member", {
+    }>("invite-guide", {
       body: {
         first_name: firstName.trim(),
         last_name: lastName.trim(),
-        email: email.trim(),
+        email: email.trim().toLowerCase(),
         phone: phone.trim() || undefined,
         date_of_birth: dob.trim() || undefined,
-        role: role,
+        role: role === "other" ? "other" : "customer",
       },
     });
 

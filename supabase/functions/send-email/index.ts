@@ -11,7 +11,8 @@ type TemplateName =
   | "package_assigned"
   | "marketing"
   | "leave_request"
-  | "leave_request_response";
+  | "leave_request_response"
+  | "user_invite";
 
 type RequestPayload = {
   to: string;
@@ -164,6 +165,23 @@ function buildTemplate(template: TemplateName, data: Record<string, unknown> = {
         <h2 style="font-size:22px;font-weight:600;color:#a3b693;margin:0 0 16px;">Leave request ${esc(outcome)}</h2>
         <p style="font-size:15px;line-height:1.6;color:#444;margin:0 0 12px;">Hi ${esc(first)}, your ${esc(typeLabel)} request from ${esc(start)} to ${esc(end)} has been ${esc(outcome)} by ${esc(reviewer)}.</p>
         ${noteBlock}
+        <p style="font-size:14px;color:#888;margin:24px 0 0;">One Flow Team</p>
+      `,
+    };
+  }
+
+  if (template === "user_invite") {
+    const first = String(data.first_name ?? "there");
+    const roleLabel = String(data.role_label ?? "member");
+    const inviteUrl = String(data.invite_url ?? "https://oneflow1.netlify.app/auth");
+    return {
+      subject: "You're invited to One Flow",
+      content: `
+        <h2 style="font-size:22px;font-weight:600;color:#a3b693;margin:0 0 16px;">Welcome to One Flow</h2>
+        <p style="font-size:15px;line-height:1.6;color:#444;margin:0 0 12px;">Hi ${esc(first)}, you've been invited to join One Flow as a ${esc(roleLabel)}.</p>
+        <p style="font-size:15px;line-height:1.6;color:#444;margin:0 0 12px;">Check your inbox for a separate email with a secure link to set your password. After that, sign in to complete your profile.</p>
+        ${ctaButton(inviteUrl, "Open One Flow")}
+        <p style="font-size:14px;line-height:1.6;color:#888;margin:16px 0 0;">If you need help, contact the studio at <a href="mailto:hello@oneflow.co.za" style="color:#a3b693;">hello@oneflow.co.za</a>.</p>
         <p style="font-size:14px;color:#888;margin:24px 0 0;">One Flow Team</p>
       `,
     };
