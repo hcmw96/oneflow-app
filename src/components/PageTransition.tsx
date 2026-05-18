@@ -31,11 +31,11 @@ export function PageTransition({
   const reducedMotion = usePrefersReducedMotion();
 
   useEffect(() => {
-    if (isAdmin) {
-      const main = document.querySelector<HTMLElement>("[data-admin-scroll]");
-      if (main) {
-        main.scrollTo({ top: 0, behavior: reducedMotion ? "auto" : "smooth" });
-      }
+    const scrollEl = document.querySelector<HTMLElement>(
+      isAdmin ? "[data-admin-scroll]" : "[data-customer-scroll]",
+    );
+    if (scrollEl) {
+      scrollEl.scrollTo({ top: 0, behavior: reducedMotion ? "auto" : "smooth" });
       return;
     }
     if (reducedMotion) {
@@ -50,7 +50,6 @@ export function PageTransition({
       key={pathname}
       className={cn(
         "page-transition-enter min-w-0",
-        !isAdmin && "flex min-h-0 flex-1 flex-col",
         reducedMotion && "page-transition-enter--reduced",
         className,
       )}

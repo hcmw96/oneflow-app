@@ -27,9 +27,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <div className="flex min-h-[100dvh] flex-col bg-background">
-      <div className="mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col pb-with-bottom-nav">
-        <header className="safe-top sticky top-0 z-30 flex flex-col border-b border-border/60 bg-background/95 backdrop-blur">
+    <div className="flex h-[100dvh] max-h-[100dvh] flex-col overflow-hidden bg-background">
+      <div className="mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col overflow-hidden pb-with-bottom-nav">
+        <header className="safe-top z-30 flex shrink-0 flex-col border-b border-border/60 bg-background/95 backdrop-blur">
           {showAdminCta && (
             <div className="border-b border-primary/20 bg-primary-soft/40 px-4 py-2">
               <button
@@ -45,7 +45,9 @@ export function AppShell({ children }: { children: ReactNode }) {
             <img src={logo} alt="One Flow" className="h-9 w-auto" />
           </div>
         </header>
-        {children}
+        <div data-customer-scroll className="min-h-0 flex-1 overflow-y-auto scroll-touch">
+          {children}
+        </div>
       </div>
       <WhatsAppFab />
     </div>

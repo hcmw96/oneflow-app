@@ -25,8 +25,50 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const LOGO_URL =
-  "https://ubseyvrnravzwiqfxacz.supabase.co/storage/v1/object/public/assets/oneflow-logo.png";
+const LOGO_CID = "oneflow-logo";
+const SITE_URL =
+  Deno.env.get("PUBLIC_APP_URL") ??
+  Deno.env.get("SITE_URL") ??
+  "https://oneflow1.netlify.app";
+/** Public fallback if the bundled logo file cannot be read at runtime. */
+const LOGO_URL = `${SITE_URL.replace(/\/$/, "")}/email/oneflow-logo.png`;
+
+let logoAttachmentBase64: string | null | undefined;
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
+async function getLogoAttachment(): Promise<
+  { filename: string; content: string; content_id: string } | null
+> {
+  if (logoAttachmentBase64 === undefined) {
+    try {
+      const bytes = await Deno.readFile(new URL("./oneflow-logo.png", import.meta.url));
+      logoAttachmentBase64 = bytesToBase64(bytes);
+    } catch (error) {
+      console.error("send-email: could not load oneflow-logo.png", error);
+      logoAttachmentBase64 = null;
+    }
+  }
+  if (!logoAttachmentBase64) return null;
+  return {
+    filename: "oneflow-logo.png",
+    content: logoAttachmentBase64,
+    content_id: LOGO_CID,
+  };
+}
+
+async function logoImgTag(): Promise<string> {
+  const attachment = await getLogoAttachment();
+  const src = attachment ? `cid:${LOGO_CID}` : LOGO_URL;
+  return `<img src="${src}" alt="One Flow" width="140" style="display:block;margin:0 auto;border:0;outline:none;height:auto;" />`;
+}
 
 function esc(value: unknown): string {
   const s = String(value ?? "");
@@ -277,7 +319,8 @@ function buildTemplate(template: TemplateName, data: Record<string, unknown> = {
   };
 }
 
-function wrapHtml(content: string): string {
+async function wrapHtml(content: string): Promise<string> {
+  const logoImg = await logoImgTag();
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -291,7 +334,7 @@ function wrapHtml(content: string): string {
         <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background-color:#ffffff;border-radius:12px;overflow:hidden;">
           <tr>
             <td style="background-color:#a3b693;padding:32px;text-align:center;">
-              <img src="${LOGO_URL}" alt="One Flow" width="140" style="display:block;margin:0 auto;" />
+              ${logoImg}
             </td>
           </tr>
           <tr>
@@ -336,7 +379,18 @@ serve(async (req) => {
     }
 
     const { subject, content } = buildTemplate(body.template, body.data ?? {});
-    const html = wrapHtml(content);
+    const html = await wrapHtml(content);
+    const logoAttachment = await getLogoAttachment();
+
+    const resendPayload: Record<string, unknown> = {
+      from: "One Flow <noreply@oneflow.co.za>",
+      to: [body.to],
+      subject,
+      html,
+    };
+    if (logoAttachment) {
+      resendPayload.attachments = [logoAttachment];
+    }
 
     const resendRes = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -344,12 +398,7 @@ serve(async (req) => {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        from: "One Flow <noreply@oneflow.co.za>",
-        to: [body.to],
-        subject,
-        html,
-      }),
+      body: JSON.stringify(resendPayload),
     });
 
     const resendJson = await resendRes.json();

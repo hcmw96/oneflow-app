@@ -90,7 +90,9 @@ function previewWrap(subject: string, html: string): string {
 <table width="100%" cellpadding="0" cellspacing="0" style="padding:32px 16px;">
   <tr><td align="center">
     <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;background:#fff;border-radius:12px;overflow:hidden;">
-      <tr><td style="background:#a3b693;padding:28px;text-align:center;color:#fff;font-weight:700;">One Flow</td></tr>
+      <tr><td style="background:#a3b693;padding:28px;text-align:center;">
+        <img src="/email/oneflow-logo.png" alt="One Flow" width="140" style="display:block;margin:0 auto;border:0;height:auto;" />
+      </td></tr>
       <tr><td style="padding:32px;color:#2d2d2d;">
         <h2 style="font-size:20px;color:#a3b693;margin:0 0 16px;">${subject || ""}</h2>
         ${html}
