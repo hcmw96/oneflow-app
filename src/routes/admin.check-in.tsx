@@ -409,7 +409,7 @@ function CheckInPage() {
               </div>
               <div className="flex flex-col items-center justify-center px-1 md:min-h-0 md:flex-1">
                 <QRScanner
-                  defaultFacing="user"
+                  defaultFacing={isMobile ? "environment" : "user"}
                   size={isMobile ? "default" : "large"}
                   showFlipButton
                   className="w-full max-md:max-w-sm"

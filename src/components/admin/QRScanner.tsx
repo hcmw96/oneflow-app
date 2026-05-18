@@ -2,20 +2,22 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
 import { RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  computeQrBoxSize,
+  isCameraPermissionError,
+  resolveCameraStartArg,
+  waitForElementLayout,
+  type CameraFacing,
+} from "@/lib/qrScannerCamera";
 
 interface QRScannerProps {
   onScan: (decodedText: string) => void;
   onError?: (error: string) => void;
   /** Defaults to rear camera; use `user` for kiosk / front-facing tablet check-in. */
-  defaultFacing?: "environment" | "user";
+  defaultFacing?: CameraFacing;
   showFlipButton?: boolean;
   size?: "default" | "large";
   className?: string;
-}
-
-function qrScanBoxSize(viewfinderWidth: number, viewfinderHeight: number, ratio: number) {
-  const edge = Math.floor(Math.min(viewfinderWidth, viewfinderHeight) * ratio);
-  return { width: Math.max(edge, 200), height: Math.max(edge, 200) };
 }
 
 export function QRScanner({
@@ -34,7 +36,9 @@ export function QRScanner({
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
   const [permissionDenied, setPermissionDenied] = useState(false);
-  const [cameraFacing, setCameraFacing] = useState<"environment" | "user">(defaultFacing);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const [retryKey, setRetryKey] = useState(0);
+  const [cameraFacing, setCameraFacing] = useState<CameraFacing>(defaultFacing);
   const isKiosk = size === "large";
   const scanBoxRatio = isKiosk ? 0.78 : 0.72;
 
@@ -43,12 +47,7 @@ export function QRScanner({
   }, [defaultFacing]);
 
   useEffect(() => {
-    setPermissionDenied(false);
-    const scanner = new Html5Qrcode(containerId, {
-      formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
-      verbose: false,
-    });
-    scannerRef.current = scanner;
+    let cancelled = false;
 
     const styleEl = document.createElement("style");
     styleEl.setAttribute("data-qr-scanner", containerId);
@@ -64,15 +63,6 @@ export function QRScanner({
         background: #000 !important;
         overflow: hidden !important;
       }
-      #${containerId} > div,
-      #${containerId} > div > div {
-        position: absolute !important;
-        inset: 0 !important;
-        width: 100% !important;
-        height: 100% !important;
-        padding: 0 !important;
-        border: none !important;
-      }
       #${containerId} video {
         position: absolute !important;
         inset: 0 !important;
@@ -80,18 +70,13 @@ export function QRScanner({
         height: 100% !important;
         object-fit: cover !important;
         display: block !important;
+        z-index: 1 !important;
       }
       #${containerId} canvas {
-        position: absolute !important;
-        inset: 0 !important;
-        width: 100% !important;
-        height: 100% !important;
-      }
-      #${containerId} img {
         display: none !important;
       }
       #${containerId} #qr-shaded-region {
-        position: absolute !important;
+        z-index: 2 !important;
         border-width: 3px !important;
         border-color: rgba(163, 182, 147, 0.95) !important;
         border-radius: 12px !important;
@@ -100,41 +85,103 @@ export function QRScanner({
     `;
     document.head.appendChild(styleEl);
 
-    scanner
-      .start(
-        {
-          facingMode: cameraFacing,
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-        },
-        {
-          fps: isKiosk ? 12 : 10,
-          qrbox: (w, h) => qrScanBoxSize(w, h, scanBoxRatio),
-          disableFlip: cameraFacing === "user",
-        },
-        (decodedText: string) => {
-          onScanRef.current(decodedText);
-        },
-        () => {
-          // per-frame miss — ignore
-        },
-      )
-      .catch((err: unknown) => {
-        const msg = err instanceof Error ? err.message : String(err);
-        if (msg.includes("Permission")) {
-          setPermissionDenied(true);
-        }
-        onErrorRef.current?.(msg || "Camera error");
+    const run = async () => {
+      setPermissionDenied(false);
+      setCameraError(null);
+
+      await waitForElementLayout(containerId);
+      if (cancelled) return;
+
+      const scanner = new Html5Qrcode(containerId, {
+        formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
+        verbose: false,
       });
+      scannerRef.current = scanner;
+
+      const cameraArg = await resolveCameraStartArg(cameraFacing);
+      if (cancelled) return;
+
+      const scanConfig = {
+        fps: isKiosk ? 12 : 10,
+        qrbox: (w: number, h: number) => computeQrBoxSize(w, h, scanBoxRatio),
+        disableFlip: cameraFacing === "user",
+      };
+
+      const startWith = async (arg: string | { facingMode: { ideal: CameraFacing } }) => {
+        const config =
+          typeof arg === "string"
+            ? scanConfig
+            : {
+                ...scanConfig,
+                videoConstraints: { facingMode: { ideal: arg.facingMode.ideal } },
+              };
+
+        await scanner.start(
+          arg,
+          config,
+          (decodedText: string) => {
+            onScanRef.current(decodedText);
+          },
+          () => {
+            // per-frame miss — ignore
+          },
+        );
+
+        const video = document.querySelector<HTMLVideoElement>(`#${containerId} video`);
+        if (video) {
+          video.setAttribute("playsinline", "true");
+          video.setAttribute("webkit-playsinline", "true");
+          video.muted = true;
+          void video.play().catch(() => {});
+        }
+      };
+
+      try {
+        await startWith(cameraArg);
+      } catch (firstErr: unknown) {
+        if (cancelled) return;
+        const firstMsg = firstErr instanceof Error ? firstErr.message : String(firstErr);
+
+        const alternate: CameraFacing = cameraFacing === "environment" ? "user" : "environment";
+        try {
+          if (scanner.isScanning) await scanner.stop();
+          const fallbackArg = await resolveCameraStartArg(alternate);
+          if (cancelled) return;
+          await startWith(fallbackArg);
+          if (!cancelled) setCameraFacing(alternate);
+          return;
+        } catch {
+          // try generic facingMode ideal below
+        }
+
+        try {
+          if (scanner.isScanning) await scanner.stop();
+          if (cancelled) return;
+          await startWith({ facingMode: { ideal: cameraFacing } });
+          return;
+        } catch (secondErr: unknown) {
+          const msg = secondErr instanceof Error ? secondErr.message : String(secondErr);
+          if (isCameraPermissionError(firstMsg) || isCameraPermissionError(msg)) {
+            setPermissionDenied(true);
+          } else {
+            setCameraError(msg || firstMsg || "Could not start camera");
+          }
+          onErrorRef.current?.(msg || firstMsg || "Camera error");
+        }
+      }
+    };
+
+    void run();
 
     return () => {
+      cancelled = true;
       styleEl.remove();
       if (scannerRef.current?.isScanning) {
         void scannerRef.current.stop().catch(() => {});
       }
       scannerRef.current = null;
     };
-  }, [cameraFacing, containerId, isKiosk, scanBoxRatio]);
+  }, [cameraFacing, containerId, isKiosk, scanBoxRatio, retryKey]);
 
   if (permissionDenied) {
     return (
@@ -146,6 +193,30 @@ export function QRScanner({
         )}
       >
         Camera access denied. Please allow camera access in your browser settings.
+      </div>
+    );
+  }
+
+  if (cameraError) {
+    return (
+      <div
+        className={cn(
+          "mx-auto flex aspect-square flex-col items-center justify-center gap-3 rounded-2xl border-[3px] border-dashed border-[#a3b693] bg-muted/30 p-4 text-center text-sm text-muted-foreground",
+          isKiosk ? "h-full w-full max-w-lg" : "w-[min(90vw,320px)] max-w-[320px]",
+          className,
+        )}
+      >
+        <p>{cameraError}</p>
+        <button
+          type="button"
+          onClick={() => {
+            setCameraError(null);
+            setRetryKey((k) => k + 1);
+          }}
+          className="rounded-full bg-foreground px-4 py-2 text-xs font-semibold text-background"
+        >
+          Try again
+        </button>
       </div>
     );
   }
