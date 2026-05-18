@@ -9,6 +9,9 @@ import { useAuth } from "@/contexts/auth";
 import { supabase } from "@/lib/supabase";
 import { addDays, isSameDay, startOfDay, startOfWeekSunday } from "@/lib/format";
 import {
+  type BookedClassInterval,
+  fetchConfirmedBookingIntervals,
+  findOverlappingBooking,
   isFreeBeginnerClass,
   isPastScheduleClass,
   isPastScheduleDay,
@@ -155,6 +158,7 @@ export default function SchedulePage() {
   const [bookingFor, setBookingFor] = useState<ClassRow | null>(null);
   /** Confirmed booking `class_id`s for this user (any day — not filtered by booking `created_at`). */
   const [bookedClassIds, setBookedClassIds] = useState<Set<string>>(() => new Set());
+  const [bookedIntervals, setBookedIntervals] = useState<BookedClassInterval[]>([]);
   const [pendingOpenClassId, setPendingOpenClassId] = useState<string | null>(null);
   const [daySlide, setDaySlide] = useState<"from-left" | "from-right" | null>(null);
   const classesCacheRef = useRef(new Map<string, ClassRow[]>());
@@ -195,7 +199,10 @@ export default function SchedulePage() {
     const isoStart = start.toISOString();
     const isoEnd = end.toISOString();
 
-    const [{ data, error }, bookingsRes] = await Promise.all([
+    const now = new Date();
+    const nowT = now.getTime();
+
+    const [{ data, error }, nextIntervals] = await Promise.all([
       supabase
         .from("classes")
         .select(
@@ -205,17 +212,12 @@ export default function SchedulePage() {
         .lte("starts_at", isoEnd)
         .eq("is_cancelled", false)
         .order("starts_at"),
-      supabase.from("bookings").select("class_id").eq("profile_id", uid).eq("status", "confirmed"),
+      fetchConfirmedBookingIntervals(supabase, uid, nowT),
     ]);
 
     if (error) {
       console.error(error);
     }
-    if (bookingsRes.error) {
-      console.error(bookingsRes.error);
-    }
-
-    const now = new Date();
     const rows = data ?? [];
     const mapped = rows
       .map((c) => {
@@ -227,17 +229,12 @@ export default function SchedulePage() {
       })
       .sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime());
 
-    const nowT = now.getTime();
     const visible = mapped.filter((c) => !isPastScheduleClass(c.starts_at, nowT));
 
     classesCacheRef.current.set(key, visible);
     setClasses(visible);
-    const nextBooked = new Set<string>();
-    for (const b of bookingsRes.data ?? []) {
-      const cid = (b as { class_id?: string | null }).class_id;
-      if (cid) nextBooked.add(String(cid));
-    }
-    setBookedClassIds(nextBooked);
+    setBookedClassIds(new Set(nextIntervals.map((b) => b.class_id)));
+    setBookedIntervals(nextIntervals);
     setLoading(false);
     setRevalidating(false);
   }, []);
@@ -451,14 +448,16 @@ export default function SchedulePage() {
             classes.map((c) => {
               const classIsPast =
                 selectedDayIsPast || isPastScheduleClass(c.starts_at);
+              const overlapBooking = findOverlappingBooking(c, bookedIntervals, c.id);
               return (
                 <ScheduleRow
                   key={c.id}
                   session={c}
                   alreadyBooked={bookedClassIds.has(c.id)}
+                  overlapBooking={overlapBooking}
                   isPast={classIsPast}
                   onReserve={() => {
-                    if (classIsPast) return;
+                    if (classIsPast || overlapBooking) return;
                     setBookingFor(c);
                   }}
                 />
@@ -474,6 +473,17 @@ export default function SchedulePage() {
         open={bookingFor !== null}
         onBookingConfirmed={(classId) => {
           setBookedClassIds((prev) => new Set(prev).add(classId));
+          if (bookingFor && bookingFor.id === classId) {
+            setBookedIntervals((prev) => [
+              ...prev.filter((b) => b.class_id !== classId),
+              {
+                class_id: classId,
+                name: bookingFor.name,
+                starts_at: bookingFor.starts_at,
+                ends_at: bookingFor.ends_at,
+              },
+            ]);
+          }
         }}
         onOpenChange={(o) => {
           if (!o) {
@@ -489,11 +499,13 @@ export default function SchedulePage() {
 function ScheduleRow({
   session,
   alreadyBooked,
+  overlapBooking,
   isPast,
   onReserve,
 }: {
   session: ClassRow;
   alreadyBooked: boolean;
+  overlapBooking: BookedClassInterval | null;
   isPast?: boolean;
   onReserve: () => void;
 }) {
@@ -510,7 +522,8 @@ function ScheduleRow({
   );
   const full = session.booked_count >= session.capacity;
   const almostFull = session.booked_count / session.capacity >= 0.8;
-  const canReserve = !isPast && !alreadyBooked && !full;
+  const hasOverlap = Boolean(overlapBooking);
+  const canReserve = !isPast && !alreadyBooked && !full && !hasOverlap;
   const isFreeClass = isFreeBeginnerClass(session.class_type);
 
   return (
@@ -601,7 +614,7 @@ function ScheduleRow({
         disabled={!canReserve}
         className={cn(
           "mt-4 w-full rounded-xl py-3 text-sm font-semibold transition-opacity",
-          isPast || alreadyBooked || full
+          isPast || alreadyBooked || full || hasOverlap
             ? "cursor-not-allowed bg-muted text-muted-foreground"
             : isFreeClass
               ? "bg-[#a3b693] text-white active:opacity-90"
@@ -612,11 +625,13 @@ function ScheduleRow({
           ? "Past"
           : alreadyBooked
             ? "Booked"
-            : full
-              ? "Full"
-              : isFreeClass
-                ? "Book Free"
-                : "Reserve"}
+            : hasOverlap
+              ? "Time conflict"
+              : full
+                ? "Full"
+                : isFreeClass
+                  ? "Book Free"
+                  : "Reserve"}
       </button>
     </div>
   );

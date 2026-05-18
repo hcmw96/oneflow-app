@@ -12,7 +12,13 @@ import {
 import { getUser, supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { cn } from "@/lib/utils";
-import { isFreeBeginnerClass, isPastScheduleClass } from "@/lib/scheduleBooking";
+import {
+  fetchConfirmedBookingIntervals,
+  findOverlappingBooking,
+  isFreeBeginnerClass,
+  isPastScheduleClass,
+  overlapBookingMessage,
+} from "@/lib/scheduleBooking";
 import {
   bookingConfirmationEmailData,
   bookingConfirmationTemplateForClassType,
@@ -234,11 +240,19 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
   };
 
   const confirm = async () => {
-    if (!userId) return;
+    if (!userId || !session) return;
     if (classIsPast) {
       toast.error("This class has already passed — you can’t book it.");
       return;
     }
+
+    const existingBookings = await fetchConfirmedBookingIntervals(supabase, userId);
+    const overlap = findOverlappingBooking(session, existingBookings, session.id);
+    if (overlap) {
+      toast.error(overlapBookingMessage(overlap));
+      return;
+    }
+
     if (isFreeClass) {
       setLoading(true);
       const { data: booking, error } = await supabase
