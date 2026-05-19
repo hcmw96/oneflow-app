@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Calendar, Coffee, MapPin, QrCode, Sparkles, Ticket } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -15,6 +15,10 @@ import {
 } from "@/lib/cafeCredits";
 import { addDays, startOfWeekSunday } from "@/lib/format";
 import { useTimezone } from "@/hooks/use-timezone";
+import {
+  fetchUpcomingHomeBookings,
+  type HomeUpcomingBooking,
+} from "@/lib/homeUpcomingBookings";
 import {
   civilAddDaysYmd,
   formatClassDateTime,
@@ -75,15 +79,7 @@ function HomePage() {
   const [weeklyGoal, setWeeklyGoal] = useState(3);
   const [weeklyDone, setWeeklyDone] = useState(0);
   const [challengeStamped, setChallengeStamped] = useState(0);
-  const [upcomingBookings, setUpcomingBookings] = useState<
-    {
-      id: string;
-      name: string;
-      startsAt: string;
-      location: string;
-      guideName: string | null;
-    }[]
-  >([]);
+  const [upcomingBookings, setUpcomingBookings] = useState<HomeUpcomingBooking[]>([]);
   const challengeTotalDays = 31;
   const SAGE = "#a3b693";
   const goalPct = weeklyGoal > 0 ? Math.min(100, (weeklyDone / weeklyGoal) * 100) : 0;
@@ -113,138 +109,116 @@ function HomePage() {
     return { hasUnlimited: hasUnlimitedClass, totalCredits };
   }, [creditRows]);
 
-  useEffect(() => {
+  const loadHome = useCallback(async () => {
     if (!authReady) return;
 
-    let cancelled = false;
+    setLoading(true);
+    setCreditRows([]);
+    setCafeCreditTotal(0);
+    setCafeUnlimited(false);
+    setCompleted(0);
+    setPoints(0);
+    setFirstName(null);
+    setWeeklyGoal(3);
+    setWeeklyDone(0);
+    setChallengeStamped(0);
+    setUpcomingBookings([]);
 
-    async function load() {
-      setLoading(true);
-      setCreditRows([]);
-      setCafeCreditTotal(0);
-      setCafeUnlimited(false);
-      setCompleted(0);
-      setPoints(0);
-      setFirstName(null);
-      setWeeklyGoal(3);
-      setWeeklyDone(0);
-      setChallengeStamped(0);
-      setUpcomingBookings([]);
-
-      if (!user || cancelled) {
-        if (!cancelled) setLoading(false);
-        return;
-      }
-
-      const uid = user.id;
-      const weekStart = startOfWeekSunday(new Date());
-      const weekEnd = addDays(weekStart, 7);
-
-      const [
-        { data: profile },
-        { data: fetchedUserCredits },
-        cafeCredits,
-        { count: attendedCount, error: attendedErr },
-        { count: weeklyAttended, error: weeklyErr },
-        { data: bookingRows },
-        stampedDays,
-      ] = await Promise.all([
-        supabase
-          .from("profiles")
-          .select("first_name, weekly_goal, flow_points")
-          .eq("id", uid)
-          .maybeSingle(),
-        supabase
-          .from("user_credits")
-          .select("id, credits_remaining, is_unlimited, expires_at, product_name, category")
-          .eq("profile_id", uid),
-        fetchCafeCredits(uid),
-        supabase
-          .from("bookings")
-          .select("id", { count: "exact", head: true })
-          .eq("profile_id", uid)
-          .eq("status", "attended"),
-        supabase
-          .from("bookings")
-          .select("id", { count: "exact", head: true })
-          .eq("profile_id", uid)
-          .eq("status", "attended")
-          .not("checked_in_at", "is", null)
-          .gte("checked_in_at", weekStart.toISOString())
-          .lt("checked_in_at", weekEnd.toISOString()),
-        supabase
-          .from("bookings")
-          .select(
-            `
-            id,
-            status,
-            classes ( name, starts_at, location, guide_name )
-          `,
-          )
-          .eq("profile_id", uid)
-          .eq("status", "confirmed"),
-        countMayChallengeStampedDays(uid),
-      ]);
-
-      if (cancelled) return;
-
-      if (attendedErr) console.error(attendedErr);
-      if (weeklyErr) console.error(weeklyErr);
-
-      setFirstName(profile?.first_name?.trim() || null);
-      setCreditRows((fetchedUserCredits ?? []) as UserCreditHomeRow[]);
-      const cafeSum = sumCafeCreditsRemaining(cafeCredits);
-      const cafeActive = hasActiveCafeCredits(cafeCredits);
-      setCafeUnlimited(cafeActive && cafeSum === -1);
-      setCafeCreditTotal(cafeActive && cafeSum > 0 ? cafeSum : 0);
-      setCompleted(attendedCount ?? 0);
-      const wgRaw = (profile as { weekly_goal?: number | null } | null)?.weekly_goal;
-      const wg =
-        typeof wgRaw === "number" && Number.isFinite(wgRaw)
-          ? Math.min(14, Math.max(1, Math.round(wgRaw)))
-          : 3;
-      setWeeklyGoal(wg);
-      setWeeklyDone(weeklyAttended ?? 0);
-      const fpRaw = (profile as { flow_points?: number | null } | null)?.flow_points;
-      setPoints(typeof fpRaw === "number" && Number.isFinite(fpRaw) ? Math.max(0, fpRaw) : 0);
-      setChallengeStamped(stampedDays);
-
-      const nowT = Date.now();
-      type ClassJoin = {
-        name: string;
-        starts_at: string;
-        location: string;
-        guide_name: string | null;
-      } | null;
-      const upcoming = (bookingRows ?? [])
-        .map((row) => {
-          const raw = row as { id: string; classes: ClassJoin | ClassJoin[] | null };
-          const c = Array.isArray(raw.classes) ? raw.classes[0] : raw.classes;
-          if (!c?.starts_at) return null;
-          const gn = (c.guide_name ?? "").trim();
-          return {
-            id: raw.id,
-            name: c.name ?? "Class",
-            startsAt: c.starts_at,
-            location: c.location ?? "—",
-            guideName: gn.length > 0 ? gn : null,
-          };
-        })
-        .filter(
-          (x): x is NonNullable<typeof x> => x != null && new Date(x.startsAt).getTime() > nowT,
-        )
-        .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime())
-        .slice(0, 2);
-      setUpcomingBookings(upcoming);
-
+    if (!user) {
       setLoading(false);
+      return;
     }
 
-    void load();
-    return () => {
-      cancelled = true;
-    };
+    const uid = user.id;
+    const weekStart = startOfWeekSunday(new Date());
+    const weekEnd = addDays(weekStart, 7);
+
+    const [
+      { data: profile },
+      { data: fetchedUserCredits },
+      cafeCredits,
+      { count: attendedCount, error: attendedErr },
+      { count: weeklyAttended, error: weeklyErr },
+      upcoming,
+      stampedDays,
+    ] = await Promise.all([
+      supabase
+        .from("profiles")
+        .select("first_name, weekly_goal, flow_points")
+        .eq("id", uid)
+        .maybeSingle(),
+      supabase
+        .from("user_credits")
+        .select("id, credits_remaining, is_unlimited, expires_at, product_name, category")
+        .eq("profile_id", uid),
+      fetchCafeCredits(uid),
+      supabase
+        .from("bookings")
+        .select("id", { count: "exact", head: true })
+        .eq("profile_id", uid)
+        .eq("status", "attended"),
+      supabase
+        .from("bookings")
+        .select("id", { count: "exact", head: true })
+        .eq("profile_id", uid)
+        .eq("status", "attended")
+        .not("checked_in_at", "is", null)
+        .gte("checked_in_at", weekStart.toISOString())
+        .lt("checked_in_at", weekEnd.toISOString()),
+      fetchUpcomingHomeBookings(supabase, uid),
+      countMayChallengeStampedDays(uid),
+    ]);
+
+    if (attendedErr) console.error(attendedErr);
+    if (weeklyErr) console.error(weeklyErr);
+
+    setFirstName(profile?.first_name?.trim() || null);
+    setCreditRows((fetchedUserCredits ?? []) as UserCreditHomeRow[]);
+    const cafeSum = sumCafeCreditsRemaining(cafeCredits);
+    const cafeActive = hasActiveCafeCredits(cafeCredits);
+    setCafeUnlimited(cafeActive && cafeSum === -1);
+    setCafeCreditTotal(cafeActive && cafeSum > 0 ? cafeSum : 0);
+    setCompleted(attendedCount ?? 0);
+    const wgRaw = (profile as { weekly_goal?: number | null } | null)?.weekly_goal;
+    const wg =
+      typeof wgRaw === "number" && Number.isFinite(wgRaw)
+        ? Math.min(14, Math.max(1, Math.round(wgRaw)))
+        : 3;
+    setWeeklyGoal(wg);
+    setWeeklyDone(weeklyAttended ?? 0);
+    const fpRaw = (profile as { flow_points?: number | null } | null)?.flow_points;
+    setPoints(typeof fpRaw === "number" && Number.isFinite(fpRaw) ? Math.max(0, fpRaw) : 0);
+    setChallengeStamped(stampedDays);
+    setUpcomingBookings(upcoming);
+    setLoading(false);
   }, [authReady, user]);
+
+  useEffect(() => {
+    void loadHome();
+  }, [loadHome]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const channel = supabase
+      .channel("home-bookings-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "bookings" }, () => {
+        void loadHome();
+      })
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [user?.id, loadHome]);
+
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void loadHome();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [loadHome]);
 
   if (!authReady || loading) {
     return (
@@ -263,17 +237,17 @@ function HomePage() {
           {welcomeTitle}
         </h1>
 
-        {upcomingBookings.length > 0 ? (
-          <section className="rounded-2xl border border-border bg-card p-5">
-            <div className="mb-3 flex items-center justify-between gap-2">
-              <h2 className="font-display text-xl font-bold">Upcoming</h2>
+        <section className="rounded-2xl border border-border bg-card p-5">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h2 className="font-display text-xl font-bold">Your bookings</h2>
               <Link
                 to="/bookings"
                 className="text-xs font-semibold text-primary underline-offset-2 hover:underline"
               >
                 View all
               </Link>
-            </div>
+          </div>
+          {upcomingBookings.length > 0 ? (
             <ul className="space-y-3">
               {upcomingBookings.map((b) => {
                 const dateStr = upcomingDayLabel(b.startsAt, timeZone);
@@ -323,8 +297,15 @@ function HomePage() {
                 );
               })}
             </ul>
-          </section>
-        ) : null}
+          ) : (
+            <p className="rounded-xl border border-dashed border-border bg-muted/30 px-4 py-6 text-center text-sm text-muted-foreground">
+              No upcoming classes booked.{" "}
+              <Link to="/schedule" className="font-semibold text-primary underline-offset-2">
+                Book a class
+              </Link>
+            </p>
+          )}
+        </section>
 
         <Link
           to="/schedule"
