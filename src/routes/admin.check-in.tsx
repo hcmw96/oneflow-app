@@ -436,12 +436,12 @@ function CheckInPage() {
                 <QrCode className="h-4 w-4 shrink-0 text-[#a3b693]" aria-hidden />
                 Self check-in QR
               </div>
-              <div className="flex flex-col items-center justify-center px-1 md:min-h-0 md:flex-1">
+              <div className="flex shrink-0 flex-col items-center px-1">
                 <QRScanner
                   defaultFacing={isMobile ? "environment" : "user"}
                   size={isMobile ? "default" : "large"}
                   showFlipButton
-                  className="w-full max-md:max-w-sm"
+                  className="w-full"
                   onScan={(text: string) => void handleQrScan(text)}
                 />
               </div>

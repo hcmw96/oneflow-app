@@ -52,7 +52,8 @@ export function QRScanner({
     const styleEl = document.createElement("style");
     styleEl.setAttribute("data-qr-scanner", containerId);
     styleEl.textContent = `
-      #${containerId} {
+      #${containerId},
+      #${containerId} > div {
         position: absolute !important;
         inset: 0 !important;
         width: 100% !important;
@@ -69,8 +70,12 @@ export function QRScanner({
         width: 100% !important;
         height: 100% !important;
         object-fit: cover !important;
+        object-position: center !important;
         display: block !important;
         z-index: 1 !important;
+      }
+      #${containerId} img {
+        display: none !important;
       }
       #${containerId} canvas {
         display: none !important;
@@ -226,8 +231,8 @@ export function QRScanner({
       className={cn(
         "relative mx-auto overflow-hidden rounded-2xl border-[3px] border-[#a3b693] bg-black shadow-md",
         isKiosk
-          ? "aspect-square h-full w-full max-h-[min(72vh,520px)] max-w-lg"
-          : "aspect-square w-[min(90vw,320px)] max-w-[320px]",
+          ? "aspect-square w-full max-w-[min(100%,28rem)] shrink-0"
+          : "aspect-square w-[min(90vw,320px)] max-w-[320px] shrink-0",
         className,
       )}
     >
