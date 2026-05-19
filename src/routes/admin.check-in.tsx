@@ -4,6 +4,7 @@ import { QrCode } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/admin/PageHeader";
 import { QRScanner } from "@/components/admin/QRScanner";
+import { CheckInClassAccordion } from "@/components/admin/CheckInClassAccordion";
 import { supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -16,7 +17,6 @@ import { upsertMayChallengeCheckIn } from "@/lib/mayChallengeCheckIn";
 import {
   type BookingRow,
   type RosterRow,
-  formatClassTime,
   normalizeBooking,
   oneClass,
   oneProfile,
@@ -24,7 +24,6 @@ import {
 import { parseQrCheckInToken } from "@/lib/qrCheckIn";
 import { pickNextUpcomingClassId } from "@/lib/checkInUpcoming";
 import { welcomeCheckInToastMessage } from "@/lib/flowPoints";
-import { CheckInRosterList } from "@/components/admin/CheckInRosterList";
 
 export const Route = createFileRoute("/admin/check-in")({
   validateSearch: (raw: Record<string, unknown>) => ({
@@ -51,15 +50,11 @@ function CheckInPage() {
   const search = Route.useSearch();
   const [todayClasses, setTodayClasses] = useState<TodayClass[]>([]);
   const [roster, setRoster] = useState<RosterRow[]>([]);
-  const [activeSession, setActiveSession] = useState<string>("all");
+  const [expandedClassIds, setExpandedClassIds] = useState<Set<string>>(() => new Set());
   const [loading, setLoading] = useState(true);
   const qrDedupeRef = useRef<string | null>(null);
   const qrDedupeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const qrInvalidToastRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    if (search.class) setActiveSession(search.class);
-  }, [search.class]);
 
   const nextUpcomingClassId = useMemo(
     () => pickNextUpcomingClassId(todayClasses),
@@ -67,23 +62,28 @@ function CheckInPage() {
   );
 
   useEffect(() => {
-    if (search.class || loading || todayClasses.length === 0) return;
-    const nextId = pickNextUpcomingClassId(todayClasses);
-    if (nextId) setActiveSession(nextId);
-  }, [search.class, loading, todayClasses]);
+    if (!search.class) return;
+    setExpandedClassIds((prev) => new Set(prev).add(search.class!));
+  }, [search.class]);
 
-  const rosterClassId =
-    activeSession === "all" ? nextUpcomingClassId : activeSession;
+  useEffect(() => {
+    if (loading || !nextUpcomingClassId) return;
+    setExpandedClassIds((prev) => {
+      if (prev.size > 0) return prev;
+      return new Set([nextUpcomingClassId]);
+    });
+  }, [loading, nextUpcomingClassId]);
 
-  const rosterForClass = useMemo(() => {
-    if (!rosterClassId) return [];
-    return roster.filter((b) => b.class_id === rosterClassId && b.status !== "cancelled");
-  }, [roster, rosterClassId]);
-
-  const rosterClassLabel = useMemo(() => {
-    if (!rosterClassId) return null;
-    return todayClasses.find((c) => c.id === rosterClassId) ?? null;
-  }, [rosterClassId, todayClasses]);
+  const rosterByClassId = useMemo(() => {
+    const map = new Map<string, RosterRow[]>();
+    for (const row of roster) {
+      if (row.status === "cancelled") continue;
+      const list = map.get(row.class_id) ?? [];
+      list.push(row);
+      map.set(row.class_id, list);
+    }
+    return map;
+  }, [roster]);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -187,20 +187,27 @@ function CheckInPage() {
 
   const sessions = useMemo(() => {
     return todayClasses.map((c) => {
-      const forClass = roster.filter((b) => b.class_id === c.id);
-      const total = forClass.filter((b) => b.status !== "cancelled").length;
+      const forClass = rosterByClassId.get(c.id) ?? [];
       const attended = forClass.filter((b) => b.status === "attended").length;
       return {
         key: c.id,
         label: c.name,
         time: formatClassTime(c.starts_at),
-        total,
+        total: forClass.length,
         attended,
-        capacity: c.capacity,
         guideName: c.guide_name,
       };
     });
-  }, [todayClasses, roster]);
+  }, [todayClasses, rosterByClassId]);
+
+  const toggleClassExpanded = (classId: string, open: boolean) => {
+    setExpandedClassIds((prev) => {
+      const next = new Set(prev);
+      if (open) next.add(classId);
+      else next.delete(classId);
+      return next;
+    });
+  };
 
   const toastQrIssue = (key: string, message: string, variant: "error" | "warning" = "error") => {
     if (qrInvalidToastRef.current === key) return;
@@ -375,7 +382,7 @@ function CheckInPage() {
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden max-md:overflow-y-auto max-md:scroll-touch">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden max-sm:overflow-y-auto max-sm:scroll-touch">
       <PageHeader title="Check-In" />
 
       {loading ? (
@@ -384,59 +391,50 @@ function CheckInPage() {
         <div
           className={cn(
             "flex min-h-0 flex-1 flex-col gap-3",
-            "max-md:overflow-visible",
-            "md:grid md:grid-cols-[minmax(200px,260px)_minmax(0,1fr)] md:overflow-hidden",
+            "sm:grid sm:grid-cols-[minmax(220px,300px)_minmax(0,1fr)] sm:gap-4 sm:overflow-hidden",
           )}
         >
           <div
             className={cn(
-              "flex flex-col overflow-hidden rounded-2xl border border-border bg-card p-3",
-              "max-md:max-h-52 max-md:shrink-0",
-              "md:min-h-0 md:flex-1",
+              "flex min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-card p-3",
+              "max-sm:max-h-[42vh] max-sm:shrink-0",
+              "sm:flex-1",
             )}
           >
             <p className="mb-2 shrink-0 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Today&apos;s classes
             </p>
             <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto pr-0.5">
-              <SessionChip
-                active={activeSession === "all"}
-                onClick={() => setActiveSession("all")}
-                label="All today"
-                meta={`${roster.length} booked`}
-              />
-              {sessions.map((s) => (
-                <SessionChip
-                  key={s.key}
-                  active={activeSession === s.key}
-                  onClick={() => setActiveSession(s.key)}
-                  label={s.label}
-                  meta={`${s.time} · ${s.attended}/${s.total}`}
-                  guideName={s.guideName}
-                />
-              ))}
+              {sessions.length === 0 ? (
+                <p className="py-8 text-center text-sm text-muted-foreground">No classes today.</p>
+              ) : (
+                sessions.map((s) => (
+                  <CheckInClassAccordion
+                    key={s.key}
+                    session={s}
+                    roster={rosterByClassId.get(s.key) ?? []}
+                    expanded={expandedClassIds.has(s.key)}
+                    onExpandedChange={(open) => toggleClassExpanded(s.key, open)}
+                    loading={loading}
+                    onUpdated={loadData}
+                  />
+                ))
+              )}
             </div>
           </div>
 
-          <div
-            className={cn(
-              "flex flex-col gap-2",
-              "max-md:shrink-0",
-              "md:min-h-0 md:overflow-hidden",
-            )}
-          >
+          <div className="flex min-h-0 flex-col sm:overflow-hidden">
             <div
               className={cn(
                 "flex flex-col rounded-2xl border border-border bg-card p-3",
-                "max-md:shrink-0",
-                "md:min-h-0 md:flex-1",
+                "sm:min-h-0 sm:flex-1 sm:justify-center",
               )}
             >
-              <div className="mb-3 flex w-full items-center gap-2 text-sm font-semibold md:mb-4">
+              <div className="mb-3 flex w-full shrink-0 items-center gap-2 text-sm font-semibold sm:mb-4">
                 <QrCode className="h-4 w-4 shrink-0 text-[#a3b693]" aria-hidden />
                 Self check-in QR
               </div>
-              <div className="flex shrink-0 flex-col items-center px-1">
+              <div className="flex shrink-0 flex-col items-center px-1 sm:py-2">
                 <QRScanner
                   defaultFacing={isMobile ? "environment" : "user"}
                   size={isMobile ? "default" : "large"}
@@ -445,43 +443,11 @@ function CheckInPage() {
                   onScan={(text: string) => void handleQrScan(text)}
                 />
               </div>
-              <p className="mt-3 text-center text-sm text-muted-foreground">
+              <p className="mt-3 shrink-0 text-center text-sm text-muted-foreground">
                 Hold the member&apos;s booking QR inside the green frame, about arm&apos;s length
                 away.
               </p>
             </div>
-
-            {rosterClassId ? (
-              <div
-                className={cn(
-                  "flex min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-card p-3",
-                  "max-md:max-h-72 md:min-h-0 md:flex-1",
-                )}
-              >
-                <div className="mb-2 shrink-0">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    Roster · check in manually
-                  </p>
-                  {rosterClassLabel ? (
-                    <p className="mt-0.5 text-sm font-semibold">
-                      {rosterClassLabel.name}
-                      <span className="font-normal text-muted-foreground">
-                        {" "}
-                        · {formatClassTime(rosterClassLabel.starts_at)}
-                      </span>
-                    </p>
-                  ) : null}
-                </div>
-                <div className="min-h-0 flex-1 overflow-y-auto pr-0.5">
-                  <CheckInRosterList
-                    roster={rosterForClass}
-                    loading={loading}
-                    compact
-                    onUpdated={loadData}
-                  />
-                </div>
-              </div>
-            ) : null}
           </div>
         </div>
       )}
@@ -489,34 +455,8 @@ function CheckInPage() {
   );
 }
 
-function SessionChip({
-  active,
-  onClick,
-  label,
-  meta,
-  guideName,
-}: {
-  active: boolean;
-  onClick: () => void;
-  label: string;
-  meta: string;
-  guideName?: string | null;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "w-full rounded-xl border px-3 py-2 text-left transition-colors",
-        active ? "border-primary bg-primary/10" : "border-border bg-background hover:bg-muted",
-      )}
-    >
-      <p className="text-xs font-semibold">{label}</p>
-      <p className="text-[10px] text-muted-foreground">{meta}</p>
-      {guideName ? (
-        <p className="mt-1 text-[10px] font-medium text-[#4a5a42]">Guide · {guideName}</p>
-      ) : null}
-    </button>
-  );
+function formatClassTime(iso: string) {
+  return new Date(iso)
+    .toLocaleTimeString("en-ZA", { hour: "numeric", minute: "2-digit", hour12: true })
+    .toUpperCase();
 }
-

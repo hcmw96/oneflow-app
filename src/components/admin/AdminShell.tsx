@@ -300,7 +300,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
           className={cn(
             "min-h-0 flex-1 scroll-touch px-4 py-5 md:px-6 md:py-8",
             isCheckInKiosk
-              ? "flex flex-col overflow-hidden max-md:overflow-y-auto max-md:scroll-touch py-3 md:py-4"
+              ? "flex flex-col overflow-hidden max-sm:overflow-y-auto max-sm:scroll-touch py-3 md:py-4"
               : "overflow-y-auto",
           )}
         >

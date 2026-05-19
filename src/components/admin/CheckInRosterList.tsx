@@ -1,4 +1,5 @@
 import { Check, Loader2, Undo2 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import {
@@ -19,11 +20,14 @@ export function CheckInRosterList({
   loading,
   onUpdated,
   compact,
+  checkInStyle = "buttons",
 }: {
   roster: RosterRow[];
   loading?: boolean;
   onUpdated: () => void | Promise<void>;
   compact?: boolean;
+  /** Checkbox row for kiosk class accordion; default uses Check in / Undo buttons. */
+  checkInStyle?: "buttons" | "checkbox";
 }) {
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -106,6 +110,20 @@ export function CheckInRosterList({
               ) : null}
             </div>
             <div className="flex w-full items-center gap-2 sm:w-auto">
+              {checkInStyle === "checkbox" ? (
+                <label className="flex items-center gap-2 text-xs font-medium">
+                  <Checkbox
+                    checked={isIn}
+                    disabled={busyId === b.id || isCancelled}
+                    onCheckedChange={(checked) => {
+                      void updateBookingStatus(b.id, checked === true ? "attended" : "confirmed");
+                    }}
+                    aria-label={isIn ? `Undo check-in for ${b.member}` : `Check in ${b.member}`}
+                  />
+                  <span className="text-muted-foreground">Checked in</span>
+                </label>
+              ) : (
+                <>
               <CheckInRosterStatusPill status={b.status} />
               {isIn ? (
                 <button
@@ -138,6 +156,8 @@ export function CheckInRosterList({
                   )}
                   Check in
                 </button>
+              )}
+                </>
               )}
             </div>
           </li>
