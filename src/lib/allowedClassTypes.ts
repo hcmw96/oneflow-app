@@ -79,6 +79,25 @@ export function defaultAllowedClassTypesForCreditCategory(
   return [...ALL_ALLOWED_CLASS_TYPES];
 }
 
+/**
+ * Booking / scheduling: whether a `user_credits` row may pay for a class with this `classes.class_type`.
+ * Café credits are excluded by the caller.
+ *
+ * All Access must cover every studio class type even when `allowed_class_types` was saved from an
+ * older product definition that omitted newer types (e.g. Pilates).
+ */
+export function userCreditCoversClassType(args: {
+  category: string | null | undefined;
+  allowed_class_types: string[] | null | undefined;
+  classType: string;
+}): boolean {
+  const cat = normalizeProductCategoryKey(args.category);
+  if (cat === "all_access") return true;
+  const allowed = args.allowed_class_types;
+  if (!allowed || allowed.length === 0) return true;
+  return allowed.includes(args.classType);
+}
+
 export function isAllowedClassTypeSlug(value: string): value is AllowedClassTypeSlug {
   return (ALLOWED_CLASS_TYPE_SLUGS as readonly string[]).includes(value);
 }

@@ -25,6 +25,7 @@ import {
 } from "@/lib/bookingConfirmationEmail";
 import { bookingCreditInsertErrorMessage } from "@/lib/bookingCredits";
 import { profileEarnsFlowPoints } from "@/lib/flowPoints";
+import { userCreditCoversClassType } from "@/lib/allowedClassTypes";
 
 interface ClassRow {
   id: string;
@@ -157,10 +158,13 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
           return true;
         });
 
-        const eligible = pool.filter((c) => {
-          if (!c.allowed_class_types || c.allowed_class_types.length === 0) return true;
-          return c.allowed_class_types.includes(session.class_type);
-        });
+        const eligible = pool.filter((c) =>
+          userCreditCoversClassType({
+            category: c.category,
+            allowed_class_types: c.allowed_class_types,
+            classType: session.class_type,
+          }),
+        );
 
         setCredits(eligible as Credit[]);
         setSelectedCredit(eligible[0]?.id ?? null);
