@@ -97,6 +97,7 @@ type GuideOption = GuideSelectRow;
 type GuideSelectOption = { value: string; label: string; key: string };
 
 type TabKey = "today" | "week" | "upcoming";
+type ClassDialogMode = "create" | "edit" | "bulk-reassign";
 
 /** Resolve `classes.guide_id` to `guides.id` when options use guides PK as `SelectItem` value. */
 function guidesTableIdForClassGuideId(sid: string | null, list: GuideOption[]): string {
@@ -204,6 +205,24 @@ function endOfWeekJhbDayKey(): string {
   return dt.toLocaleDateString("en-CA", { timeZone: TZ });
 }
 
+/** Inclusive JHB calendar-day filter (YYYY-MM-DD from `<input type="date">`). */
+function matchesJhbDateFilter(dayKey: string, from: string, to: string): boolean {
+  if (from && to) return dayKey >= from && dayKey <= to;
+  if (from) return dayKey === from;
+  if (to) return dayKey <= to;
+  return true;
+}
+
+function classMatchesGuideFilter(c: ClassRow, guideFilter: string, guides: GuideOption[]): boolean {
+  if (guideFilter === "all") return true;
+  if (guideFilter === GUIDE_NONE) return !c.guide_id;
+  if (!c.guide_id) return false;
+  if (c.guide_id === guideFilter) return true;
+  const g = guides.find((x) => x.guide_id === guideFilter || x.profile_id === guideFilter);
+  if (!g) return false;
+  return c.guide_id === g.guide_id || c.guide_id === g.profile_id;
+}
+
 const TYPE_BADGE_CLASS: Record<string, string> = {
   yoga: "bg-[#e8efe3] text-[#3d4f36]",
   sculpt: "bg-amber-100 text-amber-800",
@@ -243,6 +262,7 @@ function ClassesPage() {
 
   // Dialog state
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [dialogMode, setDialogMode] = useState<ClassDialogMode>("create");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [name, setName] = useState("");
@@ -262,8 +282,6 @@ function ClassesPage() {
 
   // Bulk dialogs
   const [bulkCancelOpen, setBulkCancelOpen] = useState(false);
-  const [reassignOpen, setReassignOpen] = useState(false);
-  const [reassignGuideId, setReassignGuideId] = useState<string>(GUIDE_NONE);
   const [bulkBusy, setBulkBusy] = useState(false);
 
   const editGuideSelectSyncRef = useRef<string | null>(null);
@@ -500,12 +518,28 @@ function ClassesPage() {
     return { today, thisWeek, upcoming };
   }, [rows, todayKey, weekStart, weekEnd, nowMs]);
 
-  // Tab filter
+  const hasDateFilter = Boolean(dateFrom || dateTo);
+
+  // Tab + date filter (JHB calendar days)
   const tabFiltered = useMemo(() => {
     return rows.filter((c) => {
       if (c.is_cancelled) return false;
       const startMs = new Date(c.starts_at).getTime();
       const dk = jhbDayKey(c.starts_at);
+
+      if (hasDateFilter && !matchesJhbDateFilter(dk, dateFrom, dateTo)) return false;
+
+      if (hasDateFilter) {
+        switch (tab) {
+          case "upcoming":
+            return startMs >= nowMs;
+          case "week":
+            return dk >= weekStart && dk <= weekEnd;
+          case "today":
+            return true;
+        }
+      }
+
       switch (tab) {
         case "today": {
           const anchor = jhbOffsetDayKey(todayKey, -todaySubDay);
@@ -517,7 +551,7 @@ function ClassesPage() {
           return startMs >= nowMs;
       }
     });
-  }, [rows, tab, todayKey, weekStart, weekEnd, nowMs, todaySubDay]);
+  }, [rows, tab, todayKey, weekStart, weekEnd, nowMs, todaySubDay, dateFrom, dateTo, hasDateFilter]);
 
   // Search + filter bar
   const filtered = useMemo(() => {
@@ -530,40 +564,13 @@ function ClassesPage() {
       }
       if (typeFilter !== "all" && c.class_type !== typeFilter) return false;
       if (locationFilter !== "all" && c.location !== locationFilter) return false;
-      if (guideFilter !== "all") {
-        if (guideFilter === GUIDE_NONE) {
-          if (c.guide_id) return false;
-        } else {
-          if (c.guide_id !== guideFilter) return false;
-        }
-      }
-      if (dateFrom) {
-        const fromIso = new Date(dateFrom).toISOString();
-        if (c.starts_at < fromIso) return false;
-      }
-      if (dateTo) {
-        const end = new Date(dateTo);
-        end.setHours(23, 59, 59, 999);
-        if (c.starts_at > end.toISOString()) return false;
-      }
+      if (!classMatchesGuideFilter(c, guideFilter, guides)) return false;
       const booked = c.booked_count ?? 0;
       if (occupancyFilter === "has_bookings" && booked <= 0) return false;
       if (occupancyFilter === "empty" && booked > 0) return false;
       return true;
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    tabFiltered,
-    q,
-    typeFilter,
-    locationFilter,
-    guideFilter,
-    dateFrom,
-    dateTo,
-    occupancyFilter,
-    guideMap,
-    guides,
-  ]);
+  }, [tabFiltered, q, typeFilter, locationFilter, guideFilter, occupancyFilter, guides, guideMap]);
 
   const sorted = useMemo(() => {
     const copy = [...filtered];
@@ -638,14 +645,47 @@ function ClassesPage() {
     setDescription("");
   };
 
+  const resolveGuideIdAndName = (
+    selectedGuideId: string,
+  ): { guide_id: string | null; guide_name: string | null } => {
+    if (
+      selectedGuideId === "none" ||
+      selectedGuideId === GUIDE_DIALOG_NONE ||
+      selectedGuideId === GUIDE_NONE ||
+      !selectedGuideId
+    ) {
+      return { guide_id: null, guide_name: null };
+    }
+    const pick = guides.find(
+      (g) => g.guide_id === selectedGuideId || g.profile_id === selectedGuideId,
+    );
+    const gid = pick
+      ? guideFkTarget === "profiles"
+        ? pick.profile_id
+        : pick.guide_id
+      : null;
+    const gName = gid ? (guideMap.get(gid) ?? null) : null;
+    return { guide_id: gid, guide_name: gName };
+  };
+
   const openCreate = () => {
     if (!canManage) return;
+    setDialogMode("create");
     setEditingId(null);
     resetForm();
     setDialogOpen(true);
   };
 
+  const openBulkReassign = () => {
+    if (!canManage || selected.size === 0) return;
+    setDialogMode("bulk-reassign");
+    setEditingId(null);
+    setGuideId(GUIDE_DIALOG_NONE);
+    setDialogOpen(true);
+  };
+
   const openEdit = (c: ClassRow) => {
+    setDialogMode("edit");
     setEditingId(c.id);
     setName(c.name);
     setClassType(c.class_type || "yoga");
@@ -692,20 +732,7 @@ function ClassesPage() {
     const start = combineDateTimeLocal(dateStr, startTime);
     const end = combineDateTimeLocal(dateStr, endTime);
     const cap = Math.round(Number(capacity));
-    let gid: string | null;
-    let gName: string | null;
-    if (guideId === "none" || guideId === GUIDE_DIALOG_NONE || guideId === GUIDE_NONE || !guideId) {
-      gid = null;
-      gName = null;
-    } else {
-      const selected = guides.find((g) => g.guide_id === guideId || g.profile_id === guideId);
-      gid = selected
-        ? guideFkTarget === "profiles"
-          ? selected.profile_id
-          : selected.guide_id
-        : null;
-      gName = gid ? (guideMap.get(gid) ?? null) : null;
-    }
+    const { guide_id: gid, guide_name: gName } = resolveGuideIdAndName(guideId);
 
     const base = {
       name: name.trim(),
@@ -790,20 +817,9 @@ function ClassesPage() {
     await load();
   };
 
-  const bulkReassign = async () => {
+  const applyBulkReassign = async () => {
     if (!canManage || selected.size === 0) return;
-    const pick = guides.find(
-      (g) => g.guide_id === reassignGuideId || g.profile_id === reassignGuideId,
-    );
-    const gid =
-      reassignGuideId === GUIDE_NONE
-        ? null
-        : pick
-          ? guideFkTarget === "profiles"
-            ? pick.profile_id
-            : pick.guide_id
-          : null;
-    const gName = gid ? (guideMap.get(gid) ?? null) : null;
+    const { guide_id: gid, guide_name: gName } = resolveGuideIdAndName(guideId);
     setBulkBusy(true);
     const ids = [...selected];
     const { error } = await supabase
@@ -817,8 +833,9 @@ function ClassesPage() {
       return;
     }
     toast.success(`Reassigned ${ids.length} class${ids.length === 1 ? "" : "es"}`);
-    setReassignOpen(false);
-    setReassignGuideId(GUIDE_NONE);
+    setDialogOpen(false);
+    setDialogMode("create");
+    setGuideId(GUIDE_DIALOG_NONE);
     clearSelected();
     await load();
   };
@@ -860,7 +877,7 @@ function ClassesPage() {
           <TabsTrigger value="upcoming">All Upcoming</TabsTrigger>
         </TabsList>
 
-        {tab === "today" ? (
+        {tab === "today" && !hasDateFilter ? (
           <div className="mb-4 flex flex-wrap items-center gap-2">
             <span className="text-xs font-medium text-muted-foreground">View:</span>
             <Button
@@ -974,14 +991,16 @@ function ClassesPage() {
             value={dateFrom}
             onChange={(e) => setDateFrom(e.target.value)}
             className="w-full sm:w-40"
-            aria-label="From date"
+            aria-label="Date (from)"
+            title="Single day when used alone; start of range with “To”"
           />
           <Input
             type="date"
             value={dateTo}
             onChange={(e) => setDateTo(e.target.value)}
             className="w-full sm:w-40"
-            aria-label="To date"
+            aria-label="Date (to)"
+            title="End of range (optional)"
           />
           <Select
             value={occupancyFilter}
@@ -998,37 +1017,10 @@ function ClassesPage() {
           </Select>
         </div>
 
-        {canManage && selected.size > 0 && (
-          <div className="mb-4 flex flex-col items-start gap-3 rounded-2xl border border-[#c5d4b8]/80 bg-[#f4f7f0]/70 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm font-medium text-[#3d4f36]">
-              {selected.size} class{selected.size === 1 ? "" : "es"} selected
-            </p>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setReassignOpen(true)}
-              >
-                Reassign guide
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="border-destructive/40 text-destructive hover:bg-destructive/10"
-                onClick={() => setBulkCancelOpen(true)}
-              >
-                Cancel selected
-              </Button>
-              <Button type="button" variant="ghost" size="sm" onClick={clearSelected}>
-                <X className="h-4 w-4" /> Clear
-              </Button>
-            </div>
-          </div>
-        )}
-
-        <TabsContent value={tab} className="mt-0">
+        <TabsContent
+          value={tab}
+          className={cn("mt-0", canManage && selected.size > 0 && "pb-28")}
+        >
           {loading ? (
             <div className="space-y-3">
               {Array.from({ length: 4 }).map((_, i) => (
@@ -1170,11 +1162,91 @@ function ClassesPage() {
         </TabsContent>
       </Tabs>
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      {canManage && selected.size > 0 ? (
+        <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+          <div className="pointer-events-auto flex w-full max-w-lg flex-col gap-3 rounded-2xl border border-[#c5d4b8]/80 bg-[#f4f7f0]/95 px-4 py-3 shadow-lg backdrop-blur-sm sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm font-medium text-[#3d4f36]">
+              {selected.size} class{selected.size === 1 ? "" : "es"} selected
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => openBulkReassign()}>
+                Reassign guide
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="border-destructive/40 text-destructive hover:bg-destructive/10"
+                onClick={() => setBulkCancelOpen(true)}
+              >
+                Cancel selected
+              </Button>
+              <Button type="button" variant="ghost" size="sm" onClick={clearSelected}>
+                <X className="h-4 w-4" /> Clear
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      <Dialog
+        open={dialogOpen}
+        onOpenChange={(open) => {
+          setDialogOpen(open);
+          if (!open) {
+            setEditingId(null);
+            if (dialogMode === "bulk-reassign") {
+              setDialogMode("create");
+              setGuideId(GUIDE_DIALOG_NONE);
+            }
+          }
+        }}
+      >
         <DialogContent className="max-h-[92vh] max-w-lg overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingId ? "Edit class" : "New class"}</DialogTitle>
+            <DialogTitle>
+              {dialogMode === "bulk-reassign"
+                ? `Reassign guide · ${selected.size} class${selected.size === 1 ? "" : "es"}`
+                : editingId
+                  ? "Edit class"
+                  : "New class"}
+            </DialogTitle>
           </DialogHeader>
+          {dialogMode === "bulk-reassign" ? (
+            <div className="grid gap-3 py-2">
+              <p className="text-sm text-muted-foreground">
+                Choose a guide for all selected classes. Pick “No guide” to clear assignments.
+              </p>
+              <div>
+                <Label>Guide</Label>
+                <Select
+                  value={
+                    !guideId ||
+                    guideId === GUIDE_NONE ||
+                    guideId === GUIDE_DIALOG_NONE ||
+                    guideId === "none"
+                      ? "none"
+                      : guideId
+                  }
+                  onValueChange={setGuideId}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select guide" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No guide</SelectItem>
+                    {guideOptions
+                      .filter((g) => Boolean(g.guide_id?.trim()))
+                      .map((g) => (
+                        <SelectItem key={g.guide_id} value={g.guide_id}>
+                          {g.label}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          ) : (
           <div className="grid gap-3 py-2">
             <div>
               <Label htmlFor="cls-name">Class name</Label>
@@ -1321,9 +1393,27 @@ function ClassesPage() {
               />
             </div>
           </div>
+          )}
           {canManage ? (
             <DialogFooter className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
-              {editingId && (
+              {dialogMode === "bulk-reassign" ? (
+                <div className="flex w-full gap-2 sm:ml-auto sm:justify-end">
+                  <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    disabled={bulkBusy}
+                    onClick={() => void applyBulkReassign()}
+                    className="bg-[#a3b693] text-white hover:bg-[#8fa67d]"
+                  >
+                    {bulkBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                    Reassign guide
+                  </Button>
+                </div>
+              ) : (
+                <>
+                  {editingId ? (
                 <Button
                   type="button"
                   variant="outline"
@@ -1335,8 +1425,8 @@ function ClassesPage() {
                 >
                   <Trash2 className="h-4 w-4" /> Delete
                 </Button>
-              )}
-              <div className="flex gap-2 sm:ml-auto">
+                  ) : null}
+                  <div className="flex gap-2 sm:ml-auto">
                 <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
                   Cancel
                 </Button>
@@ -1350,6 +1440,8 @@ function ClassesPage() {
                   {editingId ? "Save changes" : "Create class"}
                 </Button>
               </div>
+                </>
+              )}
             </DialogFooter>
           ) : null}
         </DialogContent>
@@ -1445,59 +1537,6 @@ function ClassesPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <Dialog
-        modal={false}
-        open={reassignOpen}
-        onOpenChange={(open) => {
-          setReassignOpen(open);
-          if (open) {
-            setReassignGuideId(GUIDE_NONE);
-          }
-        }}
-      >
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Reassign guide for {selected.size} classes</DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-1.5 py-2">
-            <Label>Guide</Label>
-            <Select value={reassignGuideId} onValueChange={setReassignGuideId}>
-              <SelectTrigger>
-                <SelectValue
-                  placeholder={reassignGuideId === GUIDE_NONE ? "No guide" : undefined}
-                />
-              </SelectTrigger>
-              <SelectContent className="z-[100]">
-                <SelectItem value={GUIDE_NONE}>No guide</SelectItem>
-                {guideSelectOptions.map((opt) => (
-                  <SelectItem key={opt.key} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setReassignOpen(false)}
-              disabled={bulkBusy}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              onClick={() => void bulkReassign()}
-              disabled={bulkBusy}
-              className="bg-[#a3b693] text-white hover:bg-[#8fa67d]"
-            >
-              {bulkBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              Reassign
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

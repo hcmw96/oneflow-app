@@ -7,7 +7,7 @@ import { QRScanner } from "@/components/admin/QRScanner";
 import { CheckInClassAccordion } from "@/components/admin/CheckInClassAccordion";
 import { supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
-import { useIsMobile } from "@/hooks/use-mobile";
+import { useMaxWidth } from "@/hooks/use-max-width";
 import { cn } from "@/lib/utils";
 import { awardClassesAttendedBadges } from "@/lib/badges";
 import { checkInBookingByQrRpc } from "@/lib/checkInQr";
@@ -17,6 +17,7 @@ import { upsertMayChallengeCheckIn } from "@/lib/mayChallengeCheckIn";
 import {
   type BookingRow,
   type RosterRow,
+  formatCheckInMemberName,
   normalizeBooking,
   oneClass,
   oneProfile,
@@ -46,7 +47,7 @@ type TodayClass = {
 };
 
 function CheckInPage() {
-  const isMobile = useIsMobile();
+  const stackLayout = useMaxWidth(600);
   const search = Route.useSearch();
   const [todayClasses, setTodayClasses] = useState<TodayClass[]>([]);
   const [roster, setRoster] = useState<RosterRow[]>([]);
@@ -353,7 +354,7 @@ function CheckInPage() {
     }
 
     const prof = oneProfile(booking.profiles as BookingRow["profiles"]);
-    const firstName = prof?.first_name?.trim() || "Member";
+    const memberName = formatCheckInMemberName(prof?.first_name, prof?.last_name);
     const checkedAt = new Date().toISOString();
     const { error: upError } = await supabase
       .from("bookings")
@@ -375,14 +376,14 @@ function CheckInPage() {
     await finishQrCheckIn({
       bookingId: booking.id as string,
       profileId: booking.profile_id as string,
-      memberName: firstName,
+      memberName,
       memberRole: prof?.role ?? null,
       classStartsAt: cls?.starts_at,
     });
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden max-sm:overflow-y-auto max-sm:scroll-touch">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden max-[599px]:overflow-y-auto max-[599px]:scroll-touch">
       <PageHeader title="Check-In" />
 
       {loading ? (
@@ -390,15 +391,15 @@ function CheckInPage() {
       ) : (
         <div
           className={cn(
-            "flex min-h-0 flex-1 flex-col gap-3",
-            "sm:grid sm:grid-cols-[minmax(220px,300px)_minmax(0,1fr)] sm:gap-4 sm:overflow-hidden",
+            "flex min-h-0 flex-1 flex-col gap-4",
+            "min-[600px]:grid min-[600px]:grid-cols-[minmax(260px,340px)_minmax(0,1fr)] min-[600px]:gap-4 min-[600px]:overflow-hidden",
           )}
         >
           <div
             className={cn(
               "flex min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-card p-3",
-              "max-sm:max-h-[42vh] max-sm:shrink-0",
-              "sm:flex-1",
+              "max-[599px]:max-h-[42vh] max-[599px]:shrink-0",
+              "min-[600px]:min-h-0",
             )}
           >
             <p className="mb-2 shrink-0 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -423,23 +424,23 @@ function CheckInPage() {
             </div>
           </div>
 
-          <div className="flex min-h-0 flex-col sm:overflow-hidden">
+          <div className="flex min-h-0 min-w-0 flex-col min-[600px]:overflow-hidden">
             <div
               className={cn(
                 "flex flex-col rounded-2xl border border-border bg-card p-3",
-                "sm:min-h-0 sm:flex-1 sm:justify-center",
+                "min-[600px]:flex min-[600px]:min-h-0 min-[600px]:flex-1 min-[600px]:justify-center",
               )}
             >
-              <div className="mb-3 flex w-full shrink-0 items-center gap-2 text-sm font-semibold sm:mb-4">
+              <div className="mb-3 flex w-full shrink-0 items-center gap-2 text-sm font-semibold min-[600px]:mb-4">
                 <QrCode className="h-4 w-4 shrink-0 text-[#a3b693]" aria-hidden />
                 Self check-in QR
               </div>
-              <div className="flex shrink-0 flex-col items-center px-1 sm:py-2">
+              <div className="flex shrink-0 flex-col items-center px-1 py-2">
                 <QRScanner
-                  defaultFacing={isMobile ? "environment" : "user"}
-                  size={isMobile ? "default" : "large"}
+                  defaultFacing={stackLayout ? "environment" : "user"}
+                  size={stackLayout ? "default" : "large"}
                   showFlipButton
-                  className="w-full"
+                  className="w-full max-w-[min(100%,22rem)]"
                   onScan={(text: string) => void handleQrScan(text)}
                 />
               </div>

@@ -34,6 +34,8 @@ export type RosterRow = {
   id: string;
   status: BookingStatus;
   member: string;
+  memberFirst: string | null;
+  memberLast: string | null;
   profileId: string;
   class_id: string;
   className: string;
@@ -57,14 +59,27 @@ export function oneClass(c: BookingRow["classes"]) {
   return Array.isArray(c) ? (c[0] ?? null) : c;
 }
 
-export function rosterInitials(name: string) {
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((s) => s[0])
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
+/** Check-in roster display: first initial + full surname (e.g. J Dumas). */
+export function formatCheckInMemberName(
+  first: string | null | undefined,
+  last: string | null | undefined,
+): string {
+  const f = (first ?? "").trim();
+  const l = (last ?? "").trim();
+  if (!f && !l) return "Unknown member";
+  if (!l) return f;
+  if (!f) return l;
+  return `${f.charAt(0).toUpperCase()} ${l}`;
+}
+
+export function rosterInitials(
+  first: string | null | undefined,
+  last: string | null | undefined,
+) {
+  const f = (first ?? "").trim();
+  const l = (last ?? "").trim();
+  const parts = [f.charAt(0), l.charAt(0)].filter(Boolean);
+  return parts.join("").toUpperCase() || "?";
 }
 
 /** Normalize mat/towel flags from PostgREST (boolean, 0/1, or legacy string). */
@@ -93,10 +108,9 @@ export type RosterAddonAccessSets = {
 
 export function normalizeBooking(raw: BookingRow, addonAccess: RosterAddonAccessSets): RosterRow | null {
   const prof = oneProfile(raw.profiles);
-  const member =
-    prof && `${prof.first_name ?? ""} ${prof.last_name ?? ""}`.trim()
-      ? `${prof.first_name ?? ""} ${prof.last_name ?? ""}`.trim()
-      : "Unknown member";
+  const member = prof
+    ? formatCheckInMemberName(prof.first_name, prof.last_name)
+    : "Unknown member";
   const cls = oneClass(raw.classes);
   if (!cls) return null;
   const status = raw.status as BookingStatus;
@@ -109,6 +123,8 @@ export function normalizeBooking(raw: BookingRow, addonAccess: RosterAddonAccess
     id: raw.id,
     status,
     member,
+    memberFirst: prof?.first_name ?? null,
+    memberLast: prof?.last_name ?? null,
     profileId: raw.profile_id,
     class_id: raw.class_id,
     className: cls.name,

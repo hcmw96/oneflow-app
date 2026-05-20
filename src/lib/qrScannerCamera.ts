@@ -3,6 +3,7 @@ import { Html5Qrcode } from "html5-qrcode";
 export type CameraFacing = "environment" | "user";
 
 const MIN_QR_BOX = 50;
+export const MIN_SCANNER_VIEWPORT = 120;
 
 /** Keep qrbox inside the viewfinder (html5-qrcode throws if it is larger). */
 export function computeQrBoxSize(viewfinderWidth: number, viewfinderHeight: number, ratio: number) {
@@ -12,18 +13,46 @@ export function computeQrBoxSize(viewfinderWidth: number, viewfinderHeight: numb
   return { width: size, height: size };
 }
 
-export function waitForElementLayout(elementId: string, maxFrames = 60): Promise<void> {
+/** Resolves true once the element has at least `minSize` px in both dimensions. */
+export function waitForElementLayout(
+  elementId: string,
+  minSize = MIN_SCANNER_VIEWPORT,
+  maxFrames = 90,
+): Promise<boolean> {
   return new Promise((resolve) => {
     let frames = 0;
     const tick = () => {
       const el = document.getElementById(elementId);
-      if (el && el.clientWidth > 0 && el.clientHeight > 0) {
-        resolve();
+      if (el && el.clientWidth >= minSize && el.clientHeight >= minSize) {
+        resolve(true);
         return;
       }
       frames += 1;
       if (frames >= maxFrames) {
-        resolve();
+        resolve(false);
+        return;
+      }
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+}
+
+export function waitForVideoFrames(
+  containerId: string,
+  maxFrames = 120,
+): Promise<HTMLVideoElement | null> {
+  return new Promise((resolve) => {
+    let frames = 0;
+    const tick = () => {
+      const video = document.querySelector<HTMLVideoElement>(`#${containerId} video`);
+      if (video && video.readyState >= 2 && video.videoWidth > 0) {
+        resolve(video);
+        return;
+      }
+      frames += 1;
+      if (frames >= maxFrames) {
+        resolve(null);
         return;
       }
       requestAnimationFrame(tick);

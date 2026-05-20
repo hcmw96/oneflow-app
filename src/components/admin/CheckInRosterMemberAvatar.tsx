@@ -9,7 +9,7 @@ export function CheckInRosterMemberAvatar({ row }: { row: RosterRow }) {
   }
   return (
     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold">
-      {rosterInitials(row.member)}
+      {rosterInitials(row.memberFirst, row.memberLast)}
     </div>
   );
 }

@@ -199,24 +199,24 @@ const CUSTOMERS_COL = {
     "hidden min-w-[6.25rem] px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground md:table-cell",
   roleTd: "hidden min-w-[6.25rem] px-3 py-3 md:table-cell",
   planTh:
-    "min-w-[7.5rem] px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground",
-  planTd: "min-w-[7.5rem] max-w-[10rem] truncate px-3 py-3",
+    "w-[9rem] min-w-[9rem] px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground",
+  planTd: "w-[9rem] min-w-[9rem] max-w-[9rem] truncate px-3 py-3",
   creditsTh:
-    "min-w-[5rem] whitespace-nowrap px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground",
-  creditsTd: "min-w-[5rem] whitespace-nowrap px-3 py-3 tabular-nums",
+    "w-[5.5rem] min-w-[5.5rem] whitespace-nowrap px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground",
+  creditsTd: "w-[5.5rem] min-w-[5.5rem] whitespace-nowrap px-3 py-3 tabular-nums",
   lastVisitTh:
-    "hidden min-w-[6.25rem] px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground md:table-cell",
-  lastVisitTd: "hidden min-w-[6.25rem] px-3 py-3 text-muted-foreground md:table-cell",
+    "hidden w-[6.5rem] min-w-[6.5rem] whitespace-nowrap px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground md:table-cell",
+  lastVisitTd:
+    "hidden w-[6.5rem] min-w-[6.5rem] whitespace-nowrap px-3 py-3 text-muted-foreground md:table-cell",
   statusTh:
-    "hidden min-w-[5rem] px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground md:table-cell",
-  statusTd: "hidden min-w-[5rem] px-3 py-3 md:table-cell",
+    "hidden w-[5.5rem] min-w-[5.5rem] whitespace-nowrap px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground md:table-cell",
+  statusTd: "hidden w-[5.5rem] min-w-[5.5rem] px-3 py-3 md:table-cell",
   actionsTh:
-    "sticky right-0 z-20 min-w-[6.25rem] bg-muted/40 px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground shadow-[-4px_0_8px_rgba(0,0,0,0.06)]",
-  actionsTd:
-    "sticky right-0 z-10 min-w-[6.25rem] bg-card px-3 py-3 shadow-[-4px_0_8px_rgba(0,0,0,0.06)] group-hover:bg-muted/20",
+    "w-[11.5rem] min-w-[11.5rem] whitespace-nowrap px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground",
+  actionsTd: "w-[11.5rem] min-w-[11.5rem] px-3 py-3 text-right group-hover:bg-muted/20",
 } as const;
 
-const CUSTOMERS_TABLE_CLASS = "w-full min-w-[32rem] text-sm md:min-w-[68rem]";
+const CUSTOMERS_TABLE_CLASS = "w-full min-w-[36rem] text-sm md:min-w-[74rem]";
 
 function CustomersTableHead({
   allFilteredSelected,
@@ -1039,7 +1039,7 @@ function CustomersPage() {
                       <Skeleton className="h-5 w-14 rounded-full" />
                     </td>
                     <td className={CUSTOMERS_COL.actionsTd}>
-                      <Skeleton className="ml-auto h-8 w-[7.5rem]" />
+                      <Skeleton className="ml-auto h-8 w-[10.5rem]" />
                     </td>
                   </tr>
                 ))}
