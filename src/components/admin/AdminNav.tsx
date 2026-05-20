@@ -5,6 +5,7 @@ import {
   QrCode,
   CalendarDays,
   BookOpen,
+  Layers,
   Users,
   Package,
   UserCog,
@@ -43,9 +44,10 @@ export interface AdminNavItem {
 export const LIMITED_ADMIN_ROUTES = [
   "/admin/check-in",
   "/admin/bookings",
+  "/admin/schedule",
   "/admin/classes",
   "/admin/timesheets",
-  // /admin/scheduling redirects to /admin/classes; keep it allow-listed so
+  // /admin/scheduling redirects to /admin/schedule; keep it allow-listed so
   // the redirect can complete before the limited-role guard fires.
   "/admin/scheduling",
 ] as const;
@@ -115,8 +117,9 @@ export { defaultMarketingAdminPath };
 export const adminNavItems: AdminNavItem[] = [
   { to: "/admin", label: "Dashboard", icon: LayoutGrid },
   { to: "/admin/check-in", label: "Check-In", icon: QrCode },
-  { to: "/admin/classes", label: "Classes", icon: CalendarDays },
+  { to: "/admin/schedule", label: "Schedule", icon: CalendarDays },
   { to: "/admin/bookings", label: "Bookings", icon: BookOpen },
+  { to: "/admin/classes", label: "Classes", icon: Layers },
   { to: "/admin/customers", label: "Customers", icon: Users },
   { to: "/admin/products", label: "Products", icon: Package },
   { to: "/admin/staff", label: "Staff", icon: UserCog },

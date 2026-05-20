@@ -177,7 +177,7 @@ export function AdminGlobalSearch({ className }: { className?: string }) {
     if (h.kind === "customer") {
       void navigate({ to: "/admin/customers", search: { profile: h.id } });
     } else if (h.kind === "class") {
-      void navigate({ to: "/admin/classes", search: { highlight: h.id } });
+      void navigate({ to: "/admin/schedule", search: { highlight: h.id } });
     } else {
       void navigate({ to: "/admin/customers", search: { profile: h.profileId } });
     }
@@ -259,7 +259,7 @@ export function AdminGlobalSearch({ className }: { className?: string }) {
               {grouped.classes.length > 0 ? (
                 <section>
                   <p className="mb-2 flex items-center gap-2 px-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">
-                    <Calendar className="h-3.5 w-3.5" aria-hidden /> Classes
+                    <Calendar className="h-3.5 w-3.5" aria-hidden /> Schedule
                   </p>
                   <ul className="space-y-1">
                     {grouped.classes.map((h) => (
@@ -311,11 +311,11 @@ export function AdminGlobalSearch({ className }: { className?: string }) {
           </Link>
           {" · "}
           <Link
-            to="/admin/classes"
+            to="/admin/schedule"
             className="underline underline-offset-2"
             onClick={() => setOpen(false)}
           >
-            Open classes
+            Open schedule
           </Link>
         </div>
       </SheetContent>
