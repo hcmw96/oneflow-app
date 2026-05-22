@@ -3,14 +3,11 @@ import * as React from "react";
 import { useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { AdminShell } from "@/components/admin/AdminShell";
-import {
-  defaultMarketingAdminPath,
-  isPathAllowedForRestrictedAdmin,
-} from "@/components/admin/AdminNav";
+import { isPathAllowedForRestrictedAdmin } from "@/components/admin/AdminNav";
 import {
   canAccessMarketingAdmin,
   canEnterAdminArea,
-  isMarketingAdminPath,
+  isMarketingCommsAdminPath,
   isMarketingScopedStaff,
   type AdminRoleProfile,
 } from "@/lib/adminMarketingAccess";
@@ -53,14 +50,9 @@ function AdminLayout() {
     if (!authReady || !user || !profileReady) return;
     if (!canEnterAdminArea(roleProfile)) return;
 
-    if (isMarketingScopedStaff(roleProfile) && pathname === "/admin") {
-      navigate({ to: defaultMarketingAdminPath(), replace: true });
-      return;
-    }
-
     if (!isPathAllowedForRestrictedAdmin(roleProfile, pathname)) {
       const to = isMarketingScopedStaff(roleProfile)
-        ? defaultMarketingAdminPath()
+        ? "/admin"
         : (roleProfile.role ?? "").toLowerCase() === "boh"
           ? "/admin/timesheets"
           : "/admin/check-in";
@@ -69,7 +61,7 @@ function AdminLayout() {
     }
 
     if (
-      isMarketingAdminPath(pathname) &&
+      isMarketingCommsAdminPath(pathname) &&
       !canAccessMarketingAdmin(roleProfile)
     ) {
       navigate({ to: "/admin/check-in", replace: true });

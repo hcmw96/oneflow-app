@@ -24,12 +24,11 @@ import {
 } from "lucide-react";
 import {
   canAccessMarketingAdmin,
-  canEnterAdminArea,
   canViewCustomerApp,
-  defaultMarketingAdminPath,
-  isMarketingAdminPath,
+  isMarketingCommsAdminPath,
+  isMarketingFinancialAdminPath,
   isMarketingScopedStaff,
-  MARKETING_ADMIN_ROUTES,
+  MARKETING_COMMS_ADMIN_ROUTES,
   type AdminRoleProfile,
 } from "@/lib/adminMarketingAccess";
 import { cn } from "@/lib/utils";
@@ -71,13 +70,13 @@ export function isPathAllowedForLimitedRole(pathname: string) {
   return LIMITED_ADMIN_ROUTES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
-/** BOH is restricted to timesheets; guide/front_desk use LIMITED_ADMIN_ROUTES (+ marketing if allowed). */
+/** BOH is restricted to timesheets; guide/front_desk use LIMITED_ADMIN_ROUTES (+ marketing comms if allowed). */
 export function isPathAllowedForRestrictedAdmin(
   profile: AdminRoleProfile,
   pathname: string,
 ) {
   const role = profile.role;
-  if (canAccessMarketingAdmin(profile) && isMarketingAdminPath(pathname)) {
+  if (canAccessMarketingAdmin(profile) && isMarketingCommsAdminPath(pathname)) {
     return true;
   }
   if (isBohRole(role)) {
@@ -87,7 +86,8 @@ export function isPathAllowedForRestrictedAdmin(
     return isPathAllowedForLimitedRole(pathname);
   }
   if (isMarketingScopedStaff(profile)) {
-    return isMarketingAdminPath(pathname);
+    if (pathname !== "/admin" && !pathname.startsWith("/admin/")) return false;
+    return !isMarketingFinancialAdminPath(pathname);
   }
   return true;
 }
@@ -99,20 +99,17 @@ export function navItemsForRole(profile: AdminRoleProfile): AdminNavItem[] {
     return adminNavItems.filter((i) => i.to === "/admin/timesheets");
   }
   if (isMarketingScopedStaff(profile) && !isLimitedAdminRole(profile.role)) {
-    const allow = new Set<string>(MARKETING_ADMIN_ROUTES);
-    return adminNavItems.filter((i) => allow.has(i.to));
+    return adminNavItems.filter((i) => !isMarketingFinancialAdminPath(i.to));
   }
   if (isLimitedAdminRole(profile.role)) {
     const allow = new Set<string>(LIMITED_ADMIN_ROUTES);
     if (canAccessMarketingAdmin(profile)) {
-      for (const p of MARKETING_ADMIN_ROUTES) allow.add(p);
+      for (const p of MARKETING_COMMS_ADMIN_ROUTES) allow.add(p);
     }
     return adminNavItems.filter((i) => allow.has(i.to));
   }
   return adminNavItems;
 }
-
-export { defaultMarketingAdminPath };
 
 export const adminNavItems: AdminNavItem[] = [
   { to: "/admin", label: "Dashboard", icon: LayoutGrid },

@@ -4,11 +4,23 @@ export type AdminRoleProfile = {
   secondary_roles?: string[] | null;
 };
 
-export const MARKETING_ADMIN_ROUTES = [
+/** Email / promotions / client comms / WhatsApp — require marketing admin permission. */
+export const MARKETING_COMMS_ADMIN_ROUTES = [
   "/admin/email",
   "/admin/whatsapp",
   "/admin/client-comms",
   "/admin/promotions",
+] as const;
+
+/** @deprecated Use MARKETING_COMMS_ADMIN_ROUTES */
+export const MARKETING_ADMIN_ROUTES = MARKETING_COMMS_ADMIN_ROUTES;
+
+/** Financial admin routes — marketing-scoped staff cannot open these. */
+export const MARKETING_FINANCIAL_ADMIN_ROUTES = [
+  "/admin/timesheets",
+  "/admin/payouts",
+  "/admin/transactions",
+  "/admin/reports",
 ] as const;
 
 const STANDARD_ADMIN_PRIMARY_ROLES = new Set([
@@ -41,10 +53,27 @@ export function canAccessMarketingAdmin(profile: AdminRoleProfile): boolean {
   );
 }
 
-export function isMarketingAdminPath(pathname: string): boolean {
-  return MARKETING_ADMIN_ROUTES.some(
+export function isMarketingCommsAdminPath(pathname: string): boolean {
+  return MARKETING_COMMS_ADMIN_ROUTES.some(
     (p) => pathname === p || pathname.startsWith(`${p}/`),
   );
+}
+
+/** @deprecated Use isMarketingCommsAdminPath */
+export function isMarketingAdminPath(pathname: string): boolean {
+  return isMarketingCommsAdminPath(pathname);
+}
+
+export function isMarketingFinancialAdminPath(pathname: string): boolean {
+  return MARKETING_FINANCIAL_ADMIN_ROUTES.some(
+    (p) => pathname === p || pathname.startsWith(`${p}/`),
+  );
+}
+
+/** Whether a marketing-scoped user may open this admin URL (all admin except financial). */
+export function isMarketingScopedAdminPathAllowed(pathname: string): boolean {
+  if (pathname !== "/admin" && !pathname.startsWith("/admin/")) return false;
+  return !isMarketingFinancialAdminPath(pathname);
 }
 
 /** Any admin area access (staff + marketing primary or secondary). */
@@ -64,11 +93,15 @@ export function isMarketingScopedStaff(profile: AdminRoleProfile): boolean {
 
 /** Default landing route for marketing-scoped staff. */
 export function defaultMarketingAdminPath(): string {
-  return "/admin/email";
+  return "/admin";
 }
 
-/** Admin sidebar link to the member app (director or customer secondary role). */
+/** Admin sidebar link to the member app. */
 export function canViewCustomerApp(profile: AdminRoleProfile): boolean {
   const roles = profileRoleSet(profile);
-  return roles.has("director") || roles.has("customer");
+  return (
+    roles.has("director") ||
+    roles.has("customer") ||
+    roles.has("marketing")
+  );
 }
