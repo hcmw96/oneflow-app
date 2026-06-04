@@ -18,6 +18,7 @@ import { PageHeader } from "@/components/admin/PageHeader";
 import { StatCard } from "@/components/admin/StatCard";
 import { getUser, supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
+import { cancelBookingWithPolicy } from "@/lib/bookingCancellation";
 import { fetchGuidesForClassSelect, type GuideSelectRow } from "@/lib/guidesForSelect";
 import {
   ADD_CLASS_TYPE_SELECT_VALUE,
@@ -773,16 +774,51 @@ function SchedulePage() {
 
   const confirmDelete = async () => {
     if (!deleteFromDialog || !canManage) return;
+    const classId = deleteFromDialog.id;
+    const { data: bookingsToCancel, error: fetchErr } = await supabase
+      .from("bookings")
+      .select("id")
+      .eq("class_id", classId)
+      .in("status", ["confirmed", "attended"]);
+    if (fetchErr) {
+      console.error("load bookings for class cancel failed", fetchErr);
+      toast.error(supabaseErrorMessage(fetchErr, "Could not load bookings to cancel"));
+      return;
+    }
+    let failed = 0;
+    for (const b of bookingsToCancel ?? []) {
+      try {
+        await cancelBookingWithPolicy({
+          bookingId: (b as { id: string }).id,
+          cancellationReason: "admin_cancelled",
+          waiveLateFee: true,
+        });
+      } catch (e) {
+        failed += 1;
+        console.error("cancelBookingWithPolicy failed", (b as { id: string }).id, e);
+      }
+    }
     const { error } = await supabase
       .from("classes")
       .update({ is_cancelled: true })
-      .eq("id", deleteFromDialog.id);
+      .eq("id", classId);
     if (error) {
       console.error("class cancel failed", error);
       toast.error(supabaseErrorMessage(error, "Could not cancel class"));
       return;
     }
-    toast.success("Class cancelled");
+    if (failed > 0) {
+      toast.warning(
+        `Class cancelled, but ${failed} booking(s) could not be refunded automatically — please check.`,
+      );
+    } else {
+      const n = (bookingsToCancel ?? []).length;
+      toast.success(
+        n > 0
+          ? `Class cancelled · ${n} member${n === 1 ? "" : "s"} refunded and notified`
+          : "Class cancelled",
+      );
+    }
     setDeleteFromDialog(null);
     setDialogOpen(false);
     setEditingId(null);
@@ -804,6 +840,30 @@ function SchedulePage() {
     if (!canManage || selected.size === 0) return;
     setBulkBusy(true);
     const ids = [...selected];
+    const { data: bookingsToCancel, error: fetchErr } = await supabase
+      .from("bookings")
+      .select("id")
+      .in("class_id", ids)
+      .in("status", ["confirmed", "attended"]);
+    if (fetchErr) {
+      setBulkBusy(false);
+      console.error("load bookings for bulk cancel failed", fetchErr);
+      toast.error(supabaseErrorMessage(fetchErr, "Could not load bookings to cancel"));
+      return;
+    }
+    let failed = 0;
+    for (const b of bookingsToCancel ?? []) {
+      try {
+        await cancelBookingWithPolicy({
+          bookingId: (b as { id: string }).id,
+          cancellationReason: "admin_cancelled",
+          waiveLateFee: true,
+        });
+      } catch (e) {
+        failed += 1;
+        console.error("cancelBookingWithPolicy failed", (b as { id: string }).id, e);
+      }
+    }
     const { error } = await supabase.from("classes").update({ is_cancelled: true }).in("id", ids);
     setBulkBusy(false);
     if (error) {
@@ -811,7 +871,11 @@ function SchedulePage() {
       toast.error(supabaseErrorMessage(error, "Could not cancel classes"));
       return;
     }
-    toast.success(`Cancelled ${ids.length} class${ids.length === 1 ? "" : "es"}`);
+    toast.success(
+      failed > 0
+        ? `Cancelled ${ids.length} class(es) · ${failed} booking(s) need manual refund`
+        : `Cancelled ${ids.length} class(es) · members refunded and notified`,
+    );
     setBulkCancelOpen(false);
     clearSelected();
     await load();

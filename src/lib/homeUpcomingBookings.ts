@@ -41,7 +41,7 @@ export async function fetchUpcomingHomeBookings(
     `,
     )
     .eq("profile_id", profileId)
-    .eq("status", "confirmed");
+    .in("status", ["confirmed", "attended"]);
 
   if (error) {
     console.error("fetchUpcomingHomeBookings", error);

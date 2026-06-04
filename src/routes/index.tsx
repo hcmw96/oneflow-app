@@ -13,7 +13,6 @@ import {
   isCafeCredit,
   sumCafeCreditsRemaining,
 } from "@/lib/cafeCredits";
-import { addDays, startOfWeekSunday } from "@/lib/format";
 import { useTimezone } from "@/hooks/use-timezone";
 import {
   fetchUpcomingHomeBookings,
@@ -21,10 +20,12 @@ import {
 } from "@/lib/homeUpcomingBookings";
 import {
   civilAddDaysYmd,
+  dayBoundsForDateKey,
   formatClassDateTime,
   formatShortDateInZone,
   STUDIO_TIMEZONE,
   todayDateKey,
+  weekSundayDateKey,
   ymdInTimeZone,
 } from "@/lib/timezone";
 
@@ -130,8 +131,11 @@ function HomePage() {
     }
 
     const uid = user.id;
-    const weekStart = startOfWeekSunday(new Date());
-    const weekEnd = addDays(weekStart, 7);
+    const todayKey = todayDateKey(STUDIO_TIMEZONE);
+    const weekSundayKey = weekSundayDateKey(todayKey, STUDIO_TIMEZONE);
+    const nextSundayKey = civilAddDaysYmd(weekSundayKey, 7);
+    const weekStartIso = dayBoundsForDateKey(weekSundayKey, STUDIO_TIMEZONE).startUtcIso;
+    const weekEndIso = dayBoundsForDateKey(nextSundayKey, STUDIO_TIMEZONE).startUtcIso;
 
     const [
       { data: profile },
@@ -163,8 +167,8 @@ function HomePage() {
         .eq("profile_id", uid)
         .eq("status", "attended")
         .not("checked_in_at", "is", null)
-        .gte("checked_in_at", weekStart.toISOString())
-        .lt("checked_in_at", weekEnd.toISOString()),
+        .gte("checked_in_at", weekStartIso)
+        .lt("checked_in_at", weekEndIso),
       fetchUpcomingHomeBookings(supabase, uid),
       countMayChallengeStampedDays(uid),
     ]);

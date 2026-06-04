@@ -32,7 +32,7 @@ export async function upsertMayChallengeCheckIn(input: {
       class_date: classDate,
       booking_id: input.bookingId,
     },
-    { onConflict: "profile_id,class_date" },
+    { onConflict: "booking_id" },
   );
 
   if (error) {

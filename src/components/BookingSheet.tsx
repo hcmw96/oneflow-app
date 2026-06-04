@@ -212,26 +212,6 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
   const pointsValue = Math.floor(flowPoints / 100) * 10;
 
   const afterBookingConfirmed = async (bookingId: string) => {
-    if (profileEarnsFlowPoints(userRole)) {
-      const fpIns = await supabase.from("flow_points").insert({
-        profile_id: userId!,
-        points: 1,
-        reason: "class_attended",
-        reference_id: bookingId,
-      });
-      if (fpIns.error) {
-        console.error("[BookingSheet] flow_points insert after booking failed", fpIns.error);
-      }
-    }
-
-    if (isMayChallenge && isMay) {
-      await supabase.from("challenge_entries").insert({
-        profile_id: userId!,
-        booking_id: bookingId,
-        challenge_month: "2026-05-01",
-      });
-    }
-
     if (userEmail) {
       await supabase.functions.invoke("send-email", {
         body: {
@@ -346,6 +326,21 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
       );
       setLoading(false);
       return;
+    }
+
+    if (usePoints && !selectedCredit) {
+      const used = Math.min(flowPoints, 100);
+      const { error: redeemErr } = await supabase.rpc("redeem_my_flow_points", {
+        p_amount: used,
+      });
+      if (redeemErr) {
+        console.error("[BookingSheet] flow points redeem failed", redeemErr);
+        // Roll back the booking so the member isn't booked without paying
+        await supabase.from("bookings").delete().eq("id", booking.id);
+        toast.error("Could not redeem Flow Points — please try again.");
+        setLoading(false);
+        return;
+      }
     }
 
     await afterBookingConfirmed(booking.id as string);

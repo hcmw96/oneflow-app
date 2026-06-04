@@ -18,6 +18,12 @@ import { getUser, supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { addDays, isSameDay, startOfDay } from "@/lib/format";
 import {
+  civilAddDaysYmd,
+  dayBoundsForDateKey,
+  STUDIO_TIMEZONE,
+  ymdInTimeZone,
+} from "@/lib/timezone";
+import {
   Sheet,
   SheetClose,
   SheetContent,
@@ -284,16 +290,18 @@ function BookingsPage() {
 
   const loadWeek = useCallback(async () => {
     setLoading(true);
-    const ws = startOfDay(viewWeekStart);
-    const we = addDays(ws, 7);
+    const weekStartKey = ymdInTimeZone(viewWeekStart, STUDIO_TIMEZONE);
+    const weekEndKey = civilAddDaysYmd(weekStartKey, 7);
+    const startIso = dayBoundsForDateKey(weekStartKey, STUDIO_TIMEZONE).startUtcIso;
+    const endIso = dayBoundsForDateKey(weekEndKey, STUDIO_TIMEZONE).startUtcIso;
 
     const { data: classesData, error: classesError } = await supabase
       .from("classes")
       .select(
         "id, name, class_type, starts_at, ends_at, capacity, booked_count, location, guide_name, is_cancelled",
       )
-      .gte("starts_at", ws.toISOString())
-      .lt("starts_at", we.toISOString())
+      .gte("starts_at", startIso)
+      .lt("starts_at", endIso)
       .eq("is_cancelled", false)
       .order("starts_at");
 

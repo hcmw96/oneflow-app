@@ -19,6 +19,8 @@ type BookingCancelRow = {
   profile_id: string;
   class_id: string;
   credit_id: string | null;
+  payment_method: string | null;
+  flow_points_used: number | null;
   mat_addon: boolean | null;
   towel_addon: boolean | null;
   classes:
@@ -68,6 +70,8 @@ export async function cancelBookingWithPolicy({
       profile_id,
       class_id,
       credit_id,
+      payment_method,
+      flow_points_used,
       mat_addon,
       towel_addon,
       classes ( name, starts_at, location, guide_name ),
@@ -106,21 +110,6 @@ export async function cancelBookingWithPolicy({
     .eq("id", booking.id);
   if (updateBookingError) throw new Error(updateBookingError.message);
 
-  const { data: classRow, error: classReadError } = await supabase
-    .from("classes")
-    .select("booked_count")
-    .eq("id", booking.class_id)
-    .maybeSingle();
-  if (classReadError) throw new Error(classReadError.message);
-
-  const currentBooked = Number((classRow as { booked_count?: number } | null)?.booked_count ?? 0);
-  const nextBooked = Math.max(0, currentBooked - 1);
-  const { error: classUpdateError } = await supabase
-    .from("classes")
-    .update({ booked_count: nextBooked })
-    .eq("id", booking.class_id);
-  if (classUpdateError) throw new Error(classUpdateError.message);
-
   if (booking.credit_id) {
     const { data: credit, error: creditError } = await supabase
       .from("user_credits")
@@ -141,6 +130,22 @@ export async function cancelBookingWithPolicy({
         .eq("id", booking.credit_id);
       if (refundError) throw new Error(refundError.message);
     }
+  }
+
+  const pointsUsed = Number(booking.flow_points_used ?? 0);
+  if (booking.payment_method === "flow_points" && pointsUsed > 0) {
+    const { data: prof, error: profReadErr } = await supabase
+      .from("profiles")
+      .select("flow_points")
+      .eq("id", booking.profile_id)
+      .maybeSingle();
+    if (profReadErr) throw new Error(profReadErr.message);
+    const current = Number((prof as { flow_points?: number } | null)?.flow_points ?? 0);
+    const { error: refundPtsErr } = await supabase
+      .from("profiles")
+      .update({ flow_points: current + pointsUsed })
+      .eq("id", booking.profile_id);
+    if (refundPtsErr) throw new Error(refundPtsErr.message);
   }
 
   if (lateCancel && !waiveLateFee) {

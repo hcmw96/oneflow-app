@@ -59,7 +59,7 @@ export async function fetchConfirmedBookingIntervals(
     .from("bookings")
     .select("class_id, classes ( name, starts_at, ends_at )")
     .eq("profile_id", profileId)
-    .eq("status", "confirmed");
+    .in("status", ["confirmed", "attended"]);
 
   if (error) {
     console.error("fetchConfirmedBookingIntervals", error);

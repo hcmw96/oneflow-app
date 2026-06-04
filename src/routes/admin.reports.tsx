@@ -86,7 +86,6 @@ type PurchaseRow = {
   purchased_at?: string | null;
   credits_total?: number | null;
   category?: string | null;
-  price_zar?: number | null;
   product_id?: string | null;
   products?: ProductJoin | ProductJoin[];
 };
@@ -216,7 +215,7 @@ function ReportsPage() {
         supabase
           .from("user_credits")
           .select(
-            "id, created_at, purchased_at, credits_total, category, price_zar, product_id, products ( price_zar, category )",
+            "id, created_at, purchased_at, credits_total, category, product_id, products ( price_zar, category )",
           )
           .gte("created_at", startIso)
           .lte("created_at", endIso),
@@ -230,10 +229,10 @@ function ReportsPage() {
         supabase
           .from("profiles")
           .select("id", { count: "exact", head: true })
-          .eq("role", "member")
+          .or("role.eq.customer,secondary_roles.cs.{customer}")
           .gte("created_at", startIso)
           .lte("created_at", endIso),
-        supabase.from("profiles").select("id").eq("role", "member"),
+        supabase.from("profiles").select("id").or("role.eq.customer,secondary_roles.cs.{customer}"),
         supabase
           .from("user_credits")
           .select("profile_id, credits_remaining, is_unlimited, expires_at"),
@@ -264,7 +263,7 @@ function ReportsPage() {
 
     for (const row of inPeriodPurchases) {
       const prod = oneProduct(row.products);
-      const price = Number(row.price_zar ?? prod?.price_zar ?? 0) || 0;
+      const price = Number(prod?.price_zar ?? 0) || 0;
       revenueZar += price;
       const label = revenueChartLabelForCategories(row.category ?? null, prod?.category ?? null);
       byLabel.set(label, (byLabel.get(label) ?? 0) + price);
