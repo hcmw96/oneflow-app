@@ -433,14 +433,19 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
     }
   };
 
+  const validateInviteEmail = (): string | null => {
+    const email = inviteEmail.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      toast.error("Enter a valid email address");
+      return null;
+    }
+    return email;
+  };
+
   const runInviteByEmail = async () => {
     if (!userId || !session) return;
-    const email = inviteEmail.trim().toLowerCase();
-    const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-    if (!emailValid) {
-      toast.error("Enter a valid email address");
-      return;
-    }
+    const email = validateInviteEmail();
+    if (!email) return;
     setInviteBusy(true);
     const { data: row, error } = await supabase
       .from("class_invites")
@@ -475,6 +480,62 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
     setInviteOpen(false);
     setInviteEmail("");
     setInviteEmailName("");
+  };
+
+  const runPayForFriendByEmail = async () => {
+    if (!userId || !session) return;
+    const email = validateInviteEmail();
+    if (!email) return;
+    setInviteBusy(true);
+    setPayCheckoutSlow(false);
+    const slow = window.setTimeout(() => setPayCheckoutSlow(true), 5000);
+    const { data: row, error } = await supabase
+      .from("class_invites")
+      .insert({
+        inviter_id: userId,
+        invitee_id: null,
+        invitee_email: email,
+        invitee_name: inviteEmailName.trim() || null,
+        class_id: session.id,
+        paid_by_inviter: true,
+        status: "pending_payment",
+      })
+      .select("id")
+      .maybeSingle();
+    if (error || !row) {
+      window.clearTimeout(slow);
+      setPayCheckoutSlow(false);
+      toast.error(error?.message ?? "Could not start payment");
+      setInviteBusy(false);
+      return;
+    }
+    const inviteId = (row as { id: string }).id;
+    const origin = window.location.origin;
+    const { data: checkout, error: yocoErr } = await supabase.functions.invoke("yoco-checkout", {
+      body: {
+        type: "class_invite",
+        class_invite_id: inviteId,
+        inviter_profile_id: userId,
+        success_url: `${origin}/payment/success?class_invite_id=${inviteId}&profile_id=${userId}`,
+        cancel_url: `${origin}/schedule`,
+      },
+    });
+    window.clearTimeout(slow);
+    setPayCheckoutSlow(false);
+    setInviteBusy(false);
+    if (yocoErr) {
+      toast.error(yocoErr.message ?? "Checkout failed");
+      return;
+    }
+    const redirect =
+      (checkout as { redirectUrl?: string; redirect_url?: string } | null)?.redirectUrl ??
+      (checkout as { redirect_url?: string } | null)?.redirect_url ??
+      null;
+    if (redirect) {
+      window.location.href = redirect;
+    } else {
+      toast.error("Yoco didn't return a redirect URL");
+    }
   };
 
   const runInviteOnly = async () => {
@@ -983,19 +1044,41 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
                   type="button"
                   disabled={inviteBusy || !inviteEmail.trim()}
                   onClick={() => void runInviteByEmail()}
-                  className="mt-6 w-full rounded-xl bg-primary py-3.5 text-sm font-semibold text-primary-foreground transition-opacity disabled:opacity-50"
+                  className="mt-6 w-full rounded-xl border border-border bg-card py-3.5 text-sm font-semibold transition-opacity disabled:opacity-50"
                 >
                   {inviteBusy ? (
                     <span className="inline-flex items-center justify-center gap-2">
                       <Loader2 className="h-4 w-4 animate-spin" /> Sending…
                     </span>
                   ) : (
-                    "Send invite by email"
+                    "Invite only (they pay)"
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  disabled={inviteBusy || !inviteEmail.trim()}
+                  onClick={() => void runPayForFriendByEmail()}
+                  className="mt-2 w-full rounded-xl bg-primary py-3.5 text-sm font-semibold text-primary-foreground transition-opacity disabled:opacity-50"
+                >
+                  {inviteBusy ? (
+                    payCheckoutSlow ? (
+                      <span className="inline-flex items-center justify-center gap-2">
+                        <Loader2 className="h-4 w-4 animate-spin" /> Still opening Yoco…
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center justify-center gap-2">
+                        <Loader2 className="h-4 w-4 animate-spin" /> Payment…
+                      </span>
+                    )
+                  ) : (
+                    "Pay for them (Yoco)"
                   )}
                 </button>
 
                 <p className="mt-3 text-center text-[11px] leading-snug text-muted-foreground">
-                  Pay-for-them only works for friends already in the app. They&apos;ll need to sign up to book.
+                  They&apos;ll get the email straight away. If you paid, the class is booked the
+                  moment they sign up with that email.
                 </p>
               </>
             )}

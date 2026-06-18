@@ -9,8 +9,33 @@ serve(async (req) => {
 
   if (event.type !== "payment.succeeded") return new Response("ok", { status: 200 });
 
-  const { pack_id, profile_id } = event.payload.metadata;
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+  const metadata = (event.payload?.metadata ?? {}) as Record<string, unknown>;
+  const paymentType = String(metadata.type ?? "");
+
+  // Class invite payments: inviter paid for friend's class.
+  // For app friends (invitee_id set) we auto-book here; for email-only
+  // invites the profile trigger handles the booking when they sign up.
+  if (paymentType === "class_invite") {
+    const classInviteId = String(metadata.class_invite_id ?? "").trim();
+    if (!classInviteId) return new Response("ok", { status: 200 });
+    const checkoutId = String(event.payload?.id ?? "");
+    const yocoPaymentId = String(event.payload?.paymentId ?? checkoutId);
+    const { error: rpcErr } = await supabase.rpc("record_paid_class_invite", {
+      p_class_invite_id: classInviteId,
+      p_yoco_payment_id: yocoPaymentId,
+      p_checkout_id: checkoutId,
+    });
+    if (rpcErr) {
+      console.error("record_paid_class_invite", rpcErr);
+      return new Response("rpc failed", { status: 500 });
+    }
+    return new Response("ok", { status: 200 });
+  }
+
+  // Pack purchases (default path).
+  const { pack_id, profile_id } = metadata as { pack_id?: string; profile_id?: string };
+  if (!pack_id || !profile_id) return new Response("ok", { status: 200 });
 
   const { data: pack } = await supabase
     .from("products")
