@@ -74,11 +74,11 @@ type AppCreditRow = {
   id: string;
   yoco_payment_id: string | null;
   purchased_at: string | null;
-  profiles?:
+  profile?:
     | { first_name: string | null; last_name: string | null }
     | { first_name: string | null; last_name: string | null }[]
     | null;
-  products?:
+  product?:
     | { name: string | null; price_zar: number | null }
     | { name: string | null; price_zar: number | null }[]
     | null;
@@ -153,8 +153,11 @@ export function ReconciliationSection({ bounds }: { bounds: PeriodBounds }) {
       const [creditsRes, offlineRes] = await Promise.all([
         supabase
           .from("user_credits")
+          // user_credits has two FKs to profiles (profile_id, refunded_by) since
+          // the refund migration, so the bare `profiles(...)` embed is ambiguous.
+          // Aliased FK syntax disambiguates the same way admin.transactions does.
           .select(
-            "id, yoco_payment_id, purchased_at, profiles ( first_name, last_name ), products ( name, price_zar )",
+            "id, yoco_payment_id, purchased_at, profile:profile_id(first_name, last_name), product:product_id(name, price_zar)",
           )
           .gte("purchased_at", startUtcIso)
           .lte("purchased_at", endUtcIso)
@@ -179,8 +182,8 @@ export function ReconciliationSection({ bounds }: { bounds: PeriodBounds }) {
       const credits = (creditsRes.data ?? []) as AppCreditRow[];
       const mapped: AppCredit[] = credits
         .map((r) => {
-          const prof = pickOne(r.profiles);
-          const prod = pickOne(r.products);
+          const prof = pickOne(r.profile);
+          const prod = pickOne(r.product);
           const purchasedAtMs = r.purchased_at ? Date.parse(r.purchased_at) : NaN;
           return {
             id: r.id,
