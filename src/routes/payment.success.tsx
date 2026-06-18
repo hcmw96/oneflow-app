@@ -201,6 +201,7 @@ function PaymentSuccessPage() {
         productId: packId,
         expiresAt,
         paymentId: checkoutId ?? "yoco_checkout",
+        purchasedAt: new Date().toISOString(),
         category: p.category ?? "yoga",
         allowedClassTypes: p.allowed_class_types?.length
           ? p.allowed_class_types
