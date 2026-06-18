@@ -18,6 +18,7 @@ import { RevenueSection } from "@/components/admin/reports/RevenueSection";
 import { AttendanceSection } from "@/components/admin/reports/AttendanceSection";
 import { MembersSection } from "@/components/admin/reports/MembersSection";
 import { GuidesSection } from "@/components/admin/reports/GuidesSection";
+import { ReconciliationSection } from "@/components/admin/reports/ReconciliationSection";
 import { supabase } from "@/lib/supabase";
 import {
   jhbPeriodBounds,
@@ -161,6 +162,9 @@ function ReportsPage() {
 
         {/* Section 4: Guides / Instructors (rebuilt — runs its own queries) */}
         <GuidesSection bounds={bounds} />
+
+        {/* Section 5: Yoco Reconciliation */}
+        <ReconciliationSection bounds={bounds} />
 
         {/* Credits (legacy until rebuild approval) */}
         <section>
