@@ -5,7 +5,9 @@ import {
   ChevronRight,
   Download,
   ExternalLink,
+  Loader2,
   Receipt,
+  RotateCcw,
   Search,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -14,6 +16,17 @@ import { StatCard } from "@/components/admin/StatCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -24,6 +37,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { civilAddDaysYmd, dayBoundsForDateKey, STUDIO_TIMEZONE, todayDateKey } from "@/lib/timezone";
+import { markManualCreditRefunded, refundYocoCredit } from "@/lib/refunds";
 
 export const Route = createFileRoute("/admin/transactions")({
   head: () => ({ meta: [{ title: "Transactions — One Flow Admin" }] }),
@@ -43,6 +57,8 @@ type TxRow = {
   amount: number;
   paymentMethod: string;
   yocoPaymentId: string | null;
+  refundedAt: string | null;
+  refundReason: string | null;
 };
 
 type SortKey = "date_desc" | "date_asc" | "amount_desc" | "amount_asc" | "name_asc";
@@ -100,13 +116,16 @@ function TransactionsPage() {
   const [revenueToday, setRevenueToday] = useState(0);
   const [revenueWeek, setRevenueWeek] = useState(0);
   const [revenueMonth, setRevenueMonth] = useState(0);
+  const [refundTarget, setRefundTarget] = useState<TxRow | null>(null);
+  const [refundReason, setRefundReason] = useState("");
+  const [refundBusy, setRefundBusy] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     const { data, error } = await supabase
       .from("user_credits")
       .select(
-        "id, created_at, profile_id, product_id, product_name, yoco_payment_id, profile:profile_id(first_name, last_name), product:product_id(name, price_zar)",
+        "id, created_at, profile_id, product_id, product_name, yoco_payment_id, refunded_at, refund_reason, profile:profile_id(first_name, last_name), product:product_id(name, price_zar)",
       )
       .order("created_at", { ascending: false })
       .limit(2000);
@@ -142,6 +161,8 @@ function TransactionsPage() {
         amount,
         paymentMethod: yoco ? "yoco" : "manual",
         yocoPaymentId: yoco,
+        refundedAt: (raw.refunded_at as string | null) ?? null,
+        refundReason: (raw.refund_reason as string | null) ?? null,
       };
     });
 
@@ -206,6 +227,59 @@ function TransactionsPage() {
 
   const pageCount = Math.max(1, Math.ceil(filteredSorted.length / PAGE_SIZE));
   const pageRows = filteredSorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  const openRefund = (row: TxRow) => {
+    setRefundTarget(row);
+    setRefundReason("");
+  };
+
+  const closeRefund = () => {
+    if (refundBusy) return;
+    setRefundTarget(null);
+    setRefundReason("");
+  };
+
+  const processRefund = async () => {
+    if (!refundTarget) return;
+    setRefundBusy(true);
+    try {
+      const result = refundTarget.yocoPaymentId
+        ? await refundYocoCredit({
+            userCreditId: refundTarget.id,
+            reason: refundReason.trim() || undefined,
+          })
+        : (await markManualCreditRefunded({
+            userCreditId: refundTarget.id,
+            amountZar: refundTarget.amount,
+            reason: refundReason.trim() || undefined,
+          }),
+          { yocoRefundId: null, amountZar: refundTarget.amount });
+
+      const at = new Date().toISOString();
+      setRows((prev) =>
+        prev.map((r) =>
+          r.id === refundTarget.id
+            ? {
+                ...r,
+                refundedAt: at,
+                refundReason: refundReason.trim() || "admin_refund",
+              }
+            : r,
+        ),
+      );
+      toast.success(
+        refundTarget.yocoPaymentId
+          ? `Refunded R${result.amountZar.toLocaleString("en-ZA")} via Yoco.`
+          : "Marked as refunded.",
+      );
+      setRefundTarget(null);
+      setRefundReason("");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Refund failed");
+    } finally {
+      setRefundBusy(false);
+    }
+  };
 
   const exportCsv = () => {
     const header = [
@@ -312,7 +386,7 @@ function TransactionsPage() {
             <p className="text-sm text-muted-foreground">No transactions match your filters.</p>
           </div>
         ) : (
-          <table className="w-full min-w-[720px] text-sm">
+          <table className="w-full min-w-[820px] text-sm">
             <thead className="bg-muted/40">
               <tr className="text-left text-xs uppercase tracking-wider text-muted-foreground">
                 <th className="px-5 py-3 font-medium">Date</th>
@@ -321,11 +395,15 @@ function TransactionsPage() {
                 <th className="px-5 py-3 font-medium">Amount</th>
                 <th className="px-5 py-3 font-medium">Method</th>
                 <th className="px-5 py-3 font-medium">Yoco ID</th>
+                <th className="px-5 py-3 font-medium text-right">Refund</th>
               </tr>
             </thead>
             <tbody>
               {pageRows.map((r) => (
-                <tr key={r.id} className="border-t border-border">
+                <tr
+                  key={r.id}
+                  className={`border-t border-border ${r.refundedAt ? "bg-muted/30" : ""}`}
+                >
                   <td className="whitespace-nowrap px-5 py-3 tabular-nums text-muted-foreground">
                     {formatDate(r.date)}
                   </td>
@@ -335,7 +413,9 @@ function TransactionsPage() {
                   <td className="max-w-[220px] truncate px-5 py-3 text-muted-foreground">
                     {r.productName}
                   </td>
-                  <td className="whitespace-nowrap px-5 py-3 tabular-nums">
+                  <td
+                    className={`whitespace-nowrap px-5 py-3 tabular-nums ${r.refundedAt ? "text-muted-foreground line-through" : ""}`}
+                  >
                     {formatRand(r.amount)}
                   </td>
                   <td className="px-5 py-3">
@@ -358,12 +438,79 @@ function TransactionsPage() {
                       <span className="text-xs text-muted-foreground">—</span>
                     )}
                   </td>
+                  <td className="whitespace-nowrap px-5 py-3 text-right">
+                    {r.refundedAt ? (
+                      <span
+                        className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-destructive"
+                        title={r.refundReason ?? undefined}
+                      >
+                        Refunded
+                      </span>
+                    ) : (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-8 gap-1"
+                        onClick={() => openRefund(r)}
+                      >
+                        <RotateCcw className="h-3 w-3" /> Refund
+                      </Button>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
       </div>
+
+      <AlertDialog
+        open={!!refundTarget}
+        onOpenChange={(o) => {
+          if (!o) closeRefund();
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {refundTarget?.yocoPaymentId ? "Refund this Yoco payment?" : "Mark as refunded?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {refundTarget
+                ? refundTarget.yocoPaymentId
+                  ? `This will refund ${formatRand(refundTarget.amount)} to ${refundTarget.memberName} via Yoco and zero out remaining credits on this pass.`
+                  : `This wasn't a Yoco payment, so nothing is sent to Yoco. The pass will be marked refunded (${formatRand(refundTarget.amount)}) and remaining credits zeroed for record-keeping.`
+                : null}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="grid gap-2">
+            <label className="text-xs font-medium text-muted-foreground" htmlFor="refund-reason">
+              Reason (optional)
+            </label>
+            <Textarea
+              id="refund-reason"
+              rows={3}
+              value={refundReason}
+              onChange={(e) => setRefundReason(e.target.value)}
+              placeholder="e.g. member requested cancellation, duplicate charge…"
+              disabled={refundBusy}
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={refundBusy}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                void processRefund();
+              }}
+              disabled={refundBusy}
+            >
+              {refundBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Process refund"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {!loading && filteredSorted.length > 0 && (
         <div className="mt-4 flex items-center justify-between gap-3 text-xs text-muted-foreground">
