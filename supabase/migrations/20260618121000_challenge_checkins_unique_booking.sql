@@ -13,6 +13,16 @@ where c.booking_id = keep.booking_id
     or (c.created_at = keep.created_at and c.id > keep.id)
   );
 
-alter table public.challenge_checkins
-  add constraint challenge_checkins_booking_id_key
-  unique (booking_id);
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'challenge_checkins_booking_id_key'
+      and conrelid = 'public.challenge_checkins'::regclass
+  ) then
+    alter table public.challenge_checkins
+      add constraint challenge_checkins_booking_id_key
+      unique (booking_id);
+  end if;
+end$$;
