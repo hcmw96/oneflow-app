@@ -12,6 +12,11 @@ import { formatClassDateTime, formatShortDateInZone } from "@/lib/timezone";
 import { cn } from "@/lib/utils";
 import { getUser, supabase } from "@/lib/supabase";
 import { displayClassType, type ClassType } from "@/types/studio";
+import {
+  fetchMyActiveWaitlistEntries,
+  leaveWaitlist,
+  type WaitlistEntryWithClass,
+} from "@/lib/waitlist";
 
 function uuidOrUndefined(v: unknown): string | undefined {
   if (typeof v !== "string") return undefined;
@@ -77,35 +82,44 @@ function BookingsPage() {
   const [tab, setTab] = useState<"upcoming" | "past">("upcoming");
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<BookingListRow[]>([]);
+  const [waitlist, setWaitlist] = useState<WaitlistEntryWithClass[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
     const user = await getUser();
     if (!user) {
       setRows([]);
+      setWaitlist([]);
       setLoading(false);
       return;
     }
 
-    const { data, error } = await supabase
-      .from("bookings")
-      .select(
-        `id, status, qr_token,
-         classes ( name, class_type, location, starts_at, guide_name )`,
-      )
-      .eq("profile_id", user.id)
-      .in("status", ["confirmed", "attended"])
-      .order("created_at", { ascending: false });
+    const [bookingsRes, waitlistRows] = await Promise.all([
+      supabase
+        .from("bookings")
+        .select(
+          `id, status, qr_token,
+           classes ( name, class_type, location, starts_at, guide_name )`,
+        )
+        .eq("profile_id", user.id)
+        .in("status", ["confirmed", "attended"])
+        .order("created_at", { ascending: false }),
+      fetchMyActiveWaitlistEntries(user.id).catch((err) => {
+        console.error("[bookings] waitlist load failed", err);
+        return [] as WaitlistEntryWithClass[];
+      }),
+    ]);
 
-    if (error) {
-      console.error(error);
+    if (bookingsRes.error) {
+      console.error(bookingsRes.error);
       setRows([]);
+      setWaitlist(waitlistRows);
       setLoading(false);
       return;
     }
 
     const mapped: BookingListRow[] =
-      (data as unknown as RawBooking[] | null)?.map((raw) => {
+      (bookingsRes.data as unknown as RawBooking[] | null)?.map((raw) => {
         const cls = one(raw.classes);
         return {
           id: raw.id,
@@ -121,6 +135,7 @@ function BookingsPage() {
 
     mapped.sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
     setRows(mapped);
+    setWaitlist(waitlistRows);
     setLoading(false);
   }, []);
 
@@ -159,6 +174,16 @@ function BookingsPage() {
       el.scrollIntoView({ behavior: "smooth", block: "center" });
     });
   }, [bookingHighlightId, loading, rows, upcoming]);
+
+  const leaveClassWaitlist = async (entryId: string) => {
+    try {
+      await leaveWaitlist(entryId);
+      setWaitlist((prev) => prev.filter((w) => w.id !== entryId));
+      toast.success("Left the waitlist");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not leave waitlist");
+    }
+  };
 
   const cancelBooking = async (bookingId: string) => {
     const confirmText = `Please read carefully:
@@ -216,7 +241,50 @@ Are you sure you want to cancel?`;
           </div>
         ) : (
           <>
-            {tab === "upcoming" && upcoming.length === 0 && (
+            {tab === "upcoming" && waitlist.length > 0 && (
+              <section className="space-y-3">
+                <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  On the waitlist
+                </h2>
+                {waitlist.map((w) => (
+                  <article
+                    key={w.id}
+                    className="rounded-2xl border border-dashed border-[#a3b693]/60 bg-[#f4f7f0]/70 p-4"
+                  >
+                    <div className="mb-1 flex items-center gap-2">
+                      <TypeBadge type={displayClassType(w.classType)} />
+                      <span className="text-[10px] font-semibold uppercase tracking-wide text-[#4a6b3c]">
+                        #{w.position} on waitlist
+                      </span>
+                    </div>
+                    <h3 className="truncate font-display text-lg font-semibold">{w.className}</h3>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      {formatShortDateInZone(new Date(w.startsAt), timeZone)}
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                      <span className="inline-flex min-w-0 max-w-full items-center gap-1">
+                        <Clock className="h-3 w-3 shrink-0" aria-hidden />{" "}
+                        {formatClassDateTime(w.startsAt, timeZone, studioTimeZone).time}
+                      </span>
+                      <span className="inline-flex min-w-0 max-w-full items-center gap-1">
+                        <MapPin className="h-3 w-3 shrink-0" aria-hidden />{" "}
+                        <span className="min-w-0 break-words">{w.location}</span>
+                      </span>
+                    </div>
+                    <p className="mt-3 text-xs text-muted-foreground">
+                      We'll book you in automatically and email you if a spot opens.
+                    </p>
+                    <button
+                      onClick={() => void leaveClassWaitlist(w.id)}
+                      className="mt-3 inline-flex items-center gap-1 rounded-full border border-border px-3 py-1 text-xs font-medium text-muted-foreground"
+                    >
+                      <X className="h-3 w-3 shrink-0" aria-hidden /> Leave waitlist
+                    </button>
+                  </article>
+                ))}
+              </section>
+            )}
+            {tab === "upcoming" && upcoming.length === 0 && waitlist.length === 0 && (
               <Empty text="No upcoming bookings yet — head to Schedule to book." />
             )}
             {tab === "upcoming" &&

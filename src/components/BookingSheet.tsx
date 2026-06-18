@@ -26,6 +26,12 @@ import {
 import { bookingCreditInsertErrorMessage } from "@/lib/bookingCredits";
 import { profileEarnsFlowPoints } from "@/lib/flowPoints";
 import { userCreditCoversClassType } from "@/lib/allowedClassTypes";
+import {
+  fetchMyWaitlistEntryForClass,
+  joinWaitlist,
+  leaveWaitlist,
+  type WaitlistEntry,
+} from "@/lib/waitlist";
 
 interface ClassRow {
   id: string;
@@ -91,6 +97,8 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
   const [selectedFriendId, setSelectedFriendId] = useState<string | null>(null);
   const [inviteBusy, setInviteBusy] = useState(false);
   const [payCheckoutSlow, setPayCheckoutSlow] = useState(false);
+  const [waitlistEntry, setWaitlistEntry] = useState<WaitlistEntry | null>(null);
+  const [waitlistBusy, setWaitlistBusy] = useState(false);
 
   useEffect(() => {
     if (!open) {
@@ -122,16 +130,26 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
         ? Promise.resolve({ data: null, error: null })
         : supabase.from("profiles").select("flow_points, role").eq("id", user.id).maybeSingle();
 
-      const [{ data: creditsData, error: creditsErr }, { data: pointsData }, { data: ships }] =
-        await Promise.all([
-          creditsPromise,
-          pointsPromise,
-          supabase
-            .from("friendships")
-            .select("requester_id, addressee_id")
-            .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`)
-            .eq("status", "accepted"),
-        ]);
+      const [
+        { data: creditsData, error: creditsErr },
+        { data: pointsData },
+        { data: ships },
+        waitlistMine,
+      ] = await Promise.all([
+        creditsPromise,
+        pointsPromise,
+        supabase
+          .from("friendships")
+          .select("requester_id, addressee_id")
+          .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`)
+          .eq("status", "accepted"),
+        fetchMyWaitlistEntryForClass(session.id, user.id).catch((err) => {
+          console.error("[BookingSheet] waitlist lookup failed", err);
+          return null;
+        }),
+      ]);
+
+      setWaitlistEntry(waitlistMine);
 
       if (isFree) {
         setCredits([]);
@@ -353,6 +371,63 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
     onOpenChange(false);
   };
 
+  const joinClassWaitlist = async () => {
+    if (!userId || !session) return;
+    if (classIsPast) {
+      toast.error("This class has already passed.");
+      return;
+    }
+    let paymentMethod: "free" | "credit" | "flow_points";
+    let creditId: string | null = null;
+    let flowPointsPledged = 0;
+
+    if (isFreeClass) {
+      paymentMethod = "free";
+    } else if (selectedCredit) {
+      paymentMethod = "credit";
+      creditId = selectedCredit;
+    } else if (usePoints) {
+      paymentMethod = "flow_points";
+      flowPointsPledged = Math.min(flowPoints, 100);
+    } else {
+      toast.error("Select a payment method to join the waitlist.");
+      return;
+    }
+
+    setWaitlistBusy(true);
+    try {
+      const entry = await joinWaitlist({
+        classId: session.id,
+        profileId: userId,
+        paymentMethod,
+        creditId,
+        flowPointsPledged,
+      });
+      setWaitlistEntry(entry);
+      toast.success("You're on the waitlist", {
+        description: "We'll book you in and email if a spot opens up.",
+      });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not join waitlist");
+    } finally {
+      setWaitlistBusy(false);
+    }
+  };
+
+  const leaveClassWaitlist = async () => {
+    if (!waitlistEntry) return;
+    setWaitlistBusy(true);
+    try {
+      await leaveWaitlist(waitlistEntry.id);
+      setWaitlistEntry(null);
+      toast.success("Left the waitlist");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not leave waitlist");
+    } finally {
+      setWaitlistBusy(false);
+    }
+  };
+
   const runInviteOnly = async () => {
     if (!userId || !session || !selectedFriendId) {
       toast.error("Select a friend to invite.");
@@ -473,7 +548,8 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
                 <MapPin className="h-4 w-4" /> {session.location}
               </li>
               <li className="flex items-center gap-2.5">
-                <Users className="h-4 w-4" /> {spots} spots available
+                <Users className="h-4 w-4" />{" "}
+                {spots === 0 ? "Class is full" : `${spots} spots available`}
               </li>
             </ul>
 
@@ -614,32 +690,83 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
               </button>
             ) : null}
 
-            <button
-              type="button"
-              onClick={() => void confirm()}
-              disabled={loading || classIsPast}
-              className={cn(
-                "mt-6 w-full rounded-xl py-3.5 text-sm font-semibold transition-opacity active:opacity-90 disabled:opacity-50",
-                isFreeClass && !classIsPast
-                  ? "bg-[#a3b693] text-white"
-                  : "bg-primary text-primary-foreground",
-              )}
-            >
-              {classIsPast
-                ? "Class has passed"
-                : loading
-                  ? "Confirming…"
-                  : isFreeClass
-                    ? "Book Free"
-                    : "Confirm Booking"}
-            </button>
-            <button
-              type="button"
-              onClick={() => onOpenChange(false)}
-              className="mt-2 w-full rounded-xl border border-border bg-card py-3.5 text-sm font-semibold"
-            >
-              Cancel
-            </button>
+            {waitlistEntry ? (
+              <>
+                <div className="mt-6 rounded-2xl border border-[#a3b693]/50 bg-[#e8efe3]/80 px-4 py-4 text-center dark:bg-[#a3b693]/10">
+                  <p className="text-sm font-semibold text-[#3d4f36] dark:text-foreground">
+                    You're on the waitlist
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    We'll book you in automatically and email you if a spot opens.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void leaveClassWaitlist()}
+                  disabled={waitlistBusy}
+                  className="mt-6 w-full rounded-xl border border-border bg-card py-3.5 text-sm font-semibold disabled:opacity-50"
+                >
+                  {waitlistBusy ? "Leaving…" : "Leave waitlist"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onOpenChange(false)}
+                  className="mt-2 w-full rounded-xl py-3 text-sm font-medium text-muted-foreground"
+                >
+                  Close
+                </button>
+              </>
+            ) : spots === 0 && !classIsPast ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => void joinClassWaitlist()}
+                  disabled={
+                    waitlistBusy ||
+                    (!isFreeClass && !selectedCredit && !usePoints)
+                  }
+                  className="mt-6 w-full rounded-xl bg-primary py-3.5 text-sm font-semibold text-primary-foreground transition-opacity active:opacity-90 disabled:opacity-50"
+                >
+                  {waitlistBusy ? "Joining…" : "Join Waitlist"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onOpenChange(false)}
+                  className="mt-2 w-full rounded-xl border border-border bg-card py-3.5 text-sm font-semibold"
+                >
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => void confirm()}
+                  disabled={loading || classIsPast}
+                  className={cn(
+                    "mt-6 w-full rounded-xl py-3.5 text-sm font-semibold transition-opacity active:opacity-90 disabled:opacity-50",
+                    isFreeClass && !classIsPast
+                      ? "bg-[#a3b693] text-white"
+                      : "bg-primary text-primary-foreground",
+                  )}
+                >
+                  {classIsPast
+                    ? "Class has passed"
+                    : loading
+                      ? "Confirming…"
+                      : isFreeClass
+                        ? "Book Free"
+                        : "Confirm Booking"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onOpenChange(false)}
+                  className="mt-2 w-full rounded-xl border border-border bg-card py-3.5 text-sm font-semibold"
+                >
+                  Cancel
+                </button>
+              </>
+            )}
           </div>
         </SheetContent>
       </Sheet>

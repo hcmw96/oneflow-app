@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { promoteNextWaitlistEntry, sendWaitlistPromotionEmail } from "@/lib/waitlist";
 
 type CancelBookingParams = {
   bookingId: string;
@@ -185,6 +186,18 @@ export async function cancelBookingWithPolicy({
         },
       },
     });
+  }
+
+  // Best-effort waitlist promotion: a spot just opened. If someone qualifies,
+  // they're auto-booked server-side; we then notify them. Any failure here is
+  // logged but doesn't fail the cancel.
+  try {
+    const promoted = await promoteNextWaitlistEntry(booking.class_id);
+    if (promoted) {
+      await sendWaitlistPromotionEmail(promoted.bookingId);
+    }
+  } catch (e) {
+    console.error("waitlist promotion after cancel", e);
   }
 
   return {
