@@ -21,6 +21,30 @@ serve(async (req) => {
     if (!classInviteId) return new Response("ok", { status: 200 });
     const checkoutId = String(event.payload?.id ?? "");
     const yocoPaymentId = String(event.payload?.paymentId ?? checkoutId);
+
+    // If this invite was sent to an email that already belongs to a member,
+    // resolve the profile_id first so record_paid_class_invite can book.
+    const { data: inv } = await supabase
+      .from("class_invites")
+      .select("id, invitee_id, invitee_email")
+      .eq("id", classInviteId)
+      .maybeSingle();
+    const invRow = inv as { invitee_id: string | null; invitee_email: string | null } | null;
+    if (invRow && !invRow.invitee_id && invRow.invitee_email) {
+      const { data: existing } = await supabase
+        .from("profiles")
+        .select("id")
+        .ilike("email", invRow.invitee_email)
+        .maybeSingle();
+      const existingId = (existing as { id?: string } | null)?.id;
+      if (existingId) {
+        await supabase
+          .from("class_invites")
+          .update({ invitee_id: existingId, invitee_email: null, invitee_name: null })
+          .eq("id", classInviteId);
+      }
+    }
+
     const { error: rpcErr } = await supabase.rpc("record_paid_class_invite", {
       p_class_invite_id: classInviteId,
       p_yoco_payment_id: yocoPaymentId,
