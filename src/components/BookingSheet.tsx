@@ -94,7 +94,10 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [acceptedFriends, setAcceptedFriends] = useState<FriendOption[]>([]);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteMode, setInviteMode] = useState<"friend" | "email">("friend");
   const [selectedFriendId, setSelectedFriendId] = useState<string | null>(null);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteEmailName, setInviteEmailName] = useState("");
   const [inviteBusy, setInviteBusy] = useState(false);
   const [payCheckoutSlow, setPayCheckoutSlow] = useState(false);
   const [waitlistEntry, setWaitlistEntry] = useState<WaitlistEntry | null>(null);
@@ -104,6 +107,8 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
     if (!open) {
       setInviteOpen(false);
       setSelectedFriendId(null);
+      setInviteEmail("");
+      setInviteEmailName("");
     }
   }, [open]);
 
@@ -428,6 +433,50 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
     }
   };
 
+  const runInviteByEmail = async () => {
+    if (!userId || !session) return;
+    const email = inviteEmail.trim().toLowerCase();
+    const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    if (!emailValid) {
+      toast.error("Enter a valid email address");
+      return;
+    }
+    setInviteBusy(true);
+    const { data: row, error } = await supabase
+      .from("class_invites")
+      .insert({
+        inviter_id: userId,
+        invitee_id: null,
+        invitee_email: email,
+        invitee_name: inviteEmailName.trim() || null,
+        class_id: session.id,
+        paid_by_inviter: false,
+        status: "pending",
+      })
+      .select("id")
+      .maybeSingle();
+    if (error || !row) {
+      toast.error(error?.message ?? "Could not create invite");
+      setInviteBusy(false);
+      return;
+    }
+    const inviteId = (row as { id: string }).id;
+    const { error: finErr } = await supabase.functions.invoke("finalize-class-invite", {
+      body: { class_invite_id: inviteId, after_payment: false },
+    });
+    if (finErr) {
+      toast.error(finErr.message ?? "Invite created but email failed.");
+    } else {
+      toast.success("Invite sent", {
+        description: `Emailed ${email}.`,
+      });
+    }
+    setInviteBusy(false);
+    setInviteOpen(false);
+    setInviteEmail("");
+    setInviteEmailName("");
+  };
+
   const runInviteOnly = async () => {
     if (!userId || !session || !selectedFriendId) {
       toast.error("Select a friend to invite.");
@@ -676,19 +725,23 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
               </>
             )}
 
-            {acceptedFriends.length > 0 ? (
-              <button
-                type="button"
-                onClick={() => {
+            <button
+              type="button"
+              onClick={() => {
+                if (acceptedFriends.length > 0) {
+                  setInviteMode("friend");
                   setSelectedFriendId(acceptedFriends[0]?.id ?? null);
-                  setInviteOpen(true);
-                }}
-                className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl border border-[#a3b693]/50 bg-card py-3.5 text-sm font-semibold text-[#4a6b3c] transition-colors hover:bg-muted/50"
-              >
-                <UserPlus className="h-4 w-4" />
-                Invite a friend
-              </button>
-            ) : null}
+                } else {
+                  setInviteMode("email");
+                  setSelectedFriendId(null);
+                }
+                setInviteOpen(true);
+              }}
+              className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl border border-[#a3b693]/50 bg-card py-3.5 text-sm font-semibold text-[#4a6b3c] transition-colors hover:bg-muted/50"
+            >
+              <UserPlus className="h-4 w-4" />
+              Invite a friend
+            </button>
 
             {waitlistEntry ? (
               <>
@@ -782,70 +835,170 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
                 Invite to this class
               </SheetTitle>
               <SheetDescription className="text-sm text-muted-foreground">
-                Choose a friend. They&apos;ll get an in-app notification and email.
+                {inviteMode === "friend"
+                  ? "Pick a friend in the app — they'll get an in-app notification and email."
+                  : "Send the invite to an email address — works for anyone, even if they're not on One Flow yet."}
               </SheetDescription>
             </SheetHeader>
 
-            <div className="mt-4 space-y-2">
-              {acceptedFriends.map((f) => (
-                <button
-                  key={f.id}
-                  type="button"
-                  onClick={() => setSelectedFriendId(f.id)}
-                  className={cn(
-                    "flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-colors",
-                    selectedFriendId === f.id
-                      ? "border-primary bg-primary/5"
-                      : "border-border bg-card",
-                  )}
-                >
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary-soft text-sm font-semibold">
-                    {f.avatar_url?.trim() ? (
-                      <img src={f.avatar_url} alt="" className="h-full w-full object-cover" />
-                    ) : (
-                      friendInitials(f)
-                    )}
-                  </div>
-                  <p className="min-w-0 flex-1 truncate text-sm font-semibold">{friendLabel(f)}</p>
-                </button>
-              ))}
+            <div className="mt-4 inline-flex w-full rounded-full border border-border bg-card p-1">
+              <button
+                type="button"
+                onClick={() => setInviteMode("friend")}
+                disabled={acceptedFriends.length === 0}
+                className={cn(
+                  "flex-1 rounded-full px-3 py-1.5 text-xs font-medium capitalize transition-colors",
+                  inviteMode === "friend"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground",
+                  acceptedFriends.length === 0 && "opacity-40",
+                )}
+              >
+                Friend in app
+              </button>
+              <button
+                type="button"
+                onClick={() => setInviteMode("email")}
+                className={cn(
+                  "flex-1 rounded-full px-3 py-1.5 text-xs font-medium capitalize transition-colors",
+                  inviteMode === "email"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground",
+                )}
+              >
+                Email
+              </button>
             </div>
 
-            <button
-              type="button"
-              disabled={!selectedFriendId || inviteBusy}
-              onClick={() => void runInviteOnly()}
-              className="mt-6 w-full rounded-xl border border-border bg-card py-3.5 text-sm font-semibold transition-opacity disabled:opacity-50"
-            >
-              {inviteBusy ? (
-                <span className="inline-flex items-center justify-center gap-2">
-                  <Loader2 className="h-4 w-4 animate-spin" /> Working…
-                </span>
-              ) : (
-                "Invite only (they pay)"
-              )}
-            </button>
-
-            <button
-              type="button"
-              disabled={!selectedFriendId || inviteBusy}
-              onClick={() => void runPayForFriend()}
-              className="mt-2 w-full rounded-xl bg-primary py-3.5 text-sm font-semibold text-primary-foreground transition-opacity disabled:opacity-50"
-            >
-              {inviteBusy ? (
-                payCheckoutSlow ? (
-                  <span className="inline-flex items-center justify-center gap-2">
-                    <Loader2 className="h-4 w-4 animate-spin" /> Still opening Yoco…
-                  </span>
+            {inviteMode === "friend" ? (
+              <>
+                {acceptedFriends.length === 0 ? (
+                  <div className="mt-4 rounded-2xl border border-dashed border-border bg-card/50 p-4 text-center text-sm text-muted-foreground">
+                    You don&apos;t have friends in the app yet. Use the Email tab to invite anyone.
+                  </div>
                 ) : (
-                  <span className="inline-flex items-center justify-center gap-2">
-                    <Loader2 className="h-4 w-4 animate-spin" /> Payment…
-                  </span>
-                )
-              ) : (
-                "Pay for them (Yoco)"
-              )}
-            </button>
+                  <div className="mt-4 space-y-2">
+                    {acceptedFriends.map((f) => (
+                      <button
+                        key={f.id}
+                        type="button"
+                        onClick={() => setSelectedFriendId(f.id)}
+                        className={cn(
+                          "flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-colors",
+                          selectedFriendId === f.id
+                            ? "border-primary bg-primary/5"
+                            : "border-border bg-card",
+                        )}
+                      >
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary-soft text-sm font-semibold">
+                          {f.avatar_url?.trim() ? (
+                            <img src={f.avatar_url} alt="" className="h-full w-full object-cover" />
+                          ) : (
+                            friendInitials(f)
+                          )}
+                        </div>
+                        <p className="min-w-0 flex-1 truncate text-sm font-semibold">
+                          {friendLabel(f)}
+                        </p>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  disabled={!selectedFriendId || inviteBusy}
+                  onClick={() => void runInviteOnly()}
+                  className="mt-6 w-full rounded-xl border border-border bg-card py-3.5 text-sm font-semibold transition-opacity disabled:opacity-50"
+                >
+                  {inviteBusy ? (
+                    <span className="inline-flex items-center justify-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin" /> Working…
+                    </span>
+                  ) : (
+                    "Invite only (they pay)"
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  disabled={!selectedFriendId || inviteBusy}
+                  onClick={() => void runPayForFriend()}
+                  className="mt-2 w-full rounded-xl bg-primary py-3.5 text-sm font-semibold text-primary-foreground transition-opacity disabled:opacity-50"
+                >
+                  {inviteBusy ? (
+                    payCheckoutSlow ? (
+                      <span className="inline-flex items-center justify-center gap-2">
+                        <Loader2 className="h-4 w-4 animate-spin" /> Still opening Yoco…
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center justify-center gap-2">
+                        <Loader2 className="h-4 w-4 animate-spin" /> Payment…
+                      </span>
+                    )
+                  ) : (
+                    "Pay for them (Yoco)"
+                  )}
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="mt-4 space-y-3">
+                  <div>
+                    <label
+                      htmlFor="invite-email-name"
+                      className="mb-1 block text-xs font-medium text-muted-foreground"
+                    >
+                      Their name (optional)
+                    </label>
+                    <input
+                      id="invite-email-name"
+                      type="text"
+                      value={inviteEmailName}
+                      onChange={(e) => setInviteEmailName(e.target.value)}
+                      placeholder="e.g. Sarah"
+                      className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm outline-none focus:border-primary"
+                    />
+                  </div>
+                  <div>
+                    <label
+                      htmlFor="invite-email"
+                      className="mb-1 block text-xs font-medium text-muted-foreground"
+                    >
+                      Email address
+                    </label>
+                    <input
+                      id="invite-email"
+                      type="email"
+                      autoComplete="off"
+                      value={inviteEmail}
+                      onChange={(e) => setInviteEmail(e.target.value)}
+                      placeholder="sarah@example.com"
+                      className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm outline-none focus:border-primary"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  disabled={inviteBusy || !inviteEmail.trim()}
+                  onClick={() => void runInviteByEmail()}
+                  className="mt-6 w-full rounded-xl bg-primary py-3.5 text-sm font-semibold text-primary-foreground transition-opacity disabled:opacity-50"
+                >
+                  {inviteBusy ? (
+                    <span className="inline-flex items-center justify-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin" /> Sending…
+                    </span>
+                  ) : (
+                    "Send invite by email"
+                  )}
+                </button>
+
+                <p className="mt-3 text-center text-[11px] leading-snug text-muted-foreground">
+                  Pay-for-them only works for friends already in the app. They&apos;ll need to sign up to book.
+                </p>
+              </>
+            )}
 
             <button
               type="button"

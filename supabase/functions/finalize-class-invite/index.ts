@@ -49,7 +49,7 @@ serve(async (req) => {
     const { data: inv, error: invErr } = await admin
       .from("class_invites")
       .select(
-        "id, inviter_id, invitee_id, class_id, paid_by_inviter, status",
+        "id, inviter_id, invitee_id, invitee_email, invitee_name, class_id, paid_by_inviter, status",
       )
       .eq("id", classInviteId)
       .maybeSingle();
@@ -71,7 +71,9 @@ serve(async (req) => {
     const row = inv as {
       id: string;
       inviter_id: string;
-      invitee_id: string;
+      invitee_id: string | null;
+      invitee_email: string | null;
+      invitee_name: string | null;
       class_id: string;
       paid_by_inviter: boolean | null;
       status: string | null;
@@ -115,7 +117,9 @@ serve(async (req) => {
       }
     }
 
-    const [{ data: inviter }, { data: cls }, { data: prior }] = await Promise.all([
+    // Lookups: inviter + class always; recipient profile + prior-notif only
+    // for in-app (invitee_id) invites.
+    const lookupPromises: Promise<unknown>[] = [
       admin
         .from("profiles")
         .select("first_name, last_name, email")
@@ -126,14 +130,24 @@ serve(async (req) => {
         .select("name, starts_at")
         .eq("id", row.class_id)
         .maybeSingle(),
-      admin
-        .from("notifications")
-        .select("id")
-        .eq("profile_id", row.invitee_id)
-        .eq("type", "class_invite")
-        .eq("metadata->>class_invite_id", classInviteId)
-        .maybeSingle(),
-    ]);
+    ];
+    if (row.invitee_id) {
+      lookupPromises.push(
+        admin
+          .from("notifications")
+          .select("id")
+          .eq("profile_id", row.invitee_id)
+          .eq("type", "class_invite")
+          .eq("metadata->>class_invite_id", classInviteId)
+          .maybeSingle(),
+      );
+    }
+    const lookupResults = await Promise.all(lookupPromises);
+    const { data: inviter } = lookupResults[0] as { data: unknown };
+    const { data: cls } = lookupResults[1] as { data: unknown };
+    const prior = row.invitee_id
+      ? ((lookupResults[2] as { data: { id?: string } | null }).data ?? null)
+      : null;
 
     if (prior?.id) {
       return new Response(JSON.stringify({ success: true, skipped: "already_notified" }), {
@@ -163,37 +177,46 @@ serve(async (req) => {
       }).toUpperCase()}`
       : "";
 
-    const { data: inviteeProf } = await admin
-      .from("profiles")
-      .select("email, unread_notification_count")
-      .eq("id", row.invitee_id)
-      .maybeSingle();
-    const toEmail = (inviteeProf as { email?: string | null } | null)?.email?.trim() ?? "";
+    // Resolve recipient email + (if in-app) push an in-app notification.
+    let toEmail = "";
+    if (row.invitee_id) {
+      const { data: inviteeProf } = await admin
+        .from("profiles")
+        .select("email, unread_notification_count")
+        .eq("id", row.invitee_id)
+        .maybeSingle();
+      toEmail = (inviteeProf as { email?: string | null } | null)?.email?.trim() ?? "";
 
-    const openUrl = "https://oneflow1.netlify.app/schedule";
+      const notifyMeta = {
+        class_invite_id: classInviteId,
+        class_id: row.class_id,
+        inviter_id: row.inviter_id,
+      };
+      const title = "You've been invited to a class";
+      const bodyText = `${inviterName.split(/\s+/)[0] || inviterName} invited you to ${className}.`;
 
-    const notifyMeta = {
-      class_invite_id: classInviteId,
-      class_id: row.class_id,
-      inviter_id: row.inviter_id,
-    };
+      await admin.from("notifications").insert({
+        profile_id: row.invitee_id,
+        type: "class_invite",
+        title,
+        body: bodyText,
+        metadata: notifyMeta,
+      });
 
-    const title = "You've been invited to a class";
-    const bodyText = `${inviterName.split(/\s+/)[0] || inviterName} invited you to ${className}.`;
+      const unread = Number(
+        (inviteeProf as { unread_notification_count?: number } | null)?.unread_notification_count ?? 0,
+      );
+      await admin
+        .from("profiles")
+        .update({ unread_notification_count: unread + 1 })
+        .eq("id", row.invitee_id);
+    } else {
+      // Email-only invite (recipient not in app yet).
+      toEmail = (row.invitee_email ?? "").trim();
+    }
 
-    await admin.from("notifications").insert({
-      profile_id: row.invitee_id,
-      type: "class_invite",
-      title,
-      body: bodyText,
-      metadata: notifyMeta,
-    });
-
-    const unread = Number((inviteeProf as { unread_notification_count?: number } | null)?.unread_notification_count ?? 0);
-    await admin
-      .from("profiles")
-      .update({ unread_notification_count: unread + 1 })
-      .eq("id", row.invitee_id);
+    // Deep-link to the specific class so they land on the right card after login.
+    const openUrl = `https://oneflow1.netlify.app/schedule?class=${encodeURIComponent(row.class_id)}`;
 
     if (toEmail) {
       const emailRes = await fetch(`${SUPABASE_URL}/functions/v1/send-email`, {
