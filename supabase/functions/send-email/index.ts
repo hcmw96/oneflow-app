@@ -12,7 +12,8 @@ type TemplateName =
   | "marketing"
   | "leave_request"
   | "leave_request_response"
-  | "user_invite";
+  | "user_invite"
+  | "waitlist_promoted";
 
 type RequestPayload = {
   to: string;
@@ -300,6 +301,29 @@ function buildTemplate(template: TemplateName, data: Record<string, unknown> = {
     matAddon ? addonPill("🟢 Mat rental booked") : "",
     towelAddon ? addonPill("🟢 Towel rental booked") : "",
   ].join("");
+
+  if (template === "waitlist_promoted") {
+    return {
+      subject: `A spot opened up — you're booked for ${className}`,
+      content: `
+        <h2 style="font-size:22px;font-weight:600;color:#a3b693;margin:0 0 16px;">You're off the waitlist</h2>
+        <p style="font-size:15px;line-height:1.6;color:#444;margin:0 0 12px;">Good news — a spot opened up on <strong>${esc(className)}</strong> and we've booked you in from the waitlist.</p>
+        <div style="background:#f5f5f0;border-radius:8px;padding:16px 20px;margin:16px 0;">
+          ${detailRow("Class", className)}
+          ${detailRow("Date", date)}
+          ${detailRow("Time", time)}
+          ${detailRow("Guide", guideName)}
+          ${detailRow("Location", location)}
+        </div>
+        <p style="font-size:15px;line-height:1.6;color:#444;margin:0 0 12px;">Your QR check-in code is ready in the app under <strong>My bookings</strong>. What to bring: yoga mat (if not renting), water bottle, comfortable clothing.</p>
+        ${addons ? `<div style="margin:8px 0 0;">${addons}</div>` : ""}
+        ${ctaButton("https://oneflow1.netlify.app/bookings", "View booking")}
+        <p style="font-size:13px;line-height:1.6;color:#888;margin:16px 0 0;">Can't make it any more? Cancel from the app — standard 2-hour cancellation policy still applies.</p>
+        <p style="font-size:14px;color:#888;margin:24px 0 0;">See you on the mat — One Flow Team</p>
+      `,
+    };
+  }
+
   return {
     subject: `Booking Confirmed — ${className}`,
     content: `

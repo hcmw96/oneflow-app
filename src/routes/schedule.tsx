@@ -32,6 +32,7 @@ import {
 import { cn } from "@/lib/utils";
 import { TypeBadge } from "@/components/TypeBadge";
 import { displayClassType } from "@/types/studio";
+import { fetchMyActiveWaitlistEntries } from "@/lib/waitlist";
 
 function uuidOrUndefined(v: unknown): string | undefined {
   if (typeof v !== "string") return undefined;
@@ -167,6 +168,7 @@ export default function SchedulePage() {
   /** Confirmed booking `class_id`s for this user (any day — not filtered by booking `created_at`). */
   const [bookedClassIds, setBookedClassIds] = useState<Set<string>>(() => new Set());
   const [bookedIntervals, setBookedIntervals] = useState<BookedClassInterval[]>([]);
+  const [waitlistedClassIds, setWaitlistedClassIds] = useState<Set<string>>(() => new Set());
   const [pendingOpenClassId, setPendingOpenClassId] = useState<string | null>(null);
   const [daySlide, setDaySlide] = useState<"from-left" | "from-right" | null>(null);
   const classesCacheRef = useRef(new Map<string, ClassRow[]>());
@@ -205,7 +207,7 @@ export default function SchedulePage() {
     const now = new Date();
     const nowT = now.getTime();
 
-    const [{ data, error }, nextIntervals] = await Promise.all([
+    const [{ data, error }, nextIntervals, waitlistEntries] = await Promise.all([
       supabase
         .from("classes")
         .select(
@@ -216,6 +218,10 @@ export default function SchedulePage() {
         .eq("is_cancelled", false)
         .order("starts_at"),
       fetchConfirmedBookingIntervals(supabase, uid, nowT),
+      fetchMyActiveWaitlistEntries(uid).catch((err) => {
+        console.error("[schedule] waitlist load failed", err);
+        return [];
+      }),
     ]);
 
     if (error) {
@@ -238,6 +244,7 @@ export default function SchedulePage() {
     setClasses(visible);
     setBookedClassIds(new Set(nextIntervals.map((b) => b.class_id)));
     setBookedIntervals(nextIntervals);
+    setWaitlistedClassIds(new Set(waitlistEntries.map((w) => w.classId)));
     setLoading(false);
     setRevalidating(false);
   },
@@ -454,6 +461,7 @@ export default function SchedulePage() {
                   displayTimeZone={timeZone}
                   studioTimeZone={studioTimeZone}
                   alreadyBooked={bookedClassIds.has(c.id)}
+                  onWaitlist={waitlistedClassIds.has(c.id)}
                   overlapBooking={overlapBooking}
                   isPast={classIsPast}
                   onReserve={() => {
@@ -501,6 +509,7 @@ function ScheduleRow({
   displayTimeZone,
   studioTimeZone,
   alreadyBooked,
+  onWaitlist,
   overlapBooking,
   isPast,
   onReserve,
@@ -509,6 +518,7 @@ function ScheduleRow({
   displayTimeZone: string;
   studioTimeZone: string;
   alreadyBooked: boolean;
+  onWaitlist: boolean;
   overlapBooking: BookedClassInterval | null;
   isPast?: boolean;
   onReserve: () => void;
@@ -531,6 +541,9 @@ function ScheduleRow({
   const almostFull = session.booked_count / session.capacity >= 0.8;
   const hasOverlap = Boolean(overlapBooking);
   const canReserve = !isPast && !alreadyBooked && !full && !hasOverlap;
+  // When full + not booked + no overlap, the button opens the sheet to
+  // join the waitlist (or manage an existing entry).
+  const canWaitlist = !isPast && !alreadyBooked && full && !hasOverlap;
   const isFreeClass = isFreeBeginnerClass(session.class_type);
 
   return (
@@ -621,14 +634,18 @@ function ScheduleRow({
       <button
         type="button"
         onClick={onReserve}
-        disabled={!canReserve}
+        disabled={!canReserve && !canWaitlist}
         className={cn(
           "mt-4 w-full rounded-xl py-3 text-sm font-semibold transition-opacity",
-          isPast || alreadyBooked || full || hasOverlap
+          isPast || alreadyBooked || hasOverlap
             ? "cursor-not-allowed bg-muted text-muted-foreground"
-            : isFreeClass
-              ? "bg-[#a3b693] text-white active:opacity-90"
-              : "bg-primary text-primary-foreground active:opacity-90",
+            : canWaitlist
+              ? onWaitlist
+                ? "border border-[#a3b693]/60 bg-[#e8efe3] text-[#3d4f36] active:opacity-90"
+                : "border border-[#a3b693]/60 bg-card text-[#3d4f36] active:opacity-90"
+              : isFreeClass
+                ? "bg-[#a3b693] text-white active:opacity-90"
+                : "bg-primary text-primary-foreground active:opacity-90",
         )}
       >
         {isPast
@@ -638,7 +655,9 @@ function ScheduleRow({
             : hasOverlap
               ? "Time conflict"
               : full
-                ? "Full"
+                ? onWaitlist
+                  ? "On waitlist"
+                  : "Join Waitlist"
                 : isFreeClass
                   ? "Book Free"
                   : "Reserve"}

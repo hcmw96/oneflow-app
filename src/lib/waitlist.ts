@@ -1,8 +1,5 @@
 import { supabase } from "@/lib/supabase";
-import {
-  bookingConfirmationEmailData,
-  bookingConfirmationTemplateForClassType,
-} from "@/lib/bookingConfirmationEmail";
+import { bookingConfirmationEmailData } from "@/lib/bookingConfirmationEmail";
 
 export type WaitlistPaymentMethod = "free" | "credit" | "flow_points";
 
@@ -171,6 +168,69 @@ export async function fetchMyWaitlistEntryForClass(
   };
 }
 
+export type WaitlistRosterRow = {
+  id: string;
+  profileId: string;
+  position: number;
+  joinedAt: string;
+  paymentMethod: WaitlistPaymentMethod | null;
+  creditProductName: string | null;
+  flowPointsPledged: number | null;
+  firstName: string | null;
+  lastName: string | null;
+  avatarUrl: string | null;
+};
+
+/** Staff view: full waiting queue for a class, oldest first, with member + payment intent. */
+export async function fetchClassWaitlistRoster(classId: string): Promise<WaitlistRosterRow[]> {
+  const { data, error } = await supabase
+    .from("waitlist_entries")
+    .select(
+      `id, profile_id, joined_at, payment_method, credit_id, flow_points_pledged,
+       profiles ( first_name, last_name, avatar_url ),
+       user_credits:credit_id ( product_name )`,
+    )
+    .eq("class_id", classId)
+    .eq("status", "waiting")
+    .order("joined_at", { ascending: true });
+
+  if (error) throw new Error(error.message);
+
+  const rows = (data ?? []) as Array<{
+    id: string;
+    profile_id: string;
+    joined_at: string;
+    payment_method: string | null;
+    credit_id: string | null;
+    flow_points_pledged: number | null;
+    profiles:
+      | { first_name: string | null; last_name: string | null; avatar_url: string | null }
+      | { first_name: string | null; last_name: string | null; avatar_url: string | null }[]
+      | null;
+    user_credits:
+      | { product_name: string | null }
+      | { product_name: string | null }[]
+      | null;
+  }>;
+
+  return rows.map((raw, idx) => {
+    const prof = pickOne(raw.profiles);
+    const credit = pickOne(raw.user_credits);
+    return {
+      id: raw.id,
+      profileId: raw.profile_id,
+      position: idx + 1,
+      joinedAt: raw.joined_at,
+      paymentMethod: raw.payment_method as WaitlistPaymentMethod | null,
+      creditProductName: credit?.product_name ?? null,
+      flowPointsPledged: raw.flow_points_pledged,
+      firstName: prof?.first_name ?? null,
+      lastName: prof?.last_name ?? null,
+      avatarUrl: prof?.avatar_url ?? null,
+    };
+  });
+}
+
 /** 1-based position in the waiting queue for this class. Returns 0 if not waiting. */
 async function fetchWaitlistPosition(args: {
   entryId: string;
@@ -251,10 +311,7 @@ export async function sendWaitlistPromotionEmail(promotedBookingId: string): Pro
   await supabase.functions.invoke("send-email", {
     body: {
       to: toEmail,
-      // Reuse the booking confirmation template; payload shape matches.
-      // Switch to a dedicated `waitlist_promoted` SendGrid template later for
-      // clearer copy ("good news — a spot opened up").
-      template: bookingConfirmationTemplateForClassType(cls.class_type),
+      template: "waitlist_promoted",
       data: bookingConfirmationEmailData({
         className: cls.name,
         startsAtIso: cls.starts_at,
