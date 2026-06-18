@@ -10,11 +10,12 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { CalendarCheck, CreditCard, TrendingUp, UserPlus, Users } from "lucide-react";
+import { CreditCard, UserPlus, Users } from "lucide-react";
 import { PageHeader } from "@/components/admin/PageHeader";
 import { StatCard } from "@/components/admin/StatCard";
 import { PeriodToggle } from "@/components/admin/reports/PeriodToggle";
 import { RevenueSection } from "@/components/admin/reports/RevenueSection";
+import { AttendanceSection } from "@/components/admin/reports/AttendanceSection";
 import { supabase } from "@/lib/supabase";
 import {
   jhbPeriodBounds,
@@ -36,69 +37,8 @@ const SAGE_DARK = "#7d9268";
 const SAGE_LIGHT = "#c5d4b8";
 const SAGE_BORDER = "border-[#c5d4b8]/80";
 
-const WEEKDAY_MON0 = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type BookingsCountQuery = any;
-
-async function sumCountForClassIds(
-  classIds: string[],
-  apply: (q: BookingsCountQuery) => BookingsCountQuery,
-) {
-  if (classIds.length === 0) return 0;
-  const chunk = 180;
-  let total = 0;
-  for (let i = 0; i < classIds.length; i += chunk) {
-    const slice = classIds.slice(i, i + chunk);
-    const base = supabase
-      .from("bookings")
-      .select("id", { count: "exact", head: true })
-      .in("class_id", slice);
-    const { count, error } = await apply(base);
-    if (error) {
-      console.error("reports bookings chunk", error);
-      continue;
-    }
-    total += count ?? 0;
-  }
-  return total;
-}
-
-async function aggregateWeekdayCheckIns(classIds: string[]) {
-  const counts = new Map<number, number>();
-  const chunk = 150;
-  for (let i = 0; i < classIds.length; i += chunk) {
-    const slice = classIds.slice(i, i + chunk);
-    const { data, error } = await supabase
-      .from("bookings")
-      .select("classes ( starts_at )")
-      .eq("status", "attended")
-      .in("class_id", slice);
-    if (error) {
-      console.error("reports weekday chunk", error);
-      continue;
-    }
-    for (const row of (data ?? []) as {
-      classes: { starts_at: string } | { starts_at: string }[] | null;
-    }[]) {
-      const c = row.classes;
-      const cls = Array.isArray(c) ? c[0] : c;
-      const st = cls?.starts_at;
-      if (!st) continue;
-      const d = new Date(st);
-      const mon0 = (d.getDay() + 6) % 7;
-      counts.set(mon0, (counts.get(mon0) ?? 0) + 1);
-    }
-  }
-  return counts;
-}
-
 type LegacyState = {
   loading: boolean;
-  checkIns: number;
-  topClasses: { name: string; booked: number; capacity: number }[];
-  occupancyPct: number | null;
-  busiestDay: string | null;
   newSignups: number | null;
   activeMembers: number | null;
   lapsedMembers: number | null;
@@ -109,10 +49,6 @@ type LegacyState = {
 
 const EMPTY_LEGACY: LegacyState = {
   loading: true,
-  checkIns: 0,
-  topClasses: [],
-  occupancyPct: null,
-  busiestDay: null,
   newSignups: null,
   activeMembers: null,
   lapsedMembers: null,
@@ -142,20 +78,13 @@ function ReportsPage() {
     in30.setDate(in30.getDate() + 30);
 
     const [
-      classesRes,
       signupsRes,
       membersRes,
       creditsSnapshotRes,
       expiringRes,
       creditsSoldRes,
+      attendedCreditCountRes,
     ] = await Promise.all([
-      supabase
-        .from("classes")
-        .select("id, name, booked_count, capacity, starts_at")
-        .gte("starts_at", startUtcIso)
-        .lte("starts_at", endUtcIso)
-        .eq("is_cancelled", false)
-        .order("booked_count", { ascending: false }),
       supabase
         .from("profiles")
         .select("id", { count: "exact", head: true })
@@ -177,67 +106,32 @@ function ReportsPage() {
         .gte("expires_at", now.toISOString())
         .lte("expires_at", in30.toISOString())
         .is("refunded_at", null),
-      // For Credits sold vs used chart we still need credits_total per period.
+      // Credits sold (units) per period.
       supabase
         .from("user_credits")
-        .select("credits_total, purchased_at, refunded_at")
+        .select("credits_total")
         .gte("purchased_at", startUtcIso)
         .lte("purchased_at", endUtcIso)
         .is("refunded_at", null),
+      // Credits used proxy: attended bookings paid with a class credit whose
+      // class falls in the period. We use a join on classes for the period
+      // filter so it stays a single round trip.
+      supabase
+        .from("bookings")
+        .select("id, classes!inner(starts_at)", { count: "exact", head: true })
+        .eq("status", "attended")
+        .eq("payment_method", "credit")
+        .gte("classes.starts_at", startUtcIso)
+        .lte("classes.starts_at", endUtcIso),
     ]);
 
-    if (classesRes.error) console.error("reports classes", classesRes.error);
     if (signupsRes.error) console.warn("reports new signups", signupsRes.error);
     if (membersRes.error) console.error("reports members", membersRes.error);
     if (creditsSnapshotRes.error) console.error("reports credits snapshot", creditsSnapshotRes.error);
     if (expiringRes.error) console.error("reports expiring", expiringRes.error);
     if (creditsSoldRes.error) console.error("reports credits sold", creditsSoldRes.error);
-
-    const classes = (classesRes.data ?? []) as {
-      id: string;
-      name: string;
-      booked_count: number;
-      capacity: number;
-      starts_at: string;
-    }[];
-    const classIds = classes.map((c) => c.id);
-
-    const [checkIns, creditsUsedProxy, weekdayCounts] = await Promise.all([
-      sumCountForClassIds(classIds, (q) => q.eq("status", "attended")),
-      sumCountForClassIds(classIds, (q) =>
-        q.eq("status", "attended").eq("payment_method", "credit"),
-      ),
-      classIds.length
-        ? aggregateWeekdayCheckIns(classIds)
-        : Promise.resolve(new Map<number, number>()),
-    ]);
-
-    let busiestDay: string | null = null;
-    let best = -1;
-    let bestD = -1;
-    for (const [dow, c] of weekdayCounts) {
-      if (c > best) {
-        best = c;
-        bestD = dow;
-      }
-    }
-    busiestDay = bestD >= 0 && best > 0 ? WEEKDAY_MON0[bestD] : null;
-
-    const topClasses = classes.slice(0, 5).map((c) => ({
-      name: c.name,
-      booked: c.booked_count ?? 0,
-      capacity: c.capacity ?? 0,
-    }));
-
-    let occupancyPct: number | null = null;
-    const occRows = classes.filter((c) => (c.capacity ?? 0) > 0);
-    if (occRows.length) {
-      const sum = occRows.reduce(
-        (acc, c) => acc + ((c.booked_count ?? 0) / (c.capacity || 1)) * 100,
-        0,
-      );
-      occupancyPct = Math.round(sum / occRows.length);
-    }
+    if (attendedCreditCountRes.error)
+      console.error("reports credits used proxy", attendedCreditCountRes.error);
 
     const newSignups = signupsRes.error ? null : (signupsRes.count ?? 0);
 
@@ -267,15 +161,11 @@ function ReportsPage() {
 
     setState({
       loading: false,
-      checkIns,
-      topClasses,
-      occupancyPct,
-      busiestDay,
       newSignups,
       activeMembers,
       lapsedMembers,
       creditsSoldUnits,
-      creditsUsedProxy,
+      creditsUsedProxy: attendedCreditCountRes.count ?? 0,
       creditsExpiring30d,
     });
   }, [bounds]);
@@ -313,59 +203,8 @@ function ReportsPage() {
         {/* Section 1: Revenue & Sales (rebuilt — runs its own queries) */}
         <RevenueSection bounds={bounds} />
 
-        {/* Section 2: Attendance (legacy until rebuild approval) */}
-        <section>
-          <h3
-            className="mb-3 font-display text-sm font-bold uppercase tracking-wide"
-            style={{ color: SAGE }}
-          >
-            Attendance
-          </h3>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <StatCard
-              label="Total check-ins"
-              value={state.checkIns.toLocaleString()}
-              icon={<CalendarCheck className="h-4 w-4" />}
-            />
-            <StatCard
-              label="Occupancy rate"
-              value={state.occupancyPct == null ? "—" : `${state.occupancyPct}%`}
-              icon={<TrendingUp className="h-4 w-4" />}
-            />
-            <StatCard
-              label="Busiest day"
-              value={state.busiestDay ?? "—"}
-              icon={<CalendarCheck className="h-4 w-4" />}
-            />
-          </div>
-          <div
-            className={cn("mt-4 rounded-2xl border bg-card p-4", SAGE_BORDER, "bg-[#f4f7f0]/80")}
-          >
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Most popular classes (by booked count)
-            </p>
-            {state.topClasses.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No classes in this period.</p>
-            ) : (
-              <ol className="space-y-2">
-                {state.topClasses.map((c, i) => (
-                  <li
-                    key={`${c.name}-${i}`}
-                    className="flex items-center justify-between gap-3 rounded-xl border border-[#c5d4b8]/60 bg-background/80 px-3 py-2 text-sm"
-                  >
-                    <span className="min-w-0 truncate font-medium">
-                      <span className="mr-2 tabular-nums text-muted-foreground">{i + 1}.</span>
-                      {c.name}
-                    </span>
-                    <span className="shrink-0 tabular-nums text-xs text-muted-foreground">
-                      {c.booked} / {c.capacity}
-                    </span>
-                  </li>
-                ))}
-              </ol>
-            )}
-          </div>
-        </section>
+        {/* Section 2: Attendance & Occupancy (rebuilt — runs its own queries) */}
+        <AttendanceSection bounds={bounds} />
 
         {/* Section 3: Members (legacy until rebuild approval) */}
         <section>
