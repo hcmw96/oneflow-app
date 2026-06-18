@@ -17,6 +17,7 @@ import { PeriodToggle } from "@/components/admin/reports/PeriodToggle";
 import { RevenueSection } from "@/components/admin/reports/RevenueSection";
 import { AttendanceSection } from "@/components/admin/reports/AttendanceSection";
 import { MembersSection } from "@/components/admin/reports/MembersSection";
+import { GuidesSection } from "@/components/admin/reports/GuidesSection";
 import { supabase } from "@/lib/supabase";
 import {
   jhbPeriodBounds,
@@ -157,6 +158,9 @@ function ReportsPage() {
 
         {/* Section 3: Members & Retention (rebuilt — runs its own queries) */}
         <MembersSection bounds={bounds} />
+
+        {/* Section 4: Guides / Instructors (rebuilt — runs its own queries) */}
+        <GuidesSection bounds={bounds} />
 
         {/* Credits (legacy until rebuild approval) */}
         <section>
