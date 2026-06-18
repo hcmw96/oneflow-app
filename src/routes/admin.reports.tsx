@@ -14,8 +14,14 @@ import { Banknote, CalendarCheck, CreditCard, TrendingUp, UserPlus, Users } from
 import { PageHeader } from "@/components/admin/PageHeader";
 import { StatCard } from "@/components/admin/StatCard";
 import { supabase } from "@/lib/supabase";
-import { addDays, startOfDay, startOfWeek } from "@/lib/format";
 import { PRODUCT_DISPLAY_GROUPS, revenueChartLabelForCategories } from "@/lib/productCategories";
+import {
+  civilAddDaysYmd,
+  dayBoundsForDateKey,
+  STUDIO_TIMEZONE,
+  weekSundayDateKey,
+  ymdInTimeZone,
+} from "@/lib/timezone";
 import { cn } from "@/lib/utils";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
@@ -42,40 +48,49 @@ function formatPriceZar(zar: number) {
   return `R${n.toLocaleString("en-ZA", { maximumFractionDigits: 0, minimumFractionDigits: 0 })}`;
 }
 
-function startOfMonth(d: Date) {
-  const x = startOfDay(d);
-  x.setDate(1);
-  return x;
-}
-
-function endOfMonth(d: Date) {
-  return new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999);
-}
-
-function periodBounds(mode: PeriodMode, anchor = new Date()) {
+function periodBounds(mode: PeriodMode, anchor: Date = new Date()) {
+  const tz = STUDIO_TIMEZONE;
   if (mode === "daily") {
-    const start = startOfDay(anchor);
-    const end = new Date(start);
-    end.setHours(23, 59, 59, 999);
-    return { start, end };
+    const key = ymdInTimeZone(anchor, tz);
+    const { startUtcIso, endUtcIso } = dayBoundsForDateKey(key, tz);
+    return { start: new Date(startUtcIso), end: new Date(endUtcIso) };
   }
   if (mode === "weekly") {
-    const start = startOfWeek(anchor);
-    const end = new Date(start);
-    end.setDate(end.getDate() + 6);
-    end.setHours(23, 59, 59, 999);
-    return { start, end };
+    const anchorKey = ymdInTimeZone(anchor, tz);
+    const sunKey = weekSundayDateKey(anchorKey, tz);
+    const satKey = civilAddDaysYmd(sunKey, 6);
+    const startIso = dayBoundsForDateKey(sunKey, tz).startUtcIso;
+    const endIso = dayBoundsForDateKey(satKey, tz).endUtcIso;
+    return { start: new Date(startIso), end: new Date(endIso) };
   }
-  return { start: startOfMonth(anchor), end: endOfMonth(anchor) };
+  // monthly: first → last calendar day of anchor's month in studio TZ
+  const anchorKey = ymdInTimeZone(anchor, tz);
+  const [y, m] = anchorKey.split("-").map(Number);
+  const firstKey = `${y}-${String(m).padStart(2, "0")}-01`;
+  const nextMonth = m === 12 ? 1 : m + 1;
+  const nextYear = m === 12 ? y + 1 : y;
+  const firstNextKey = `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`;
+  const lastKey = civilAddDaysYmd(firstNextKey, -1);
+  const startIso = dayBoundsForDateKey(firstKey, tz).startUtcIso;
+  const endIso = dayBoundsForDateKey(lastKey, tz).endUtcIso;
+  return { start: new Date(startIso), end: new Date(endIso) };
 }
 
 function periodLabel(mode: PeriodMode, start: Date, end: Date) {
-  const opts: Intl.DateTimeFormatOptions = { day: "numeric", month: "short", year: "numeric" };
-  if (mode === "daily") return start.toLocaleDateString("en-ZA", { weekday: "long", ...opts });
-  if (mode === "weekly") {
-    return `${start.toLocaleDateString("en-ZA", { day: "numeric", month: "short" })} – ${end.toLocaleDateString("en-ZA", opts)}`;
+  const tz = STUDIO_TIMEZONE;
+  const opts: Intl.DateTimeFormatOptions = {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: tz,
+  };
+  if (mode === "daily") {
+    return start.toLocaleDateString("en-ZA", { weekday: "long", ...opts });
   }
-  return start.toLocaleDateString("en-ZA", { month: "long", year: "numeric" });
+  if (mode === "weekly") {
+    return `${start.toLocaleDateString("en-ZA", { day: "numeric", month: "short", timeZone: tz })} – ${end.toLocaleDateString("en-ZA", opts)}`;
+  }
+  return start.toLocaleDateString("en-ZA", { month: "long", year: "numeric", timeZone: tz });
 }
 
 type ProductJoin = { price_zar?: number | null; category?: string | null } | null;
@@ -217,8 +232,8 @@ function ReportsPage() {
           .select(
             "id, created_at, purchased_at, credits_total, category, product_id, products ( price_zar, category )",
           )
-          .gte("created_at", startIso)
-          .lte("created_at", endIso),
+          .gte("purchased_at", startIso)
+          .lte("purchased_at", endIso),
         supabase
           .from("classes")
           .select("id, name, booked_count, capacity, starts_at")

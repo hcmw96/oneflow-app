@@ -189,7 +189,7 @@ function AdminDashboard() {
               icon={<CalendarDays className="h-4 w-4" />}
             />
             <StatCard
-              label="Avg Occupancy %"
+              label="Avg Occupancy"
               value={`${avgOcc}%`}
               icon={<Percent className="h-4 w-4" />}
             />
