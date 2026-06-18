@@ -10,12 +10,13 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { CreditCard, UserPlus, Users } from "lucide-react";
+import { CreditCard } from "lucide-react";
 import { PageHeader } from "@/components/admin/PageHeader";
 import { StatCard } from "@/components/admin/StatCard";
 import { PeriodToggle } from "@/components/admin/reports/PeriodToggle";
 import { RevenueSection } from "@/components/admin/reports/RevenueSection";
 import { AttendanceSection } from "@/components/admin/reports/AttendanceSection";
+import { MembersSection } from "@/components/admin/reports/MembersSection";
 import { supabase } from "@/lib/supabase";
 import {
   jhbPeriodBounds,
@@ -39,9 +40,6 @@ const SAGE_BORDER = "border-[#c5d4b8]/80";
 
 type LegacyState = {
   loading: boolean;
-  newSignups: number | null;
-  activeMembers: number | null;
-  lapsedMembers: number | null;
   creditsSoldUnits: number;
   creditsUsedProxy: number;
   creditsExpiring30d: number;
@@ -49,9 +47,6 @@ type LegacyState = {
 
 const EMPTY_LEGACY: LegacyState = {
   loading: true,
-  newSignups: null,
-  activeMembers: null,
-  lapsedMembers: null,
   creditsSoldUnits: 0,
   creditsUsedProxy: 0,
   creditsExpiring30d: 0,
@@ -77,28 +72,7 @@ function ReportsPage() {
     const in30 = new Date(now);
     in30.setDate(in30.getDate() + 30);
 
-    const [
-      signupsRes,
-      membersRes,
-      creditsSnapshotRes,
-      expiringRes,
-      creditsSoldRes,
-      attendedCreditCountRes,
-    ] = await Promise.all([
-      supabase
-        .from("profiles")
-        .select("id", { count: "exact", head: true })
-        .or("role.eq.customer,secondary_roles.cs.{customer}")
-        .gte("created_at", startUtcIso)
-        .lte("created_at", endUtcIso),
-      supabase
-        .from("profiles")
-        .select("id")
-        .or("role.eq.customer,secondary_roles.cs.{customer}"),
-      supabase
-        .from("user_credits")
-        .select("profile_id, credits_remaining, is_unlimited, expires_at")
-        .is("refunded_at", null),
+    const [expiringRes, creditsSoldRes, attendedCreditCountRes] = await Promise.all([
       supabase
         .from("user_credits")
         .select("credits_remaining")
@@ -106,16 +80,12 @@ function ReportsPage() {
         .gte("expires_at", now.toISOString())
         .lte("expires_at", in30.toISOString())
         .is("refunded_at", null),
-      // Credits sold (units) per period.
       supabase
         .from("user_credits")
         .select("credits_total")
         .gte("purchased_at", startUtcIso)
         .lte("purchased_at", endUtcIso)
         .is("refunded_at", null),
-      // Credits used proxy: attended bookings paid with a class credit whose
-      // class falls in the period. We use a join on classes for the period
-      // filter so it stays a single round trip.
       supabase
         .from("bookings")
         .select("id, classes!inner(starts_at)", { count: "exact", head: true })
@@ -125,28 +95,10 @@ function ReportsPage() {
         .lte("classes.starts_at", endUtcIso),
     ]);
 
-    if (signupsRes.error) console.warn("reports new signups", signupsRes.error);
-    if (membersRes.error) console.error("reports members", membersRes.error);
-    if (creditsSnapshotRes.error) console.error("reports credits snapshot", creditsSnapshotRes.error);
     if (expiringRes.error) console.error("reports expiring", expiringRes.error);
     if (creditsSoldRes.error) console.error("reports credits sold", creditsSoldRes.error);
     if (attendedCreditCountRes.error)
       console.error("reports credits used proxy", attendedCreditCountRes.error);
-
-    const newSignups = signupsRes.error ? null : (signupsRes.count ?? 0);
-
-    const memberIds = new Set((membersRes.data ?? []).map((m: { id: string }) => m.id));
-    const activeIds = new Set<string>();
-    const t = now.getTime();
-    for (const row of creditsSnapshotRes.data ?? []) {
-      const pid = row.profile_id as string;
-      if (!memberIds.has(pid)) continue;
-      const exp = row.expires_at ? new Date(row.expires_at).getTime() : Number.POSITIVE_INFINITY;
-      if (exp < t) continue;
-      if (row.is_unlimited || Number(row.credits_remaining) > 0) activeIds.add(pid);
-    }
-    const activeMembers = memberIds.size ? activeIds.size : null;
-    const lapsedMembers = memberIds.size ? memberIds.size - activeIds.size : null;
 
     let creditsSoldUnits = 0;
     for (const row of creditsSoldRes.data ?? []) {
@@ -161,9 +113,6 @@ function ReportsPage() {
 
     setState({
       loading: false,
-      newSignups,
-      activeMembers,
-      lapsedMembers,
       creditsSoldUnits,
       creditsUsedProxy: attendedCreditCountRes.count ?? 0,
       creditsExpiring30d,
@@ -206,32 +155,8 @@ function ReportsPage() {
         {/* Section 2: Attendance & Occupancy (rebuilt — runs its own queries) */}
         <AttendanceSection bounds={bounds} />
 
-        {/* Section 3: Members (legacy until rebuild approval) */}
-        <section>
-          <h3
-            className="mb-3 font-display text-sm font-bold uppercase tracking-wide"
-            style={{ color: SAGE }}
-          >
-            Members
-          </h3>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <StatCard
-              label="New signups"
-              value={state.newSignups == null ? "—" : state.newSignups.toLocaleString()}
-              icon={<UserPlus className="h-4 w-4" />}
-            />
-            <StatCard
-              label="Active (credits left)"
-              value={state.activeMembers == null ? "—" : state.activeMembers.toLocaleString()}
-              icon={<Users className="h-4 w-4" />}
-            />
-            <StatCard
-              label="Lapsed (0 credits)"
-              value={state.lapsedMembers == null ? "—" : state.lapsedMembers.toLocaleString()}
-              icon={<Users className="h-4 w-4" />}
-            />
-          </div>
-        </section>
+        {/* Section 3: Members & Retention (rebuilt — runs its own queries) */}
+        <MembersSection bounds={bounds} />
 
         {/* Credits (legacy until rebuild approval) */}
         <section>
