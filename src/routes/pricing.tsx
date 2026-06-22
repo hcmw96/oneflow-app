@@ -158,6 +158,9 @@ function PricingPage() {
         .select("*")
         .eq("is_active", true)
         .eq("is_addon", false)
+        .eq("is_staff_only", false)
+        .gt("price_zar", 0)
+        .not("category", "in", "(staff,cafe,complimentary)")
         .order("category", { ascending: true })
         .order("name", { ascending: true });
 
