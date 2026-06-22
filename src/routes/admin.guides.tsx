@@ -463,81 +463,67 @@ function GuidesPage() {
 
     setSaving(true);
 
-    if (!editingId) {
-      const { error } = await supabase.functions.invoke("invite-guide", {
-        body: {
-          email: payload.email,
-          first_name: payload.first_name,
-          last_name: payload.last_name,
-          role: "guide",
-          disciplines: slugsToInviteLabels(disciplines),
-        },
-      });
+    try {
+      if (!editingId) {
+        const { error } = await supabase.functions.invoke("invite-guide", {
+          body: {
+            email: payload.email,
+            first_name: payload.first_name,
+            last_name: payload.last_name,
+            role: "guide",
+            disciplines: slugsToInviteLabels(disciplines),
+          },
+        });
 
-      if (error) {
-        console.error(error);
-        toast.error(supabaseErrorMessage(error, "Could not send invite"));
-        setSaving(false);
+        if (error) throw error;
+
+        toast.success("Guide invited.");
+        closeSheet();
+        void load();
         return;
       }
 
-      toast.success("Guide invited.");
-      setSaving(false);
+      if (!editingGuideId) {
+        toast.error("Missing guide record — refresh and try again.");
+        return;
+      }
+
+      const nextRole = payload.active ? "guide" : "customer";
+
+      const [profileRes, guidesRes] = await Promise.all([
+        supabase
+          .from("profiles")
+          .update({
+            first_name: payload.first_name,
+            last_name: payload.last_name,
+            email: payload.email,
+            role: nextRole,
+          })
+          .eq("id", editingId),
+        supabase
+          .from("guides")
+          .update({
+            disciplines: payload.disciplines,
+            is_active: payload.active,
+          })
+          .eq("id", editingGuideId),
+      ]);
+
+      if (profileRes.error) throw profileRes.error;
+      if (guidesRes.error) throw guidesRes.error;
+
+      toast.success(payload.active ? "Guide updated." : "Guide deactivated and access removed.");
       closeSheet();
       void load();
-      return;
-    }
-
-    if (!editingGuideId) {
-      toast.error("Missing guide record — refresh and try again.");
-      setSaving(false);
-      return;
-    }
-
-    const nextRole = payload.active ? "guide" : "customer";
-
-    const [profileRes, guidesRes] = await Promise.all([
-      supabase
-        .from("profiles")
-        .update({
-          first_name: payload.first_name,
-          last_name: payload.last_name,
-          email: payload.email,
-          role: nextRole,
-        })
-        .eq("id", editingId),
-      supabase
-        .from("guides")
-        .update({
-          disciplines: payload.disciplines,
-          is_active: payload.active,
-        })
-        .eq("id", editingGuideId),
-    ]);
-
-    if (profileRes.error) {
-      console.error(profileRes.error);
-      toast.error(supabaseErrorMessage(profileRes.error, "Could not update guide"));
-      setSaving(false);
-      return;
-    }
-
-    if (guidesRes.error) {
-      console.error(guidesRes.error);
+    } catch (e: unknown) {
+      console.error("guide save failed", e);
+      const msg = supabaseErrorMessage(e, "Unknown error");
       toast.error(
-        supabaseErrorMessage(
-          guidesRes.error,
-          "Guide profile updated, but disciplines failed — please try again",
-        ),
+        editingId ? `Failed to update guide: ${msg}` : `Failed to invite guide: ${msg}`,
       );
+    } finally {
       setSaving(false);
-      return;
     }
-
-    toast.success(payload.active ? "Guide updated." : "Guide deactivated and access removed.");
-    setSaving(false);
-    closeSheet();
-    void load();
   };
 
   const toggleActive = async (row: GuideRow, next: boolean) => {
@@ -546,33 +532,34 @@ function GuidesPage() {
       return;
     }
 
-    const [profileRes, guidesRes] = await Promise.all([
-      supabase
-        .from("profiles")
-        .update({ role: next ? "guide" : "customer" })
-        .eq("id", row.id),
-      supabase
-        .from("guides")
-        .upsert(
-          { profile_id: row.id, disciplines: row.disciplines, is_active: next },
-          { onConflict: "profile_id" },
-        ),
-    ]);
+    try {
+      const [profileRes, guidesRes] = await Promise.all([
+        supabase
+          .from("profiles")
+          .update({ role: next ? "guide" : "customer" })
+          .eq("id", row.id),
+        supabase
+          .from("guides")
+          .upsert(
+            { profile_id: row.id, disciplines: row.disciplines, is_active: next },
+            { onConflict: "profile_id" },
+          ),
+      ]);
 
-    if (profileRes.error || guidesRes.error) {
-      const err = profileRes.error ?? guidesRes.error;
-      console.error("guide status toggle failed", profileRes.error, guidesRes.error);
-      toast.error(supabaseErrorMessage(err, "Could not update guide status"));
-      return;
+      if (profileRes.error) throw profileRes.error;
+      if (guidesRes.error) throw guidesRes.error;
+
+      setRows((prev) =>
+        prev.map((r) => {
+          if (r.id !== row.id) return r;
+          return { ...r, active: next };
+        }),
+      );
+      toast.success(next ? "Guide activated." : "Guide deactivated.");
+    } catch (e: unknown) {
+      console.error("guide status toggle failed", e);
+      toast.error(`Failed to update role: ${supabaseErrorMessage(e, "Could not update guide status")}`);
     }
-
-    setRows((prev) =>
-      prev.map((r) => {
-        if (r.id !== row.id) return r;
-        return { ...r, active: next };
-      }),
-    );
-    toast.success(next ? "Guide activated." : "Guide deactivated.");
   };
 
   return (

@@ -304,8 +304,7 @@ function StaffPage() {
         .eq("id", id);
 
       if (fieldsError) {
-        toast.error(supabaseErrorMessage(fieldsError, "Could not update staff"));
-        return;
+        throw fieldsError;
       }
 
       const { data: roleRow, error: roleError } = await supabase
@@ -316,9 +315,7 @@ function StaffPage() {
         .single();
 
       if (roleError) {
-        toast.error(supabaseErrorMessage(roleError, "Could not update role"));
-        await load();
-        return;
+        throw roleError;
       }
       if (!roleRow) {
         toast.error("Role update did not apply (no row returned).");
@@ -358,6 +355,10 @@ function StaffPage() {
       setEditOpen(false);
       setEditingId(null);
       await load();
+    } catch (e: unknown) {
+      console.error("staff save failed", e);
+      toast.error(`Failed to update staff: ${supabaseErrorMessage(e, "Unknown error")}`);
+      await load();
     } finally {
       setSaving(false);
     }
@@ -369,60 +370,71 @@ function StaffPage() {
       return;
     }
     setInviting(true);
-    const { data, error } = await supabase.functions.invoke<{
-      success?: boolean;
-      error?: string;
-    }>("invite-guide", {
-      body: {
-        first_name: iFirst.trim(),
-        last_name: iLast.trim(),
-        email: iEmail.trim().toLowerCase(),
-        phone: iPhone.trim() || undefined,
-        role: iRole,
-      },
-    });
-    setInviting(false);
-    if (error) {
-      toast.error(supabaseErrorMessage(error, "Could not send invite"));
-      return;
+    try {
+      const { data, error } = await supabase.functions.invoke<{
+        success?: boolean;
+        error?: string;
+      }>("invite-guide", {
+        body: {
+          first_name: iFirst.trim(),
+          last_name: iLast.trim(),
+          email: iEmail.trim().toLowerCase(),
+          phone: iPhone.trim() || undefined,
+          role: iRole,
+        },
+      });
+
+      if (error) throw error;
+      if (data?.error) {
+        throw new Error(
+          typeof data.error === "string" && data.error.trim()
+            ? data.error
+            : "Invite rejected by server",
+        );
+      }
+
+      toast.success(`${iFirst} ${iLast} invited as ${ROLE_LABEL[iRole]}`);
+      setInviteOpen(false);
+      setIFirst("");
+      setILast("");
+      setIEmail("");
+      setIPhone("");
+      setIRole("guide");
+      await load();
+    } catch (e: unknown) {
+      console.error("staff invite failed", e);
+      toast.error(`Failed to invite staff: ${supabaseErrorMessage(e, "Could not send invite")}`);
+    } finally {
+      setInviting(false);
     }
-    if (data?.error) {
-      toast.error(
-        typeof data?.error === "string" && data.error.trim()
-          ? data.error
-          : "Could not send invite — please try again",
-      );
-      return;
-    }
-    toast.success(`${iFirst} ${iLast} invited as ${ROLE_LABEL[iRole]}`);
-    setInviteOpen(false);
-    setIFirst("");
-    setILast("");
-    setIEmail("");
-    setIPhone("");
-    setIRole("guide");
-    await load();
   };
 
   const confirmDeactivate = async () => {
     if (!deactivateTarget) return;
-    const { error } = await supabase
-      .from("profiles")
-      .update({ role: "customer" })
-      .eq("id", deactivateTarget.id);
-    if (error) {
-      toast.error(supabaseErrorMessage(error, "Could not deactivate staff"));
-      return;
+    try {
+      const { error } = await supabase
+        .from("profiles")
+        .update({ role: "customer" })
+        .eq("id", deactivateTarget.id);
+      if (error) throw error;
+
+      if (deactivateTarget.role === "guide") {
+        const { error: guideErr } = await supabase
+          .from("guides")
+          .update({ is_active: false })
+          .eq("profile_id", deactivateTarget.id);
+        if (guideErr) throw guideErr;
+      }
+
+      toast.success(`${deactivateTarget.fullName} deactivated`);
+      setDeactivateTarget(null);
+      await load();
+    } catch (e: unknown) {
+      console.error("staff deactivate failed", e);
+      toast.error(
+        `Failed to deactivate staff: ${supabaseErrorMessage(e, "Could not deactivate staff")}`,
+      );
     }
-    if (deactivateTarget.role === "guide") {
-      await supabase
-        .from("guides")
-        .update({ is_active: false })
-        .eq("profile_id", deactivateTarget.id);
-    }
-    toast.success(`${deactivateTarget.fullName} deactivated`);
-    setDeactivateTarget(null);
-    await load();
   };
 
   return (
