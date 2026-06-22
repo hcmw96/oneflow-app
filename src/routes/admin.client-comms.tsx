@@ -18,6 +18,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { ensureMarketingAdminAccess } from "@/lib/ensureMarketingAdminAccess";
+import { BOOKABLE_MEMBER_OR_FILTER, isBookableMember } from "@/lib/bookableMembers";
 import { getUser, supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { cn } from "@/lib/utils";
@@ -99,7 +100,7 @@ function ClientCommsPage() {
         .limit(2000),
       supabase
         .from("profiles")
-        .select("id, first_name, last_name, email, role")
+        .select("id, first_name, last_name, email, role, secondary_roles")
         .order("first_name", { ascending: true })
         .limit(2000),
     ]);
@@ -114,7 +115,12 @@ function ClientCommsPage() {
       }
       setMembers(
         (membersRes.data as Record<string, unknown>[])
-          .filter((p) => String(p.role ?? "").toLowerCase() === "customer")
+          .filter((p) =>
+            isBookableMember({
+              role: String(p.role ?? ""),
+              secondary_roles: (p.secondary_roles as string[] | null) ?? null,
+            }),
+          )
           .map((p) => ({
             id: String(p.id),
             fullName:
@@ -252,7 +258,7 @@ function ClientCommsPage() {
     const { data: targets, error: tErr } = await supabase
       .from("profiles")
       .select("id")
-      .eq("role", "customer");
+      .or(BOOKABLE_MEMBER_OR_FILTER);
     if (tErr) {
       setAnnSending(false);
       toast.error(supabaseErrorMessage(tErr, "Could not load recipients"));

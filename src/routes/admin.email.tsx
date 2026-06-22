@@ -46,6 +46,7 @@ import {
   fetchCampaignRecipientEmails,
   type CampaignRecipientFilter,
 } from "@/lib/campaignRecipients";
+import { BOOKABLE_MEMBER_OR_FILTER } from "@/lib/bookableMembers";
 import { ensureMarketingAdminAccess } from "@/lib/ensureMarketingAdminAccess";
 import { getUser, supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
@@ -157,7 +158,7 @@ function EmailPage() {
       const { count, error } = await supabase
         .from("profiles")
         .select("id", { count: "exact", head: true })
-        .eq("role", "customer");
+        .or(BOOKABLE_MEMBER_OR_FILTER);
       if (error) {
         console.error("email: customer profile count", error);
         setCustomerProfileCount(null);
@@ -375,8 +376,8 @@ function EmailPage() {
           <span className="font-semibold text-foreground tabular-nums">
             {customerProfileCount == null ? "—" : customerProfileCount.toLocaleString()}
           </span>{" "}
-          customer profiles in the database (role = customer). Campaign “All members” uses this same
-          filter. The count is low because bulk import from Mindbody has not run yet — that is a data
+          customer profiles in the database (role = customer or customer in secondary roles).
+          Campaign “All members” uses this same filter. The count is low because bulk import from Mindbody has not run yet — that is a data
           task, not a code bug.{" "}
           <Link
             to="/admin/customers"

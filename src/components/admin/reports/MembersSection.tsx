@@ -14,6 +14,7 @@ import { Download, UserMinus, UserPlus, Users, UserX, Wallet } from "lucide-reac
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatCard } from "@/components/admin/StatCard";
+import { BOOKABLE_MEMBER_OR_FILTER } from "@/lib/bookableMembers";
 import { supabase } from "@/lib/supabase";
 import { downloadReportCsv } from "@/lib/reportsCsv";
 import type { PeriodBounds } from "@/lib/reportsPeriod";
@@ -141,7 +142,7 @@ export function MembersSection({ bounds }: { bounds: PeriodBounds }) {
         supabase
           .from("profiles")
           .select("id, first_name, last_name, email, created_at")
-          .or("role.eq.customer,secondary_roles.cs.{customer}"),
+          .or(BOOKABLE_MEMBER_OR_FILTER),
         // Active credits (refunded rows excluded).
         supabase
           .from("user_credits")

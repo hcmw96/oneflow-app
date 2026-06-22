@@ -37,6 +37,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { BOOKABLE_MEMBER_OR_FILTER } from "@/lib/bookableMembers";
 import { supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { cn } from "@/lib/utils";
@@ -89,7 +90,7 @@ function WaiversPage() {
     const { data, error } = await supabase
       .from("profiles")
       .select("id, first_name, last_name, email, waiver_accepted_at")
-      .eq("role", "customer")
+      .or(BOOKABLE_MEMBER_OR_FILTER)
       .order("first_name", { ascending: true });
 
     if (error) {

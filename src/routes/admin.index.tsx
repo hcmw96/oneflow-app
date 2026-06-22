@@ -6,6 +6,7 @@ import { StatCard } from "@/components/admin/StatCard";
 import { ClassRosterSheet, type ClassRosterSession } from "@/components/admin/ClassRosterSheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getUser, supabase } from "@/lib/supabase";
+import { BOOKABLE_MEMBER_OR_FILTER } from "@/lib/bookableMembers";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { jhbDayBounds } from "@/lib/jhbTime";
 import { cn } from "@/lib/utils";
@@ -92,7 +93,7 @@ function AdminDashboard() {
         supabase
           .from("profiles")
           .select("id", { count: "exact", head: true })
-          .eq("role", "customer"),
+          .or(BOOKABLE_MEMBER_OR_FILTER),
         supabase
           .from("bookings")
           .select("id", { count: "exact", head: true })

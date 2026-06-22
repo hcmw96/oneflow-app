@@ -31,6 +31,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { isBookableMember } from "@/lib/bookableMembers";
 import { getUser, supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { normalizeProductCategoryKey } from "@/lib/productCategories";
@@ -172,6 +173,7 @@ type MemberRow = {
   email: string;
   phone: string;
   role: string;
+  secondaryRoles: string[];
   plan: string;
   creditsDisplay: string;
   hasActiveCredits: boolean;
@@ -369,7 +371,7 @@ function CustomersPage() {
     const { data: profiles, error: pErr } = await supabase
       .from("profiles")
       .select(
-        "id, first_name, last_name, email, phone, role, is_active, created_at, waiver_accepted_at",
+        "id, first_name, last_name, email, phone, role, secondary_roles, is_active, created_at, waiver_accepted_at",
       )
       .order("first_name", { ascending: true });
 
@@ -435,6 +437,9 @@ function CustomersPage() {
         email: String(p.email ?? "—"),
         phone: String(p.phone ?? "—"),
         role: String(p.role ?? "customer").toLowerCase(),
+        secondaryRoles: Array.isArray(p.secondary_roles)
+          ? (p.secondary_roles as string[]).map((r) => String(r).toLowerCase())
+          : [],
         plan: planLabelFromActiveCredits(active),
         creditsDisplay,
         hasActiveCredits,
@@ -477,7 +482,13 @@ function CustomersPage() {
         const hay = `${m.name} ${m.email}`.toLowerCase();
         if (!hay.includes(ql)) return false;
       }
-      if (roleFilter !== "all" && m.role !== roleFilter) return false;
+      if (roleFilter !== "all") {
+        if (roleFilter === "customer") {
+          if (!isBookableMember({ role: m.role, secondary_roles: m.secondaryRoles })) return false;
+        } else if (m.role !== roleFilter) {
+          return false;
+        }
+      }
       if (chipHasCredits && !m.hasActiveCredits) return false;
       if (chipNoCredits && m.hasActiveCredits) return false;
       if (chipNeverBooked && m.hasBooking) return false;

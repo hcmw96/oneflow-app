@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { BOOKABLE_MEMBER_OR_FILTER } from "@/lib/bookableMembers";
 
 export type CampaignRecipientFilter = "all" | "active" | "with_credits" | "role";
 
@@ -34,7 +35,7 @@ export async function fetchCampaignRecipientEmails(
     const { data, error } = await supabase
       .from("profiles")
       .select("email")
-      .eq("role", "customer")
+      .or(BOOKABLE_MEMBER_OR_FILTER)
       .eq("is_active", true);
     if (error) throw error;
     return normalizeEmails((data ?? []) as { email: string | null }[]);
@@ -42,7 +43,13 @@ export async function fetchCampaignRecipientEmails(
 
   if (filter === "role") {
     const role = roleValue.trim() || "customer";
-    const { data, error } = await supabase.from("profiles").select("email").eq("role", role);
+    let query = supabase.from("profiles").select("email");
+    if (role === "customer") {
+      query = query.or(BOOKABLE_MEMBER_OR_FILTER);
+    } else {
+      query = query.eq("role", role);
+    }
+    const { data, error } = await query;
     if (error) throw error;
     return normalizeEmails((data ?? []) as { email: string | null }[]);
   }
@@ -66,6 +73,7 @@ export async function fetchCampaignRecipientEmails(
     const { data: profiles, error: profilesErr } = await supabase
       .from("profiles")
       .select("email")
+      .or(BOOKABLE_MEMBER_OR_FILTER)
       .in("id", profileIds);
     if (profilesErr) throw profilesErr;
     return normalizeEmails((profiles ?? []) as { email: string | null }[]);
@@ -93,6 +101,7 @@ export async function fetchCampaignRecipientEmails(
     const { data: profiles, error: profilesErr } = await supabase
       .from("profiles")
       .select("email")
+      .or(BOOKABLE_MEMBER_OR_FILTER)
       .in("id", profileIds);
     if (profilesErr) throw profilesErr;
     return normalizeEmails((profiles ?? []) as { email: string | null }[]);
