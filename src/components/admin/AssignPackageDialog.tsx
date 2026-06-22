@@ -246,6 +246,8 @@ type Props = {
   /** When set, assigns the same package to every target (target is ignored). */
   bulkTargets?: AssignPackageTarget[] | null;
   canAssign: boolean;
+  /** Include add-on products (e.g. mat/towel monthly) in the catalog. */
+  includeAddons?: boolean;
   onAssigned?: () => void;
   /** Called after each successful insert (for live profile sheet credits). */
   onCreditInserted?: (row: AssignedCreditRow, profileId: string) => void;
@@ -257,6 +259,7 @@ export function AssignPackageDialog({
   target,
   bulkTargets,
   canAssign,
+  includeAddons = false,
   onAssigned,
   onCreditInserted,
 }: Props) {
@@ -336,13 +339,17 @@ export function AssignPackageDialog({
     void (async () => {
       setProducts([]);
       setProductsLoading(true);
-      const { data, error } = await supabase
+      let query = supabase
         .from("products")
-        .select("id, name, credit_count, category, validity_days, allowed_class_types")
+        .select("id, name, credit_count, category, validity_days, allowed_class_types, is_addon")
         .eq("is_active", true)
-        .eq("is_addon", false)
+        .order("sort_order", { ascending: true })
         .order("category", { ascending: true })
         .order("name", { ascending: true });
+      if (!includeAddons) {
+        query = query.eq("is_addon", false);
+      }
+      const { data, error } = await query;
 
       if (error) {
         console.error(error);
@@ -363,7 +370,7 @@ export function AssignPackageDialog({
       }
       setProductsLoading(false);
     })();
-  }, [open, assigneeKey]);
+  }, [open, assigneeKey, includeAddons]);
 
   const categorySlugsInCatalog = useMemo(() => {
     const s = new Set<string>();

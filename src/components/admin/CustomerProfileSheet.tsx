@@ -1268,6 +1268,7 @@ export function CustomerProfileSheet({
           onOpenChange={setAssignOpen}
           target={assignTarget}
           canAssign={canManage}
+          includeAddons
           onCreditInserted={(row: AssignedCreditRow, profileId) => {
             if (profileId !== customerId) return;
             const now = Date.now();

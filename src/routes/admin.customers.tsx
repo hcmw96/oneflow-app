@@ -879,6 +879,7 @@ function CustomersPage() {
           target={assignTarget}
           bulkTargets={bulkAssignTargets}
           canAssign={canManageCustomers}
+          includeAddons
           onCreditInserted={(row, profileId) => bumpMemberCreditsAfterAssign(profileId, row)}
           onAssigned={() => void load()}
         />

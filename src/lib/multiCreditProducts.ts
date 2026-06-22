@@ -54,10 +54,19 @@ export function isMultiCreditBundleProduct(productId: string, productName: strin
 /** Standalone add-ons assigned without bundle splitting. */
 export function getStandaloneCreditFlags(productName: string): Partial<UserCreditInsertRow> {
   const n = productName.trim().toLowerCase();
-  if (n.includes("mat storage") || (n.includes("mat") && n.includes("access"))) {
+  if (
+    n.includes("mat monthly") ||
+    n.includes("mat storage") ||
+    (n.includes("mat") && n.includes("access"))
+  ) {
     return { mat_access: true };
   }
-  if (n.includes("towel access") || (n === "towel" || n.startsWith("towel "))) {
+  if (
+    n.includes("towel monthly") ||
+    n.includes("towel access") ||
+    n === "towel" ||
+    n.startsWith("towel ")
+  ) {
     return { towel_access: true };
   }
   return {};

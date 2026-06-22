@@ -748,6 +748,7 @@ function StaffPage() {
           onOpenChange={setAssignOpen}
           target={assignTarget}
           canAssign={canManage}
+          includeAddons
           onAssigned={() => void load()}
         />
       ) : null}
