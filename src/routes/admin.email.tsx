@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Bold,
@@ -123,6 +123,7 @@ function EmailPage() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [confirmSendOpen, setConfirmSendOpen] = useState(false);
   const [recipientCount, setRecipientCount] = useState<number | null>(null);
+  const [customerProfileCount, setCustomerProfileCount] = useState<number | null>(null);
   const [sendProgress, setSendProgress] = useState<{
     done: number;
     total: number;
@@ -152,6 +153,18 @@ function EmailPage() {
 
   useEffect(() => {
     void load();
+    void (async () => {
+      const { count, error } = await supabase
+        .from("profiles")
+        .select("id", { count: "exact", head: true })
+        .eq("role", "customer");
+      if (error) {
+        console.error("email: customer profile count", error);
+        setCustomerProfileCount(null);
+        return;
+      }
+      setCustomerProfileCount(count ?? 0);
+    })();
   }, [load]);
 
   const pageCount = Math.max(1, Math.ceil(campaigns.length / PAGE_SIZE));
@@ -356,6 +369,24 @@ function EmailPage() {
           </Button>
         }
       />
+
+      <div className="mb-4 rounded-xl border border-border/70 bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+        <p>
+          <span className="font-semibold text-foreground tabular-nums">
+            {customerProfileCount == null ? "—" : customerProfileCount.toLocaleString()}
+          </span>{" "}
+          customer profiles in the database (role = customer). Campaign “All members” uses this same
+          filter. The count is low because bulk import from Mindbody has not run yet — that is a data
+          task, not a code bug.{" "}
+          <Link
+            to="/admin/customers"
+            className="font-semibold text-[#a3b693] underline-offset-2 hover:underline"
+          >
+            Manage / import members
+          </Link>
+          .
+        </p>
+      </div>
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="mb-4">
