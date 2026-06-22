@@ -546,6 +546,7 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
         class_id: session.id,
         paid_by_inviter: true,
         status: "pending_payment",
+        invited_via_email: true,
       })
       .select("id")
       .maybeSingle();
