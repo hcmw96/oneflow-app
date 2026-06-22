@@ -238,22 +238,65 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
   const pointsValue = Math.floor(flowPoints / 100) * 10;
 
   const afterBookingConfirmed = async (bookingId: string) => {
-    if (userEmail) {
-      await supabase.functions.invoke("send-email", {
-        body: {
-          to: userEmail,
-          template: bookingConfirmationTemplateForClassType(session.class_type),
-          data: bookingConfirmationEmailData({
-            className: session.name,
-            startsAtIso: session.starts_at,
-            guideName: session.guide_name,
-            location: session.location,
-            matAddon: isFreeClass ? false : matAddon,
-            towelAddon: isFreeClass ? false : towelAddon,
-          }),
-        },
+    if (!userEmail) {
+      console.warn("[BookingSheet] booking confirmation email skipped — no user email", {
+        bookingId,
+        classId: session.id,
       });
+      return;
     }
+
+    const template = bookingConfirmationTemplateForClassType(session.class_type);
+    const emailPayload = bookingConfirmationEmailData({
+      className: session.name,
+      startsAtIso: session.starts_at,
+      guideName: session.guide_name,
+      location: session.location,
+      matAddon: isFreeClass ? false : matAddon,
+      towelAddon: isFreeClass ? false : towelAddon,
+    });
+
+    console.info("[BookingSheet] invoking send-email for booking confirmation", {
+      bookingId,
+      to: userEmail,
+      template,
+      classId: session.id,
+    });
+
+    const { data, error } = await supabase.functions.invoke("send-email", {
+      body: {
+        to: userEmail,
+        template,
+        data: emailPayload,
+      },
+    });
+
+    if (error) {
+      console.error("[BookingSheet] send-email invoke failed", {
+        bookingId,
+        to: userEmail,
+        template,
+        error,
+      });
+      return;
+    }
+
+    const payload = data as { success?: boolean; error?: unknown; id?: string | null } | null;
+    if (payload?.error) {
+      console.error("[BookingSheet] send-email returned error", {
+        bookingId,
+        to: userEmail,
+        template,
+        error: payload.error,
+      });
+      return;
+    }
+
+    console.info("[BookingSheet] booking confirmation email accepted by send-email", {
+      bookingId,
+      to: userEmail,
+      resendId: payload?.id ?? null,
+    });
   };
 
   const confirm = async () => {
