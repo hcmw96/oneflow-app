@@ -1,10 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { QrCode } from "lucide-react";
+import { QrCode, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/admin/PageHeader";
 import { QRScanner } from "@/components/admin/QRScanner";
 import { CheckInClassAccordion } from "@/components/admin/CheckInClassAccordion";
+import { WalkInSheet } from "@/components/admin/WalkInSheet";
+import { Button } from "@/components/ui/button";
 import { supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { useMaxWidth } from "@/hooks/use-max-width";
@@ -53,6 +55,7 @@ function CheckInPage() {
   const [roster, setRoster] = useState<RosterRow[]>([]);
   const [expandedClassIds, setExpandedClassIds] = useState<Set<string>>(() => new Set());
   const [loading, setLoading] = useState(true);
+  const [walkInOpen, setWalkInOpen] = useState(false);
   const qrDedupeRef = useRef<string | null>(null);
   const qrDedupeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const qrInvalidToastRef = useRef<string | null>(null);
@@ -386,7 +389,26 @@ function CheckInPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden max-[599px]:overflow-y-auto max-[599px]:scroll-touch">
-      <PageHeader title="Check-In" />
+      <PageHeader
+        title="Check-In"
+        actions={
+          <Button
+            type="button"
+            size="sm"
+            className="gap-2 bg-[#a3b693] text-white hover:bg-[#8fa67d]"
+            onClick={() => setWalkInOpen(true)}
+          >
+            <UserPlus className="h-4 w-4 shrink-0" aria-hidden />
+            Walk-in
+          </Button>
+        }
+      />
+
+      <WalkInSheet
+        open={walkInOpen}
+        onOpenChange={setWalkInOpen}
+        onDone={() => void loadData()}
+      />
 
       {loading ? (
         <div className="py-16 text-center text-sm text-muted-foreground">Loading check-in…</div>

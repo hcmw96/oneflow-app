@@ -23,6 +23,7 @@ import {
   STUDIO_TIMEZONE,
   ymdInTimeZone,
 } from "@/lib/timezone";
+import { WalkInSheet } from "@/components/admin/WalkInSheet";
 import {
   Sheet,
   SheetClose,
@@ -42,11 +43,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { cancelBookingWithPolicy } from "@/lib/bookingCancellation";
 import { deleteMayChallengeCheckInForBooking } from "@/lib/mayChallengeCheckIn";
-import { manualCheckInToastMessage, walkInCheckInToastMessage } from "@/lib/flowPoints";
-import {
-  bookingConfirmationEmailData,
-  bookingConfirmationTemplateForClassType,
-} from "@/lib/bookingConfirmationEmail";
+import { manualCheckInToastMessage } from "@/lib/flowPoints";
 import {
   ALLOWED_CLASS_TYPE_SLUGS,
   CLASS_TYPE_SLUG_LABEL,
@@ -434,8 +431,6 @@ function BookingsPage() {
   }, [bookings, selectedDay, bookingsSort]);
 
   const qNorm = query.trim().toLowerCase();
-  const walkInSessions = daySessions;
-
   const visibleSessions = useMemo(() => {
     const filtered = daySessionsFiltered.filter((session) => {
       const roster = bookingsByClass.get(session.id) ?? [];
@@ -906,7 +901,6 @@ function BookingsPage() {
       <WalkInSheet
         open={walkInOpen}
         onOpenChange={setWalkInOpen}
-        dayClasses={walkInSessions}
         onDone={() => void loadWeek()}
       />
       <Sheet
@@ -957,231 +951,5 @@ function BookingsPage() {
         </SheetContent>
       </Sheet>
     </div>
-  );
-}
-
-function WalkInSheet({
-  open,
-  onOpenChange,
-  dayClasses,
-  onDone,
-}: {
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-  dayClasses: WeekClassRow[];
-  onDone: () => void;
-}) {
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
-  const [email, setEmail] = useState("");
-  const [classId, setClassId] = useState("");
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    if (!open) return;
-    setFirstName("");
-    setLastName("");
-    setEmail("");
-  }, [open]);
-
-  useEffect(() => {
-    if (dayClasses[0]?.id) {
-      setClassId((id) => id || dayClasses[0].id);
-    }
-  }, [dayClasses]);
-
-  const submit = async () => {
-    const fn = firstName.trim();
-    const ln = lastName.trim();
-    const em = email.trim().toLowerCase();
-    if (!fn || !ln || !em) {
-      toast.error("First name, last name, and email are required.");
-      return;
-    }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) {
-      toast.error("Enter a valid email address.");
-      return;
-    }
-    if (!classId) {
-      toast.error("Choose a class.");
-      return;
-    }
-
-    const displayName = `${fn} ${ln}`.trim();
-
-    setSaving(true);
-
-    const { data: existing, error: findErr } = await supabase
-      .from("profiles")
-      .select("id, role")
-      .ilike("email", em)
-      .maybeSingle();
-
-    if (findErr) {
-      console.error("walk-in profile lookup failed", findErr);
-      toast.error(supabaseErrorMessage(findErr, "Could not look up profile"));
-      setSaving(false);
-      return;
-    }
-
-    let profileId = existing?.id as string | undefined;
-
-    if (!profileId) {
-      const { data: created, error: createErr } = await supabase
-        .from("profiles")
-        .insert({
-          first_name: fn,
-          last_name: ln,
-          email: em,
-          role: "customer",
-        })
-        .select("id")
-        .single();
-
-      if (createErr || !created?.id) {
-        console.error("walk-in profile create failed", createErr);
-        toast.error(supabaseErrorMessage(createErr, "Could not create profile — please try again"));
-        setSaving(false);
-        return;
-      }
-      profileId = created.id as string;
-    }
-
-    const session = dayClasses.find((c) => c.id === classId);
-    const checkedAt = new Date().toISOString();
-    const { data: newBooking, error: bookErr } = await supabase
-      .from("bookings")
-      .insert({
-        profile_id: profileId,
-        class_id: classId,
-        status: "attended",
-        payment_method: "drop_in",
-        qr_token: globalThis.crypto.randomUUID(),
-        checked_in: true,
-        checked_in_at: checkedAt,
-      })
-      .select("id")
-      .maybeSingle();
-    setSaving(false);
-    if (bookErr) {
-      console.error("walk-in booking insert failed", bookErr);
-      toast.error(supabaseErrorMessage(bookErr, "Could not create booking"));
-      return;
-    }
-    if (newBooking?.id && profileId && session?.starts_at) {
-      await supabase.from("challenge_checkins").insert({
-        profile_id: profileId,
-        class_date: new Date(session.starts_at).toISOString().split("T")[0],
-        booking_id: newBooking.id as string,
-      });
-    }
-    if (session?.starts_at) {
-      await supabase.functions.invoke("send-email", {
-        body: {
-          to: em,
-          template: bookingConfirmationTemplateForClassType(session.class_type),
-          data: bookingConfirmationEmailData({
-            className: session.name,
-            startsAtIso: session.starts_at,
-            guideName: session.guide_name,
-            location: session.location,
-            matAddon: false,
-            towelAddon: false,
-          }),
-        },
-      });
-    }
-    const walkInRole =
-      (existing as { role?: string | null } | null)?.role ?? "customer";
-    toast.success(walkInCheckInToastMessage(displayName, walkInRole));
-    onOpenChange(false);
-    onDone();
-  };
-
-  return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full max-w-md">
-        <SheetHeader>
-          <SheetTitle>Walk-in</SheetTitle>
-        </SheetHeader>
-        <div className="mt-6 space-y-4">
-          <div>
-            <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              First name <span className="text-destructive">*</span>
-            </label>
-            <input
-              type="text"
-              required
-              autoComplete="given-name"
-              value={firstName}
-              onChange={(e) => setFirstName(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-[#a3b693]"
-            />
-          </div>
-          <div>
-            <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Last name <span className="text-destructive">*</span>
-            </label>
-            <input
-              type="text"
-              required
-              autoComplete="family-name"
-              value={lastName}
-              onChange={(e) => setLastName(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-[#a3b693]"
-            />
-          </div>
-          <div>
-            <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Email <span className="text-destructive">*</span>
-            </label>
-            <input
-              type="email"
-              required
-              autoComplete="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-[#a3b693]"
-            />
-          </div>
-          <div>
-            <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Class
-            </label>
-            <Select value={classId} onValueChange={setClassId}>
-              <SelectTrigger className="mt-1">
-                <SelectValue placeholder="Pick a class" />
-              </SelectTrigger>
-              <SelectContent>
-                {dayClasses.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.name} · {formatClassTime(c.starts_at)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-        <SheetFooter className="mt-6 flex-row justify-end gap-2">
-          <SheetClose asChild>
-            <button
-              type="button"
-              className="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm"
-            >
-              Cancel
-            </button>
-          </SheetClose>
-          <button
-            type="button"
-            disabled={saving || dayClasses.length === 0}
-            onClick={() => void submit()}
-            className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-            style={{ backgroundColor: SAGE }}
-          >
-            <Check className="h-4 w-4 shrink-0" aria-hidden /> Add walk-in
-          </button>
-        </SheetFooter>
-      </SheetContent>
-    </Sheet>
   );
 }
