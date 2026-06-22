@@ -89,6 +89,7 @@ function CheckInPage() {
   const loadData = useCallback(async () => {
     setLoading(true);
     const { startUtcIso, endUtcIso } = jhbDayBounds();
+    const oneHourAgoIso = new Date(Date.now() - 60 * 60 * 1000).toISOString();
 
     const { data: classesData, error: classesError } = await supabase
       .from("classes")
@@ -97,6 +98,7 @@ function CheckInPage() {
       )
       .gte("starts_at", startUtcIso)
       .lte("starts_at", endUtcIso)
+      .gte("starts_at", oneHourAgoIso)
       .eq("is_cancelled", false)
       .order("starts_at");
 
