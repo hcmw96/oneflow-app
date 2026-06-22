@@ -248,6 +248,7 @@ function PromotionsPage() {
 
     const payload = {
       code: trimmedCode,
+      name: trimmedCode,
       description: description.trim() || null,
       discount_type: discountType,
       discount_value: dv,
