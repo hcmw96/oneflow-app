@@ -13,9 +13,10 @@ import { getUser, supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { cn } from "@/lib/utils";
 import {
+  classSkipsPayment,
+  fetchBookableProductCatalog,
   fetchConfirmedBookingIntervals,
   findOverlappingBooking,
-  isFreeBeginnerClass,
   isPastScheduleClass,
   overlapBookingMessage,
 } from "@/lib/scheduleBooking";
@@ -102,6 +103,7 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
   const [payCheckoutSlow, setPayCheckoutSlow] = useState(false);
   const [waitlistEntry, setWaitlistEntry] = useState<WaitlistEntry | null>(null);
   const [waitlistBusy, setWaitlistBusy] = useState(false);
+  const [isFreeClass, setIsFreeClass] = useState(false);
 
   useEffect(() => {
     if (!open) {
@@ -120,9 +122,11 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
       setUserId(user.id);
       setUserEmail(user.email ?? null);
 
-      const isFree = isFreeBeginnerClass(session.class_type);
+      const catalog = await fetchBookableProductCatalog(supabase);
+      const skipPayment = classSkipsPayment(session.class_type, catalog);
+      setIsFreeClass(skipPayment);
 
-      const creditsPromise = isFree
+      const creditsPromise = skipPayment
         ? Promise.resolve({ data: null, error: null })
         : supabase
             .from("user_credits")
@@ -131,7 +135,7 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
             )
             .eq("profile_id", user.id);
 
-      const pointsPromise = isFree
+      const pointsPromise = skipPayment
         ? Promise.resolve({ data: null, error: null })
         : supabase.from("profiles").select("flow_points, role").eq("id", user.id).maybeSingle();
 
@@ -156,7 +160,7 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
 
       setWaitlistEntry(waitlistMine);
 
-      if (isFree) {
+      if (skipPayment) {
         setCredits([]);
         setSelectedCredit(null);
         setUsePoints(false);
@@ -217,7 +221,6 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
   if (!session) return null;
 
   const classIsPast = isPastScheduleClass(session.starts_at);
-  const isFreeClass = isFreeBeginnerClass(session.class_type);
   const spots = Math.max(0, session.capacity - session.booked_count);
   const dateLine = new Date(session.starts_at).toLocaleDateString("en-ZA", {
     weekday: "long",

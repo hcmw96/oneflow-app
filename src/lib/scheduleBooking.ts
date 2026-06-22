@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { userCreditCoversClassType } from "@/lib/allowedClassTypes";
 import { isPastDateKey, STUDIO_TIMEZONE } from "@/lib/timezone";
 
 export type BookedClassInterval = {
@@ -111,4 +112,49 @@ const FREE_BEGINNER_CLASS_TYPES = new Set(["beginner", "beginner_sculpt"]);
 /** Intro classes booked without credits or payment. */
 export function isFreeBeginnerClass(classType: string | null | undefined): boolean {
   return FREE_BEGINNER_CLASS_TYPES.has(String(classType ?? "").toLowerCase());
+}
+
+type BookableProductRow = {
+  price_zar: number | null;
+  allowed_class_types: string[] | null;
+  category: string | null;
+};
+
+function productCoversClassType(product: BookableProductRow, classType: string): boolean {
+  return userCreditCoversClassType({
+    category: product.category,
+    allowed_class_types: product.allowed_class_types,
+    classType,
+  });
+}
+
+/** True when booking should skip credits/payment (free class, R0 product, or no paid product applies). */
+export function classSkipsPayment(
+  classType: string | null | undefined,
+  catalog: readonly BookableProductRow[],
+): boolean {
+  if (isFreeBeginnerClass(classType)) return true;
+  const ct = String(classType ?? "").trim();
+  if (!ct) return false;
+
+  const covering = catalog.filter((p) => productCoversClassType(p, ct));
+  if (covering.some((p) => Number(p.price_zar ?? 0) === 0)) return true;
+  if (covering.length === 0) return true;
+  return false;
+}
+
+/** Load active non-addon products used to decide if a class requires payment. */
+export async function fetchBookableProductCatalog(
+  client: SupabaseClient,
+): Promise<BookableProductRow[]> {
+  const { data, error } = await client
+    .from("products")
+    .select("price_zar, allowed_class_types, category")
+    .eq("is_active", true)
+    .eq("is_addon", false);
+  if (error) {
+    console.error("fetchBookableProductCatalog", error);
+    return [];
+  }
+  return (data ?? []) as BookableProductRow[];
 }
