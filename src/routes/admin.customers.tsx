@@ -2,6 +2,11 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Filter, Loader2, Mail, Package, Plus, Search, X } from "lucide-react";
 import { toast } from "sonner";
+import {
+  currentPlanLabel,
+  isActiveUserCredit,
+  type UserCreditPlanRow,
+} from "@/lib/currentPlan";
 import { AdminEmptyState } from "@/components/admin/AdminEmptyState";
 import { AdminTableWrap } from "@/components/admin/AdminTableWrap";
 import { PageHeader } from "@/components/admin/PageHeader";
@@ -118,45 +123,18 @@ function mergeCreditsAfterAssign(
   return { creditsDisplay: String(total), hasActiveCredits: true };
 }
 
-type EmbeddedCreditRow = {
-  product_name: string | null;
-  category: string | null;
-  credits_remaining: number | null;
-  is_unlimited: boolean | null;
-  expires_at: string | null;
-};
-
-/** all_access > yoga > wellzone (other categories sort last). */
-function categoryPlanPriority(category: string | null | undefined): number {
-  const k = normalizeProductCategoryKey(category);
-  if (k === "all_access") return 3;
-  if (k === "yoga") return 2;
-  if (k === "wellzone") return 1;
-  return 0;
-}
+type EmbeddedCreditRow = UserCreditPlanRow;
 
 function isCreditActive(c: EmbeddedCreditRow, nowMs: number): boolean {
-  const exp = c.expires_at;
-  if (exp != null && String(exp).trim() !== "") {
-    const t = new Date(exp).getTime();
-    if (!Number.isNaN(t) && t <= nowMs) return false;
-  }
-  if (c.is_unlimited) return true;
-  const rem = Number(c.credits_remaining);
-  return Number.isFinite(rem) && rem > 0;
+  return isActiveUserCredit(c, nowMs);
 }
 
 function activeCreditsForProfile(credits: EmbeddedCreditRow[], nowMs: number): EmbeddedCreditRow[] {
   return credits.filter((c) => isCreditActive(c, nowMs));
 }
 
-function planLabelFromActiveCredits(active: EmbeddedCreditRow[]): string {
-  if (active.length === 0) return "No plan";
-  const sorted = [...active].sort(
-    (a, b) => categoryPlanPriority(b.category) - categoryPlanPriority(a.category),
-  );
-  const name = sorted[0]?.product_name?.trim();
-  return name || "—";
+function planLabelFromActiveCredits(active: EmbeddedCreditRow[], nowMs: number): string {
+  return currentPlanLabel(active, nowMs) ?? "No plan";
 }
 
 const ROLE_LABEL: Record<string, string> = {
@@ -179,6 +157,7 @@ type MemberRow = {
   role: string;
   secondaryRoles: string[];
   plan: string;
+  currentPlan: string | null;
   creditsDisplay: string;
   hasActiveCredits: boolean;
   lastVisit: string;
@@ -413,7 +392,7 @@ function CustomersPage() {
         supabase
           .from("user_credits")
           .select(
-            "profile_id, product_name, category, credits_remaining, is_unlimited, expires_at",
+            "profile_id, product_name, category, credits_remaining, is_unlimited, expires_at, purchased_at, created_at, product_id, products(name)",
           )
           .in("profile_id", ids),
       ]);
@@ -431,6 +410,9 @@ function CustomersPage() {
           credits_remaining: (row as { credits_remaining: number | null }).credits_remaining,
           is_unlimited: (row as { is_unlimited: boolean | null }).is_unlimited,
           expires_at: (row as { expires_at: string | null }).expires_at,
+          purchased_at: (row as { purchased_at?: string | null }).purchased_at ?? null,
+          created_at: (row as { created_at?: string | null }).created_at ?? null,
+          products: (row as { products?: UserCreditPlanRow["products"] }).products ?? null,
         };
         const list = creditsByProfile.get(pid) ?? [];
         list.push(credit);
@@ -459,7 +441,8 @@ function CustomersPage() {
         secondaryRoles: Array.isArray(p.secondary_roles)
           ? (p.secondary_roles as string[]).map((r) => String(r).toLowerCase())
           : [],
-        plan: planLabelFromActiveCredits(active),
+        plan: planLabelFromActiveCredits(active, nowMs),
+        currentPlan: currentPlanLabel(embedded, nowMs),
         creditsDisplay,
         hasActiveCredits,
         lastVisit: "—",
@@ -1148,8 +1131,14 @@ function CustomersPage() {
                         </SelectContent>
                       </Select>
                     </td>
-                    <td className={CUSTOMERS_COL.planTd} title={m.plan}>
-                      {m.plan}
+                    <td className={CUSTOMERS_COL.planTd} title={m.currentPlan ?? undefined}>
+                      {m.currentPlan ? (
+                        <span className="inline-flex max-w-full truncate rounded-full bg-[#e8efe3] px-2 py-0.5 text-[10px] font-semibold text-[#3d4f36]">
+                          {m.currentPlan}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
                     </td>
                     <td className={CUSTOMERS_COL.creditsTd}>{m.creditsDisplay}</td>
                     <td className={CUSTOMERS_COL.lastVisitTd}>{m.lastVisit}</td>

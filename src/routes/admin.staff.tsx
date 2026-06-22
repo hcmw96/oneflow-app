@@ -49,6 +49,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { getUser, supabase } from "@/lib/supabase";
+import { currentPlanLabel, type UserCreditPlanRow } from "@/lib/currentPlan";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { cn } from "@/lib/utils";
 
@@ -102,6 +103,7 @@ type StaffRow = {
   role: StaffRole;
   avatarUrl: string | null;
   createdAt: string;
+  currentPlan: string | null;
 };
 
 type SortKey = "name_asc" | "name_desc" | "joined_desc" | "joined_asc" | "role";
@@ -211,9 +213,49 @@ function StaffPage() {
           role,
           avatarUrl: (p.avatar_url as string | null) ?? null,
           createdAt: String(p.created_at ?? ""),
+          currentPlan: null as string | null,
         };
       })
       .filter((x): x is StaffRow => x !== null);
+
+    const ids = mapped.map((r) => r.id);
+    if (ids.length > 0) {
+      const nowMs = Date.now();
+      const { data: creditRows, error: creditsErr } = await supabase
+        .from("user_credits")
+        .select(
+          "profile_id, product_name, category, credits_remaining, is_unlimited, expires_at, purchased_at, created_at, product_id, products(name)",
+        )
+        .in("profile_id", ids);
+
+      if (creditsErr) {
+        console.error("staff: user_credits load failed", creditsErr);
+        toast.error(supabaseErrorMessage(creditsErr, "Could not load staff credits"));
+      }
+
+      const creditsByProfile = new Map<string, UserCreditPlanRow[]>();
+      for (const row of creditRows ?? []) {
+        const pid = String((row as { profile_id: string }).profile_id);
+        const credit: UserCreditPlanRow = {
+          product_name: (row as { product_name: string | null }).product_name,
+          category: (row as { category: string | null }).category,
+          credits_remaining: (row as { credits_remaining: number | null }).credits_remaining,
+          is_unlimited: (row as { is_unlimited: boolean | null }).is_unlimited,
+          expires_at: (row as { expires_at: string | null }).expires_at,
+          purchased_at: (row as { purchased_at?: string | null }).purchased_at ?? null,
+          created_at: (row as { created_at?: string | null }).created_at ?? null,
+          products: (row as { products?: UserCreditPlanRow["products"] }).products ?? null,
+        };
+        const list = creditsByProfile.get(pid) ?? [];
+        list.push(credit);
+        creditsByProfile.set(pid, list);
+      }
+
+      for (const row of mapped) {
+        const embedded = creditsByProfile.get(row.id) ?? [];
+        row.currentPlan = currentPlanLabel(embedded, nowMs);
+      }
+    }
 
     setRows(mapped);
     setLoading(false);
@@ -521,13 +563,14 @@ function StaffPage() {
             <p className="text-sm text-muted-foreground">No staff match your filters.</p>
           </div>
         ) : (
-          <table className="w-full min-w-[760px] text-sm">
+          <table className="w-full min-w-[880px] text-sm">
             <thead className="bg-muted/40">
               <tr className="text-left text-xs uppercase tracking-wider text-muted-foreground">
                 <th className="px-5 py-3 font-medium">Staff member</th>
                 <th className="px-5 py-3 font-medium">Email</th>
                 <th className="px-5 py-3 font-medium">Phone</th>
                 <th className="px-5 py-3 font-medium">Role</th>
+                <th className="px-5 py-3 font-medium">Current plan</th>
                 <th className="px-5 py-3 font-medium">Joined</th>
                 <th className="px-5 py-3 font-medium">Active</th>
                 <th className="px-5 py-3 font-medium">Actions</th>
@@ -604,6 +647,18 @@ function StaffPage() {
                     >
                       {ROLE_LABEL[r.role]}
                     </span>
+                  </td>
+                  <td className="max-w-[10rem] px-5 py-3">
+                    {r.currentPlan ? (
+                      <span
+                        className="inline-flex max-w-full truncate rounded-full bg-[#e8efe3] px-2 py-0.5 text-[10px] font-semibold text-[#3d4f36]"
+                        title={r.currentPlan}
+                      >
+                        {r.currentPlan}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
                   </td>
                   <td className="whitespace-nowrap px-5 py-3 text-muted-foreground">
                     {r.createdAt ? formatDate(r.createdAt) : "—"}
