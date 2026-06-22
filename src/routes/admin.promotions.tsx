@@ -53,6 +53,7 @@ type SortKey = "code_asc" | "expiry_soonest" | "uses_desc";
 type PromoRow = {
   id: string;
   code: string;
+  name: string | null;
   description: string | null;
   discount_type: DiscountType;
   discount_value: number;
@@ -120,6 +121,7 @@ function PromotionsPage() {
   const [saving, setSaving] = useState(false);
 
   const [code, setCode] = useState("");
+  const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [discountType, setDiscountType] = useState<DiscountType>("percentage");
   const [discountValue, setDiscountValue] = useState("10");
@@ -134,7 +136,7 @@ function PromotionsPage() {
     const { data, error } = await supabase
       .from("promotions")
       .select(
-        "id, code, description, discount_type, discount_value, applies_to, max_uses, uses_count, valid_from, valid_until, is_active, created_at",
+        "id, code, name, description, discount_type, discount_value, applies_to, max_uses, uses_count, valid_from, valid_until, is_active, created_at",
       )
       .order("created_at", { ascending: false })
       .limit(500);
@@ -185,6 +187,7 @@ function PromotionsPage() {
 
   const resetForm = () => {
     setCode("");
+    setName("");
     setDescription("");
     setDiscountType("percentage");
     setDiscountValue("10");
@@ -204,6 +207,7 @@ function PromotionsPage() {
   const openEdit = (p: PromoRow) => {
     setEditingId(p.id);
     setCode(p.code);
+    setName(p.name?.trim() || p.code);
     setDescription(p.description ?? "");
     setDiscountType(p.discount_type);
     setDiscountValue(String(p.discount_value));
@@ -246,9 +250,11 @@ function PromotionsPage() {
     setSaving(true);
     const user = await getUser();
 
+    const promoName = name.trim() || trimmedCode;
+
     const payload = {
       code: trimmedCode,
-      name: trimmedCode,
+      name: promoName,
       description: description.trim() || null,
       discount_type: discountType,
       discount_value: dv,
@@ -488,6 +494,16 @@ function PromotionsPage() {
                   <RefreshCw className="h-4 w-4" />
                 </Button>
               </div>
+            </div>
+
+            <div className="grid gap-1.5">
+              <Label htmlFor="promo-name">Name</Label>
+              <Input
+                id="promo-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Defaults to code if left blank"
+              />
             </div>
 
             <div className="grid gap-1.5">
