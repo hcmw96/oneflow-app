@@ -279,6 +279,8 @@ function SchedulePage() {
   const [endTime, setEndTime] = useState("10:00");
   const [capacity, setCapacity] = useState("12");
   const [description, setDescription] = useState("");
+  const [repeatMode, setRepeatMode] = useState<"none" | "weekly">("none");
+  const [repeatWeeks, setRepeatWeeks] = useState("4");
   const [deleteFromDialog, setDeleteFromDialog] = useState<ClassRow | null>(null);
 
   // Bulk dialogs
@@ -644,7 +646,34 @@ function SchedulePage() {
     setEndTime("10:00");
     setCapacity("12");
     setDescription("");
+    setRepeatMode("none");
+    setRepeatWeeks("4");
   };
+
+  const weeklyPreview = useMemo(() => {
+    if (repeatMode !== "weekly" || dialogMode !== "create") return [];
+    const start = combineDateTimeLocal(dateStr, startTime);
+    const end = combineDateTimeLocal(dateStr, endTime);
+    if (end.getTime() <= start.getTime()) return [];
+    const weeks = Math.max(1, Math.min(52, Math.floor(Number(repeatWeeks)) || 1));
+    const rows: { label: string; startsAt: string }[] = [];
+    for (let i = 0; i < weeks; i++) {
+      const s = new Date(start);
+      s.setDate(s.getDate() + i * 7);
+      rows.push({
+        startsAt: s.toISOString(),
+        label: s.toLocaleString("en-ZA", {
+          weekday: "short",
+          day: "numeric",
+          month: "short",
+          hour: "numeric",
+          minute: "2-digit",
+          hour12: true,
+        }),
+      });
+    }
+    return rows;
+  }, [repeatMode, dialogMode, dateStr, startTime, endTime, repeatWeeks]);
 
   const resolveGuideIdAndName = (
     selectedGuideId: string,
@@ -753,13 +782,37 @@ function SchedulePage() {
         if (error) throw error;
         toast.success("Class updated");
       } else {
-        const { error } = await supabase.from("classes").insert({
-          ...base,
-          booked_count: 0,
-          is_cancelled: false,
-        });
-        if (error) throw error;
-        toast.success("Class created");
+        if (repeatMode === "weekly") {
+          const weeks = Math.max(1, Math.min(52, Math.floor(Number(repeatWeeks)) || 1));
+          const durationMs = end.getTime() - start.getTime();
+          const recurringGroupId = globalThis.crypto.randomUUID();
+          const inserts = Array.from({ length: weeks }, (_, i) => {
+            const occStart = new Date(start);
+            occStart.setDate(occStart.getDate() + i * 7);
+            const occEnd = new Date(occStart.getTime() + durationMs);
+            return {
+              ...base,
+              starts_at: occStart.toISOString(),
+              ends_at: occEnd.toISOString(),
+              recurring_group_id: recurringGroupId,
+              booked_count: 0,
+              is_cancelled: false,
+            };
+          });
+          const { error } = await supabase.from("classes").insert(inserts);
+          if (error) throw error;
+          toast.success(
+            weeks === 1 ? "Class created" : `${weeks} weekly classes created`,
+          );
+        } else {
+          const { error } = await supabase.from("classes").insert({
+            ...base,
+            booked_count: 0,
+            is_cancelled: false,
+          });
+          if (error) throw error;
+          toast.success("Class created");
+        }
       }
       setDialogOpen(false);
       setEditingId(null);
@@ -1458,6 +1511,56 @@ function SchedulePage() {
                 placeholder="Optional — shown on schedule and booking"
               />
             </div>
+            {dialogMode === "create" ? (
+              <>
+                <div className="grid gap-1.5">
+                  <Label>Repeat</Label>
+                  <Select
+                    value={repeatMode}
+                    onValueChange={(v) => setRepeatMode(v as "none" | "weekly")}
+                    disabled={!canManage}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">None</SelectItem>
+                      <SelectItem value="weekly">Weekly</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {repeatMode === "weekly" ? (
+                  <div className="space-y-3">
+                    <div className="grid gap-1.5">
+                      <Label htmlFor="cls-repeat-weeks">Number of weeks</Label>
+                      <Input
+                        id="cls-repeat-weeks"
+                        type="number"
+                        min={1}
+                        max={52}
+                        value={repeatWeeks}
+                        onChange={(e) => setRepeatWeeks(e.target.value)}
+                        disabled={!canManage}
+                      />
+                    </div>
+                    {weeklyPreview.length > 0 ? (
+                      <div className="rounded-lg border border-border/70 bg-muted/30 px-3 py-2.5">
+                        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          Preview ({weeklyPreview.length} classes)
+                        </p>
+                        <ul className="max-h-36 space-y-1 overflow-y-auto text-sm">
+                          {weeklyPreview.map((row, i) => (
+                            <li key={row.startsAt} className="text-foreground">
+                              {i + 1}. {row.label}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+              </>
+            ) : null}
           </div>
           )}
           {canManage ? (
