@@ -1,11 +1,15 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Filter, Loader2, Package, Plus, Search, X } from "lucide-react";
+import { Filter, Loader2, Mail, Package, Plus, Search, X } from "lucide-react";
 import { toast } from "sonner";
 import { AdminEmptyState } from "@/components/admin/AdminEmptyState";
 import { AdminTableWrap } from "@/components/admin/AdminTableWrap";
 import { PageHeader } from "@/components/admin/PageHeader";
 import { CustomerProfileSheet } from "@/components/admin/CustomerProfileSheet";
+import {
+  SendMemberEmailDialog,
+  type SendMemberEmailTarget,
+} from "@/components/admin/SendMemberEmailDialog";
 import {
   AssignPackageDialog,
   type AssignPackageTarget,
@@ -257,10 +261,12 @@ function CustomerRowActions({
   canManage,
   onProfile,
   onAssign,
+  onSendEmail,
 }: {
   canManage: boolean;
   onProfile: () => void;
   onAssign: () => void;
+  onSendEmail: () => void;
 }) {
   return (
     <div className="flex flex-nowrap items-center justify-end gap-1">
@@ -272,6 +278,17 @@ function CustomerRowActions({
         onClick={onProfile}
       >
         Profile
+      </Button>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="h-8 shrink-0 whitespace-nowrap px-2.5 text-xs"
+        disabled={!canManage}
+        onClick={onSendEmail}
+      >
+        <Mail className="h-3.5 w-3.5 shrink-0" aria-hidden />
+        Email
       </Button>
       <Button
         type="button"
@@ -326,6 +343,8 @@ function CustomersPage() {
 
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetCustomerId, setSheetCustomerId] = useState<string | null>(null);
+  const [sendEmailOpen, setSendEmailOpen] = useState(false);
+  const [sendEmailTarget, setSendEmailTarget] = useState<SendMemberEmailTarget | null>(null);
 
   const canManageCustomers =
     (viewerRole ?? "").toLowerCase() === "director" ||
@@ -746,6 +765,15 @@ function CustomersPage() {
         onProfileUpdated={() => void load()}
       />
 
+      <SendMemberEmailDialog
+        open={sendEmailOpen}
+        onOpenChange={(o) => {
+          setSendEmailOpen(o);
+          if (!o) setSendEmailTarget(null);
+        }}
+        target={sendEmailTarget}
+      />
+
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
@@ -1142,6 +1170,15 @@ function CustomersPage() {
                       <CustomerRowActions
                         canManage={canManageCustomers}
                         onProfile={() => openProfileSheet(m.id)}
+                        onSendEmail={() => {
+                          const em = m.email.trim() === "—" || !m.email.trim() ? null : m.email.trim();
+                          if (!em) {
+                            toast.error("This member has no email address.");
+                            return;
+                          }
+                          setSendEmailTarget({ displayName: m.name, email: em });
+                          setSendEmailOpen(true);
+                        }}
                         onAssign={() => {
                           const em = m.email.trim() === "—" || !m.email.trim() ? null : m.email;
                           setBulkAssignTargets(null);

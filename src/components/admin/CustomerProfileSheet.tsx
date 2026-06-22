@@ -17,6 +17,7 @@ import {
   type AssignPackageTarget,
   type AssignedCreditRow,
 } from "@/components/admin/AssignPackageDialog";
+import { SendMemberEmailDialog } from "@/components/admin/SendMemberEmailDialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -195,6 +196,7 @@ export function CustomerProfileSheet({
 
   const [assignOpen, setAssignOpen] = useState(false);
   const [assignTarget, setAssignTarget] = useState<AssignPackageTarget | null>(null);
+  const [sendEmailOpen, setSendEmailOpen] = useState(false);
 
   const [removeCreditId, setRemoveCreditId] = useState<string | null>(null);
   const [removingCredit, setRemovingCredit] = useState(false);
@@ -925,6 +927,18 @@ export function CustomerProfileSheet({
                         </dt>
                         <dd className="min-w-0 break-all">
                           <span className="block">{profile.email ?? "—"}</span>
+                          {canManage && profile.email?.trim() ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="mt-2 text-xs"
+                              onClick={() => setSendEmailOpen(true)}
+                            >
+                              <Mail className="mr-1.5 h-3 w-3" />
+                              Send email
+                            </Button>
+                          ) : null}
                           {canManage && profile.email?.trim() && emailVerified !== true ? (
                             <div className="mt-2 space-y-1">
                               <Button
@@ -1281,6 +1295,21 @@ export function CustomerProfileSheet({
           }}
         />
       ) : null}
+
+      <SendMemberEmailDialog
+        open={sendEmailOpen}
+        onOpenChange={setSendEmailOpen}
+        target={
+          profile?.email?.trim()
+            ? {
+                displayName:
+                  [profile.first_name, profile.last_name].filter(Boolean).join(" ").trim() ||
+                  "Member",
+                email: profile.email.trim(),
+              }
+            : null
+        }
+      />
 
       <AlertDialog
         open={roleConfirmOpen}
