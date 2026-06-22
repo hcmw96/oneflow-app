@@ -6,6 +6,7 @@ import {
   Inbox,
   Loader2,
   Megaphone,
+  MessageSquare,
   Search,
   Send,
 } from "lucide-react";
@@ -19,6 +20,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { ensureMarketingAdminAccess } from "@/lib/ensureMarketingAdminAccess";
 import { BOOKABLE_MEMBER_OR_FILTER, isBookableMember } from "@/lib/bookableMembers";
+import { plainTextToMarketingHtml, sendMarketingEmail } from "@/lib/marketingEmail";
 import { getUser, supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { cn } from "@/lib/utils";
@@ -46,6 +48,17 @@ type MessageRow = {
 };
 
 type ProfileLite = { id: string; fullName: string; email: string };
+
+type MemberMessageRow = {
+  id: string;
+  profile_id: string;
+  subject: string | null;
+  body: string;
+  status: "unread" | "read";
+  created_at: string;
+  memberName: string;
+  memberEmail: string;
+};
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleString("en-ZA", {
@@ -83,6 +96,13 @@ function ClientCommsPage() {
   const [annBody, setAnnBody] = useState("");
   const [annSending, setAnnSending] = useState(false);
 
+  const [memberMessages, setMemberMessages] = useState<MemberMessageRow[]>([]);
+  const [memberMsgQuery, setMemberMsgQuery] = useState("");
+  const [selectedMemberMsg, setSelectedMemberMsg] = useState<MemberMessageRow | null>(null);
+  const [replySubject, setReplySubject] = useState("");
+  const [replyBody, setReplyBody] = useState("");
+  const [replying, setReplying] = useState(false);
+
   const load = useCallback(async () => {
     setLoading(true);
     const user = await getUser();
@@ -92,7 +112,7 @@ function ClientCommsPage() {
     }
     setMe(user.id);
 
-    const [msgsRes, membersRes] = await Promise.all([
+    const [msgsRes, membersRes, memberMsgsRes] = await Promise.all([
       supabase
         .from("studio_messages")
         .select("id, from_profile_id, to_profile_id, subject, body, is_read, message_type, created_at")
@@ -103,6 +123,13 @@ function ClientCommsPage() {
         .select("id, first_name, last_name, email, role, secondary_roles")
         .order("first_name", { ascending: true })
         .limit(2000),
+      supabase
+        .from("member_messages")
+        .select(
+          "id, profile_id, subject, body, status, created_at, profiles(first_name, last_name, email)",
+        )
+        .order("created_at", { ascending: false })
+        .limit(500),
     ]);
 
     const profileMap = new Map<string, string>();
@@ -154,6 +181,36 @@ function ClientCommsPage() {
       setMessages(rows);
     }
 
+    if (memberMsgsRes.error) {
+      console.error(memberMsgsRes.error);
+      toast.error(supabaseErrorMessage(memberMsgsRes.error, "Could not load member messages"));
+      setMemberMessages([]);
+    } else {
+      const mapped: MemberMessageRow[] = (memberMsgsRes.data ?? []).map(
+        (raw: Record<string, unknown>) => {
+          const prof = raw.profiles as
+            | { first_name?: string; last_name?: string; email?: string }
+            | { first_name?: string; last_name?: string; email?: string }[]
+            | null;
+          const p = Array.isArray(prof) ? prof[0] : prof;
+          const fn = String(p?.first_name ?? "").trim();
+          const ln = String(p?.last_name ?? "").trim();
+          const em = String(p?.email ?? "").trim();
+          return {
+            id: String(raw.id),
+            profile_id: String(raw.profile_id),
+            subject: (raw.subject as string | null) ?? null,
+            body: String(raw.body ?? ""),
+            status: (raw.status as "unread" | "read") ?? "unread",
+            created_at: String(raw.created_at ?? new Date().toISOString()),
+            memberName: `${fn} ${ln}`.trim() || em || "Member",
+            memberEmail: em,
+          };
+        },
+      );
+      setMemberMessages(mapped);
+    }
+
     setLoading(false);
   }, []);
 
@@ -197,6 +254,64 @@ function ClientCommsPage() {
   const sentRows = sent.slice((sentPage - 1) * PAGE_SIZE, sentPage * PAGE_SIZE);
 
   const unreadCount = inbox.filter((m) => !m.is_read).length;
+  const unreadMemberCount = memberMessages.filter((m) => m.status === "unread").length;
+
+  const filteredMemberMessages = useMemo(() => {
+    const q = memberMsgQuery.trim().toLowerCase();
+    return memberMessages.filter((m) => {
+      if (!q) return true;
+      return `${m.memberName} ${m.memberEmail} ${m.subject ?? ""} ${m.body}`
+        .toLowerCase()
+        .includes(q);
+    });
+  }, [memberMessages, memberMsgQuery]);
+
+  const openMemberMessage = async (row: MemberMessageRow) => {
+    setSelectedMemberMsg(row);
+    setReplySubject(row.subject?.trim() ? `Re: ${row.subject.trim()}` : "Re: your message to One Flow");
+    setReplyBody("");
+    if (row.status === "unread") {
+      const { error } = await supabase
+        .from("member_messages")
+        .update({ status: "read" })
+        .eq("id", row.id);
+      if (!error) {
+        setMemberMessages((prev) =>
+          prev.map((m) => (m.id === row.id ? { ...m, status: "read" as const } : m)),
+        );
+        setSelectedMemberMsg({ ...row, status: "read" });
+      }
+    }
+  };
+
+  const sendMemberReply = async () => {
+    if (!selectedMemberMsg) return;
+    const to = selectedMemberMsg.memberEmail.trim();
+    if (!to || !to.includes("@")) {
+      toast.error("This member has no email on file");
+      return;
+    }
+    const body = replyBody.trim();
+    if (!body) {
+      toast.error("Write a reply message");
+      return;
+    }
+    const subject = replySubject.trim() || "Reply from One Flow";
+    setReplying(true);
+    const { ok, error } = await sendMarketingEmail(
+      to,
+      subject,
+      plainTextToMarketingHtml(body),
+    );
+    setReplying(false);
+    if (!ok) {
+      toast.error(error ?? "Could not send reply");
+      return;
+    }
+    toast.success(`Reply sent to ${selectedMemberMsg.memberName}`);
+    setReplyBody("");
+    setSelectedMemberMsg(null);
+  };
 
   const markRead = async (id: string) => {
     const { error } = await supabase
@@ -322,6 +437,14 @@ function ClientCommsPage() {
               </span>
             )}
           </TabsTrigger>
+          <TabsTrigger value="member-inbox" className="gap-1">
+            From members
+            {unreadMemberCount > 0 && (
+              <span className="ml-1 rounded-full bg-[#a3b693] px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                {unreadMemberCount}
+              </span>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="send">Send message</TabsTrigger>
           <TabsTrigger value="announcements">Announcements</TabsTrigger>
           <TabsTrigger value="sent">Sent</TabsTrigger>
@@ -401,6 +524,126 @@ function ClientCommsPage() {
               onNext={() => setInboxPage((p) => Math.min(inboxPageCount, p + 1))}
             />
           )}
+        </TabsContent>
+
+        <TabsContent value="member-inbox" className="mt-0">
+          <div className="mb-4 max-w-md">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <input
+                value={memberMsgQuery}
+                onChange={(e) => setMemberMsgQuery(e.target.value)}
+                placeholder="Search member messages…"
+                className="w-full rounded-lg border border-border bg-card py-2.5 pl-9 pr-3 text-sm outline-none focus:border-primary"
+              />
+            </div>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="rounded-2xl border border-border bg-card">
+              {loading ? (
+                <div className="space-y-3 p-5">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <Skeleton key={i} className="h-12 w-full" />
+                  ))}
+                </div>
+              ) : filteredMemberMessages.length === 0 ? (
+                <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+                  <MessageSquare className="h-10 w-10 text-muted-foreground" strokeWidth={1.5} />
+                  <p className="text-sm text-muted-foreground">No member messages yet.</p>
+                </div>
+              ) : (
+                <ul className="divide-y divide-border">
+                  {filteredMemberMessages.map((m) => (
+                    <li
+                      key={m.id}
+                      className={cn(
+                        "cursor-pointer px-5 py-3 hover:bg-muted/30",
+                        m.status === "unread" && "bg-[#e8efe3]/40",
+                        selectedMemberMsg?.id === m.id && "ring-1 ring-inset ring-[#a3b693]/50",
+                      )}
+                      onClick={() => void openMemberMessage(m)}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold">{m.memberName}</p>
+                          <p className="truncate text-xs text-muted-foreground">
+                            {m.subject?.trim() || "(No subject)"}
+                          </p>
+                          <p className="mt-0.5 line-clamp-2 text-sm text-muted-foreground">
+                            {m.body}
+                          </p>
+                        </div>
+                        <div className="shrink-0 text-right">
+                          <span className="text-xs text-muted-foreground">
+                            {formatDate(m.created_at)}
+                          </span>
+                          {m.status === "unread" ? (
+                            <span className="mt-1 block text-[10px] font-semibold uppercase text-[#a3b693]">
+                              Unread
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            <div className="rounded-2xl border border-border bg-card p-5">
+              {selectedMemberMsg ? (
+                <>
+                  <h3 className="font-display text-lg font-semibold">{selectedMemberMsg.memberName}</h3>
+                  <p className="text-xs text-muted-foreground">{selectedMemberMsg.memberEmail || "—"}</p>
+                  <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    {selectedMemberMsg.subject?.trim() || "No subject"} ·{" "}
+                    {formatDate(selectedMemberMsg.created_at)}
+                  </p>
+                  <div className="mt-3 max-h-48 overflow-y-auto rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-sm whitespace-pre-wrap">
+                    {selectedMemberMsg.body}
+                  </div>
+                  <div className="mt-4 space-y-3 border-t border-border pt-4">
+                    <div className="grid gap-1.5">
+                      <Label htmlFor="member-reply-subject">Reply subject</Label>
+                      <Input
+                        id="member-reply-subject"
+                        value={replySubject}
+                        onChange={(e) => setReplySubject(e.target.value)}
+                      />
+                    </div>
+                    <div className="grid gap-1.5">
+                      <Label htmlFor="member-reply-body">Reply</Label>
+                      <Textarea
+                        id="member-reply-body"
+                        rows={5}
+                        value={replyBody}
+                        onChange={(e) => setReplyBody(e.target.value)}
+                        placeholder="Your reply…"
+                      />
+                    </div>
+                    <Button
+                      type="button"
+                      disabled={replying || !replyBody.trim()}
+                      className="gap-2 bg-[#a3b693] text-white hover:bg-[#8fa67d]"
+                      onClick={() => void sendMemberReply()}
+                    >
+                      {replying ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Send className="h-4 w-4" />
+                      )}
+                      Send reply by email
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <p className="py-16 text-center text-sm text-muted-foreground">
+                  Select a message to read and reply.
+                </p>
+              )}
+            </div>
+          </div>
         </TabsContent>
 
         <TabsContent value="send" className="mt-0">

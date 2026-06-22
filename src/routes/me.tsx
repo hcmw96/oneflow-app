@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { FriendsPanel } from "@/components/FriendsPanel";
+import { MessageStudioButton } from "@/components/MessageStudioSheet";
 import { formatRand } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -476,6 +477,8 @@ function ProfileTab({
           <Pencil className="h-4 w-4" /> Edit profile
         </Button>
       )}
+
+      <MessageStudioButton className="mt-3 w-full gap-2 rounded-xl py-6 text-base shadow-sm" />
     </Panel>
   );
 }
