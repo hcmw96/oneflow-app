@@ -10,10 +10,13 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Download, UserMinus, UserPlus, Users, UserX, Wallet } from "lucide-react";
+import { Download, Mail, UserMinus, UserPlus, Users, UserX, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatCard } from "@/components/admin/StatCard";
+import { MemberNudgeDialog } from "@/components/admin/reports/MemberNudgeDialog";
+import type { SegmentRow } from "@/components/admin/reports/memberNudgeTypes";
+import type { NudgeKind } from "@/lib/memberNudgeTemplates";
 import { BOOKABLE_MEMBER_OR_FILTER } from "@/lib/bookableMembers";
 import { supabase } from "@/lib/supabase";
 import { downloadReportCsv } from "@/lib/reportsCsv";
@@ -53,14 +56,6 @@ type LtvRow = {
     | { price_zar: number | null }
     | { price_zar: number | null }[]
     | null;
-};
-
-type SegmentRow = {
-  id: string;
-  name: string;
-  email: string;
-  lastAttended: string | null;
-  daysSince: number | null;
 };
 
 type SectionState = {
@@ -124,7 +119,14 @@ function shortDate(iso: string): string {
 
 export function MembersSection({ bounds }: { bounds: PeriodBounds }) {
   const [state, setState] = useState<SectionState>(EMPTY);
+  const [nudgeOpen, setNudgeOpen] = useState(false);
+  const [nudgeKind, setNudgeKind] = useState<NudgeKind>("lapsed");
   const { startUtcIso, endUtcIso } = bounds;
+
+  const openNudge = (kind: NudgeKind) => {
+    setNudgeKind(kind);
+    setNudgeOpen(true);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -505,12 +507,14 @@ export function MembersSection({ bounds }: { bounds: PeriodBounds }) {
             rows: state.lapsedRows,
             filename: "lapsed-members",
             tone: "border-orange-200/60 bg-orange-50/30",
+            nudgeKind: "lapsed" as const,
           },
           {
             title: `Churned (${state.churnedRows.length})`,
             rows: state.churnedRows,
             filename: "churned-members",
             tone: "border-rose-200/60 bg-rose-50/30",
+            nudgeKind: "churned" as const,
           },
         ] as const).map((bucket) => (
           <div
@@ -520,20 +524,32 @@ export function MembersSection({ bounds }: { bounds: PeriodBounds }) {
               bucket.tone,
             )}
           >
-            <div className="mb-2 flex items-center justify-between gap-3">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 {bucket.title}
               </p>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-7 gap-1 text-xs"
-                onClick={() => exportSegmentCsv([...bucket.rows], bucket.filename)}
-                disabled={state.loading || bucket.rows.length === 0}
-              >
-                <Download className="h-3 w-3" /> CSV
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 gap-1 text-xs"
+                  onClick={() => openNudge(bucket.nudgeKind)}
+                  disabled={state.loading || bucket.rows.length === 0}
+                >
+                  <Mail className="h-3 w-3" /> Send nudge
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 gap-1 text-xs"
+                  onClick={() => exportSegmentCsv([...bucket.rows], bucket.filename)}
+                  disabled={state.loading || bucket.rows.length === 0}
+                >
+                  <Download className="h-3 w-3" /> CSV
+                </Button>
+              </div>
             </div>
             {state.loading ? (
               <div className="space-y-2">
@@ -586,6 +602,13 @@ export function MembersSection({ bounds }: { bounds: PeriodBounds }) {
           </div>
         ))}
       </div>
+
+      <MemberNudgeDialog
+        open={nudgeOpen}
+        onOpenChange={setNudgeOpen}
+        kind={nudgeKind}
+        rows={nudgeKind === "lapsed" ? state.lapsedRows : state.churnedRows}
+      />
 
       {/* Top 10 LTV */}
       <div
