@@ -17,7 +17,8 @@ import {
   leaveWaitlist,
   type WaitlistEntryWithClass,
 } from "@/lib/waitlist";
-import { shareClassPractice } from "@/lib/classPracticeShare";
+import { PracticeShareComposerSheet } from "@/components/PracticeShareComposerSheet";
+import type { ClassPracticeShareInput } from "@/lib/classPracticeShare";
 
 function uuidOrUndefined(v: unknown): string | undefined {
   if (typeof v !== "string") return undefined;
@@ -90,7 +91,8 @@ function BookingsPage() {
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<BookingListRow[]>([]);
   const [waitlist, setWaitlist] = useState<WaitlistEntryWithClass[]>([]);
-  const [sharingId, setSharingId] = useState<string | null>(null);
+  const [shareComposerOpen, setShareComposerOpen] = useState(false);
+  const [shareComposerInput, setShareComposerInput] = useState<ClassPracticeShareInput | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -194,25 +196,14 @@ function BookingsPage() {
     }
   };
 
-  const sharePractice = async (booking: BookingListRow) => {
-    setSharingId(booking.id);
-    try {
-      const result = await shareClassPractice({
-        className: booking.className,
-        guideName: booking.guideName ?? booking.guideFirst ?? "",
-        startsAt: booking.startsAt,
-        timeZone: timeZone ?? studioTimeZone,
-      });
-      if (result.method === "copy") {
-        toast.success("Link copied — paste into your story or post");
-      } else if (result.method === "share") {
-        toast.success("Shared!");
-      }
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not share");
-    } finally {
-      setSharingId(null);
-    }
+  const openShareComposer = (booking: BookingListRow) => {
+    setShareComposerInput({
+      className: booking.className,
+      guideName: booking.guideName ?? booking.guideFirst ?? "",
+      startsAt: booking.startsAt,
+      timeZone: timeZone ?? studioTimeZone,
+    });
+    setShareComposerOpen(true);
   };
 
   const cancelBooking = async (bookingId: string) => {
@@ -395,12 +386,11 @@ Are you sure you want to cancel?`;
                   {b.status === "attended" ? (
                     <button
                       type="button"
-                      onClick={() => void sharePractice(b)}
-                      disabled={sharingId === b.id}
-                      className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-[#a3b693] px-4 py-2 text-xs font-semibold text-white hover:bg-[#8fa67d] disabled:opacity-60"
+                      onClick={() => openShareComposer(b)}
+                      className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-[#a3b693] px-4 py-2 text-xs font-semibold text-white hover:bg-[#8fa67d]"
                     >
                       <Share2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                      {sharingId === b.id ? "Preparing…" : "Share your practice"}
+                      Share your practice
                     </button>
                   ) : null}
                 </article>
@@ -408,6 +398,15 @@ Are you sure you want to cancel?`;
           </>
         )}
       </main>
+
+      <PracticeShareComposerSheet
+        open={shareComposerOpen}
+        onOpenChange={(open) => {
+          setShareComposerOpen(open);
+          if (!open) setShareComposerInput(null);
+        }}
+        input={shareComposerInput}
+      />
     </AppShell>
   );
 }

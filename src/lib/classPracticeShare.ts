@@ -1,7 +1,9 @@
-const SHARE_URL = "https://oneflow1.netlify.app";
-const LOGO_PATH = "/email/oneflow-logo.png";
-const CANVAS_WIDTH = 1080;
-const CANVAS_HEIGHT = 1920;
+export const SHARE_URL = "https://oneflow1.netlify.app";
+/** Public logo — `public/icons/` has PWA icons only; brand mark is under `public/email/`. */
+export const PRACTICE_SHARE_LOGO_PATH = "/email/oneflow-logo.png";
+export const PRACTICE_SHARE_WIDTH = 1080;
+export const PRACTICE_SHARE_HEIGHT = 1920;
+const SAGE = "#a3b693";
 
 export type ClassPracticeShareInput = {
   className: string;
@@ -17,6 +19,19 @@ function loadImage(src: string): Promise<HTMLImageElement> {
     img.onload = () => resolve(img);
     img.onerror = () => reject(new Error(`Could not load image: ${src}`));
     img.src = src;
+  });
+}
+
+export function loadImageFromFile(file: File): Promise<{ image: HTMLImageElement; objectUrl: string }> {
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => resolve({ image: img, objectUrl });
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("Could not load photo"));
+    };
+    img.src = objectUrl;
   });
 }
 
@@ -43,78 +58,47 @@ export function classPracticeShareText(input: ClassPracticeShareInput): {
   };
 }
 
-export async function generateClassPracticeShareImage(
-  input: ClassPracticeShareInput,
-): Promise<Blob | null> {
-  if (typeof document === "undefined") return null;
+function drawCoverImage(
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement,
+  width: number,
+  height: number,
+): void {
+  const canvasAspect = width / height;
+  const imgAspect = img.width / img.height;
+  let sx = 0;
+  let sy = 0;
+  let sw = img.width;
+  let sh = img.height;
 
-  const canvas = document.createElement("canvas");
-  canvas.width = CANVAS_WIDTH;
-  canvas.height = CANVAS_HEIGHT;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return null;
-
-  const sage = "#a3b693";
-  const dark = "#2f3d2a";
-  const muted = "#f5f7f2";
-
-  ctx.fillStyle = sage;
-  ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-
-  ctx.fillStyle = muted;
-  ctx.globalAlpha = 0.12;
-  ctx.beginPath();
-  ctx.arc(CANVAS_WIDTH * 0.85, CANVAS_HEIGHT * 0.12, 220, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.beginPath();
-  ctx.arc(CANVAS_WIDTH * 0.1, CANVAS_HEIGHT * 0.88, 280, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.globalAlpha = 1;
-
-  try {
-    const logo = await loadImage(LOGO_PATH);
-    const logoW = 360;
-    const logoH = (logo.height / logo.width) * logoW;
-    ctx.drawImage(logo, (CANVAS_WIDTH - logoW) / 2, 220, logoW, logoH);
-  } catch {
-    ctx.fillStyle = muted;
-    ctx.font = "700 72px Georgia, serif";
-    ctx.textAlign = "center";
-    ctx.fillText("One Flow", CANVAS_WIDTH / 2, 320);
+  if (imgAspect > canvasAspect) {
+    sw = img.height * canvasAspect;
+    sx = (img.width - sw) / 2;
+  } else {
+    sh = img.width / canvasAspect;
+    sy = (img.height - sh) / 2;
   }
 
-  ctx.fillStyle = muted;
-  ctx.font = "600 44px system-ui, -apple-system, Segoe UI, sans-serif";
-  ctx.textAlign = "center";
-  ctx.fillText("Practice complete", CANVAS_WIDTH / 2, 680);
-
-  ctx.fillStyle = dark;
-  ctx.font = "700 64px Georgia, 'Times New Roman', serif";
-  wrapCanvasText(ctx, input.className, CANVAS_WIDTH / 2, 860, CANVAS_WIDTH - 160, 74);
-
-  ctx.fillStyle = dark;
-  ctx.globalAlpha = 0.85;
-  ctx.font = "500 40px system-ui, -apple-system, Segoe UI, sans-serif";
-  ctx.fillText(formatShareDate(input.startsAt, input.timeZone), CANVAS_WIDTH / 2, 1180);
-  ctx.globalAlpha = 1;
-
-  ctx.fillStyle = muted;
-  ctx.font = "600 36px system-ui, -apple-system, Segoe UI, sans-serif";
-  ctx.fillText("oneflow1.netlify.app", CANVAS_WIDTH / 2, CANVAS_HEIGHT - 180);
-
-  return new Promise((resolve) => {
-    canvas.toBlob((blob) => resolve(blob), "image/png", 0.92);
-  });
+  ctx.drawImage(img, sx, sy, sw, sh, 0, 0, width, height);
 }
 
-function wrapCanvasText(
+function drawSageGradientBackground(ctx: CanvasRenderingContext2D, width: number, height: number): void {
+  const gradient = ctx.createLinearGradient(0, 0, width, height);
+  gradient.addColorStop(0, "#b8c9a8");
+  gradient.addColorStop(0.5, SAGE);
+  gradient.addColorStop(1, "#8fa67d");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, width, height);
+}
+
+function wrapCanvasTextLeft(
   ctx: CanvasRenderingContext2D,
   text: string,
   x: number,
   y: number,
   maxWidth: number,
   lineHeight: number,
-): void {
+): number {
   const words = text.split(/\s+/).filter(Boolean);
   const lines: string[] = [];
   let line = "";
@@ -129,51 +113,145 @@ function wrapCanvasText(
   }
   if (line) lines.push(line);
 
-  const startY = y - ((lines.length - 1) * lineHeight) / 2;
   lines.forEach((ln, i) => {
-    ctx.fillText(ln, x, startY + i * lineHeight);
+    ctx.fillText(ln, x, y + i * lineHeight);
+  });
+  return lines.length;
+}
+
+async function drawWhiteLogo(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+): Promise<number> {
+  try {
+    const logo = await loadImage(PRACTICE_SHARE_LOGO_PATH);
+    const logoH = (logo.height / logo.width) * width;
+    ctx.save();
+    ctx.filter = "brightness(0) invert(1)";
+    ctx.drawImage(logo, x, y, width, logoH);
+    ctx.restore();
+    return logoH;
+  } catch {
+    ctx.save();
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "700 48px Georgia, serif";
+    ctx.textAlign = "left";
+    ctx.fillText("One Flow", x, y + 48);
+    ctx.restore();
+    return 56;
+  }
+}
+
+export async function renderPracticeShareCanvas(
+  canvas: HTMLCanvasElement,
+  input: ClassPracticeShareInput,
+  backgroundImage: HTMLImageElement | null,
+): Promise<void> {
+  const width = PRACTICE_SHARE_WIDTH;
+  const height = PRACTICE_SHARE_HEIGHT;
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+
+  if (backgroundImage) {
+    drawCoverImage(ctx, backgroundImage, width, height);
+  } else {
+    drawSageGradientBackground(ctx, width, height);
+  }
+
+  const overlayHeight = height * 0.4;
+  const overlayTop = height - overlayHeight;
+  const overlayGrad = ctx.createLinearGradient(0, overlayTop, 0, height);
+  overlayGrad.addColorStop(0, "rgba(0,0,0,0)");
+  overlayGrad.addColorStop(0.35, "rgba(0,0,0,0.45)");
+  overlayGrad.addColorStop(1, "rgba(0,0,0,0.82)");
+  ctx.fillStyle = overlayGrad;
+  ctx.fillRect(0, overlayTop, width, overlayHeight);
+
+  const accentBarHeight = 18;
+  ctx.fillStyle = SAGE;
+  ctx.fillRect(0, height - accentBarHeight, width, accentBarHeight);
+
+  const paddingX = 72;
+  await drawWhiteLogo(ctx, paddingX, 72, 220);
+
+  const dateText = formatShareDate(input.startsAt, input.timeZone);
+  const guide = input.guideName.trim();
+  const textMaxWidth = width - paddingX * 2;
+  const accentTop = height - accentBarHeight;
+
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+
+  ctx.fillStyle = "rgba(255,255,255,0.92)";
+  ctx.font = "500 34px system-ui, -apple-system, Segoe UI, sans-serif";
+  ctx.fillText(dateText, paddingX, accentTop - 56);
+
+  let textCursorY = accentTop - 120;
+
+  if (guide) {
+    ctx.fillStyle = "rgba(255,255,255,0.88)";
+    ctx.font = "500 42px system-ui, -apple-system, Segoe UI, sans-serif";
+    const guideLines = wrapCanvasTextLeft(ctx, `with ${guide}`, paddingX, textCursorY, textMaxWidth, 50);
+    textCursorY -= guideLines * 50 + 28;
+  }
+
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "700 68px Georgia, 'Times New Roman', serif";
+  wrapCanvasTextLeft(ctx, input.className, paddingX, textCursorY, textMaxWidth, 78);
+}
+
+export function practiceShareCanvasToBlob(canvas: HTMLCanvasElement): Promise<Blob | null> {
+  return new Promise((resolve) => {
+    canvas.toBlob((blob) => resolve(blob), "image/png", 0.92);
   });
 }
 
-async function copyTextToClipboard(text: string): Promise<boolean> {
+export function downloadPracticeShareBlob(blob: Blob, filename = "oneflow-practice.png"): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+export function canSharePracticeFiles(): boolean {
+  if (typeof navigator === "undefined" || typeof navigator.share !== "function") {
+    return false;
+  }
   try {
-    await navigator.clipboard.writeText(text);
-    return true;
+    const file = new File(["x"], "oneflow-practice.png", { type: "image/png" });
+    return !navigator.canShare || navigator.canShare({ files: [file] });
   } catch {
     return false;
   }
 }
 
-export async function shareClassPractice(input: ClassPracticeShareInput): Promise<{
-  method: "share" | "copy" | "none";
-}> {
+export async function sharePracticeShareBlob(
+  blob: Blob,
+  input: ClassPracticeShareInput,
+): Promise<"share" | "cancelled" | "failed"> {
   const { title, text, url } = classPracticeShareText(input);
-  const imageBlob = await generateClassPracticeShareImage(input);
+  if (typeof navigator.share !== "function") return "failed";
 
-  if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
-    const file =
-      imageBlob != null
-        ? new File([imageBlob], "oneflow-practice.png", { type: "image/png" })
-        : null;
+  const file = new File([blob], "oneflow-practice.png", { type: "image/png" });
+  const payload = { title, text: `${text}\n${url}`, files: [file] };
 
-    const withFiles = file
-      ? { title, text: `${text}\n${url}`, files: [file] }
-      : { title, text: `${text}\n${url}`, url };
-
-    try {
-      if (file && navigator.canShare && !navigator.canShare(withFiles)) {
-        await navigator.share({ title, text: `${text}\n${url}`, url });
-        return { method: "share" };
-      }
-      await navigator.share(withFiles);
-      return { method: "share" };
-    } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") {
-        return { method: "none" };
-      }
+  try {
+    if (navigator.canShare && !navigator.canShare(payload)) {
+      await navigator.share({ title, text: `${text}\n${url}`, url });
+      return "share";
     }
+    await navigator.share(payload);
+    return "share";
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      return "cancelled";
+    }
+    return "failed";
   }
-
-  const copied = await copyTextToClipboard(`${text}\n${url}`);
-  return { method: copied ? "copy" : "none" };
 }
