@@ -57,9 +57,11 @@ type WaiverRow = {
   fullName: string;
   email: string;
   acceptedAt: string | null;
+  onboardingComplete: boolean;
+  status: "signed" | "pending";
 };
 
-type StatusFilter = "all" | "accepted" | "not_accepted";
+type StatusFilter = "all" | "signed" | "pending";
 type SortKey = "name_asc" | "name_desc" | "date_accepted" | "not_accepted_first";
 
 function formatDate(iso: string | null): string {
@@ -89,31 +91,41 @@ function WaiversPage() {
     setLoading(true);
     const { data, error } = await supabase
       .from("profiles")
-      .select("id, first_name, last_name, email, waiver_accepted_at")
+      .select("id, first_name, last_name, email, waiver_accepted_at, onboarding_complete")
       .or(BOOKABLE_MEMBER_OR_FILTER)
       .order("first_name", { ascending: true });
 
     if (error) {
       console.error("waivers load failed", error);
-      toast.error(supabaseErrorMessage(error, "Could not load waivers"));
+      toast.error(supabaseErrorMessage(error, "Could not load waiver status"));
       setRows([]);
       setLoading(false);
       return;
     }
 
-    const mapped: WaiverRow[] = (data ?? []).map((p: Record<string, unknown>) => {
-      const fn = String(p.first_name ?? "").trim();
-      const ln = String(p.last_name ?? "").trim();
-      const fullName = `${fn} ${ln}`.trim() || "Member";
-      return {
-        id: String(p.id),
-        firstName: fn,
-        lastName: ln,
-        fullName,
-        email: String(p.email ?? ""),
-        acceptedAt: (p.waiver_accepted_at as string | null) ?? null,
-      };
-    });
+    const mapped: WaiverRow[] = (data ?? [])
+      .map((p: Record<string, unknown>) => {
+        const fn = String(p.first_name ?? "").trim();
+        const ln = String(p.last_name ?? "").trim();
+        const fullName = `${fn} ${ln}`.trim() || "Member";
+        const acceptedAt = (p.waiver_accepted_at as string | null) ?? null;
+        const onboardingComplete = p.onboarding_complete === true;
+        const signed = acceptedAt != null && String(acceptedAt).trim() !== "";
+        const pending = !signed && onboardingComplete;
+        if (!signed && !pending) return null;
+        return {
+          id: String(p.id),
+          firstName: fn,
+          lastName: ln,
+          fullName,
+          email: String(p.email ?? ""),
+          acceptedAt,
+          onboardingComplete,
+          status: signed ? "signed" : "pending",
+        };
+      })
+      .filter((x): x is WaiverRow => x !== null);
+
     setRows(mapped);
     setLoading(false);
   }, []);
@@ -126,12 +138,11 @@ function WaiversPage() {
     const ql = q.trim().toLowerCase();
     let out = rows.filter((r) => {
       if (ql) {
-        const hay = `${r.fullName} ${r.email}`.toLowerCase();
+        const hay = `${r.firstName} ${r.lastName} ${r.fullName} ${r.email}`.toLowerCase();
         if (!hay.includes(ql)) return false;
       }
-      const accepted = !!r.acceptedAt;
-      if (statusFilter === "accepted" && !accepted) return false;
-      if (statusFilter === "not_accepted" && accepted) return false;
+      if (statusFilter === "signed" && r.status !== "signed") return false;
+      if (statusFilter === "pending" && r.status !== "pending") return false;
       return true;
     });
     out = [...out].sort((a, b) => {
@@ -167,9 +178,9 @@ function WaiversPage() {
   const pageCount = Math.max(1, Math.ceil(filteredSorted.length / PAGE_SIZE));
   const pageRows = filteredSorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  const acceptedCount = rows.filter((r) => r.acceptedAt).length;
-  const notAcceptedCount = rows.length - acceptedCount;
-  const recipientsForReminder = rows.filter((r) => !r.acceptedAt && r.email);
+  const acceptedCount = rows.filter((r) => r.status === "signed").length;
+  const notAcceptedCount = rows.filter((r) => r.status === "pending").length;
+  const recipientsForReminder = rows.filter((r) => r.status === "pending" && r.email);
 
   const sendReminder = async () => {
     setSending(true);
@@ -233,9 +244,9 @@ function WaiversPage() {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All members</SelectItem>
-            <SelectItem value="accepted">Accepted</SelectItem>
-            <SelectItem value="not_accepted">Not accepted</SelectItem>
+            <SelectItem value="all">All</SelectItem>
+            <SelectItem value="signed">Signed</SelectItem>
+            <SelectItem value="pending">Pending</SelectItem>
           </SelectContent>
         </Select>
         <Select value={sort} onValueChange={(v) => setSort(v as SortKey)}>
@@ -269,14 +280,12 @@ function WaiversPage() {
               <tr className="text-left text-xs uppercase tracking-wider text-muted-foreground">
                 <th className="px-5 py-3 font-medium">Member</th>
                 <th className="px-5 py-3 font-medium">Email</th>
-                <th className="px-5 py-3 font-medium">Waiver</th>
-                <th className="px-5 py-3 font-medium">Accepted</th>
+                <th className="px-5 py-3 font-medium">Status</th>
+                <th className="px-5 py-3 font-medium">Date signed</th>
               </tr>
             </thead>
             <tbody>
-              {pageRows.map((r) => {
-                const accepted = !!r.acceptedAt;
-                return (
+              {pageRows.map((r) => (
                   <tr
                     key={r.id}
                     role="link"
@@ -290,7 +299,7 @@ function WaiversPage() {
                     }}
                     className={cn(
                       "cursor-pointer border-t border-border hover:bg-muted/30",
-                      !accepted && "bg-amber-50/40 dark:bg-amber-950/10",
+                      r.status === "pending" && "bg-amber-50/40 dark:bg-amber-950/10",
                     )}
                   >
                     <td className="max-w-[200px] truncate px-5 py-3 font-semibold">
@@ -300,22 +309,21 @@ function WaiversPage() {
                       {r.email || "—"}
                     </td>
                     <td className="px-5 py-3">
-                      {accepted ? (
+                      {r.status === "signed" ? (
                         <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-green-800">
-                          <CheckCircle2 className="h-3 w-3" /> Accepted
+                          <CheckCircle2 className="h-3 w-3" /> Signed
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">
-                          <XCircle className="h-3 w-3" /> Not accepted
+                          <XCircle className="h-3 w-3" /> Pending
                         </span>
                       )}
                     </td>
                     <td className="whitespace-nowrap px-5 py-3 tabular-nums text-muted-foreground">
-                      {formatDate(r.acceptedAt)}
+                      {r.status === "signed" ? formatDate(r.acceptedAt) : "Pending"}
                     </td>
                   </tr>
-                );
-              })}
+                ))}
             </tbody>
           </table>
         )}
@@ -363,14 +371,16 @@ function WaiversPage() {
               <div className="flex justify-between gap-4">
                 <span className="text-muted-foreground">Status</span>
                 <span className="font-medium">
-                  {detail.acceptedAt ? "Accepted" : "Not accepted"}
+                  {detail.status === "signed" ? "Signed" : "Pending"}
                 </span>
               </div>
               <div className="flex justify-between gap-4">
-                <span className="text-muted-foreground">Accepted at</span>
-                <span className="font-medium">{formatDate(detail.acceptedAt)}</span>
+                <span className="text-muted-foreground">Date signed</span>
+                <span className="font-medium">
+                  {detail.status === "signed" ? formatDate(detail.acceptedAt) : "Pending"}
+                </span>
               </div>
-              {detail.acceptedAt ? (
+              {detail.status === "signed" ? (
                 <p className="rounded-md bg-green-50 p-3 text-xs text-green-900">
                   This member has accepted the One Flow studio waiver. Their digital signature is
                   recorded with the timestamp above.

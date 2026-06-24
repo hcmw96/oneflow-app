@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -43,9 +44,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  fetchBookableProfilesForCampaign,
   fetchCampaignRecipientEmails,
+  type BookableProfilePick,
   type CampaignRecipientFilter,
 } from "@/lib/campaignRecipients";
+import { EMAIL_CAMPAIGN_TEMPLATES } from "@/lib/emailCampaignTemplates";
 import { BOOKABLE_MEMBER_OR_FILTER } from "@/lib/bookableMembers";
 import { ensureMarketingAdminAccess } from "@/lib/ensureMarketingAdminAccess";
 import { getUser, supabase } from "@/lib/supabase";
@@ -71,7 +75,7 @@ type CampaignRow = {
   created_at: string;
 };
 
-type RecipientFilter = "all" | "active" | "with_credits" | "role";
+type RecipientFilter = CampaignRecipientFilter;
 
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
@@ -98,11 +102,16 @@ function previewWrap(subject: string, html: string): string {
         <h2 style="font-size:20px;color:#a3b693;margin:0 0 16px;">${subject || ""}</h2>
         ${html}
       </td></tr>
-      <tr><td style="padding:20px;background:#f5f5f0;text-align:center;color:#888;font-size:12px;">One Flow Wellness Studio · Cape Town</td></tr>
+      <tr><td style="padding:20px;background:#f5f5f0;text-align:center;color:#888;font-size:12px;">One Flow Yoga &amp; Wellness · Cape Town</td></tr>
     </table>
   </td></tr>
 </table>
 </body></html>`;
+}
+
+function profileLabel(p: BookableProfilePick): string {
+  const name = [p.first_name, p.last_name].filter(Boolean).join(" ").trim();
+  return name ? `${name} · ${p.email ?? ""}` : (p.email ?? "Member");
 }
 
 function EmailPage() {
@@ -118,6 +127,10 @@ function EmailPage() {
   const [bodyHtml, setBodyHtml] = useState("");
   const [recipientType, setRecipientType] = useState<RecipientFilter>("all");
   const [roleValue, setRoleValue] = useState("customer");
+  const [individualProfileId, setIndividualProfileId] = useState<string>("");
+  const [specificProfileIds, setSpecificProfileIds] = useState<string[]>([]);
+  const [memberSearch, setMemberSearch] = useState("");
+  const [bookableProfiles, setBookableProfiles] = useState<BookableProfilePick[]>([]);
   const [draftId, setDraftId] = useState<string | null>(null);
   const [savingDraft, setSavingDraft] = useState(false);
   const [sending, setSending] = useState(false);
@@ -166,6 +179,15 @@ function EmailPage() {
       }
       setCustomerProfileCount(count ?? 0);
     })();
+    void (async () => {
+      try {
+        const profiles = await fetchBookableProfilesForCampaign();
+        setBookableProfiles(profiles);
+      } catch (e) {
+        console.error("email: bookable profiles load failed", e);
+        setBookableProfiles([]);
+      }
+    })();
   }, [load]);
 
   const pageCount = Math.max(1, Math.ceil(campaigns.length / PAGE_SIZE));
@@ -182,9 +204,22 @@ function EmailPage() {
     exec("createLink", url);
   };
 
+  const recipientOptions = useMemo(
+    () => ({
+      filter: recipientType,
+      roleValue,
+      individualProfileId:
+        recipientType === "role" && roleValue === "customer" && individualProfileId
+          ? individualProfileId
+          : null,
+      specificProfileIds: recipientType === "specific" ? specificProfileIds : [],
+    }),
+    [recipientType, roleValue, individualProfileId, specificProfileIds],
+  );
+
   const queryRecipients = useCallback(
-    () => fetchCampaignRecipientEmails(recipientType, roleValue),
-    [recipientType, roleValue],
+    () => fetchCampaignRecipientEmails(recipientOptions),
+    [recipientOptions],
   );
 
   const marketingSubject = subject.trim() || "An update from One Flow";
@@ -229,10 +264,27 @@ function EmailPage() {
     setBodyHtml("");
     setRecipientType("all");
     setRoleValue("customer");
+    setIndividualProfileId("");
+    setSpecificProfileIds([]);
+    setMemberSearch("");
     setDraftId(null);
     if (editorRef.current) editorRef.current.innerHTML = "";
     setTab("compose");
   };
+
+  const applyTemplate = (templateId: string) => {
+    const tpl = EMAIL_CAMPAIGN_TEMPLATES.find((t) => t.id === templateId);
+    if (!tpl) return;
+    setSubject(tpl.subject);
+    setBodyHtml(tpl.bodyHtml);
+    if (editorRef.current) editorRef.current.innerHTML = tpl.bodyHtml;
+  };
+
+  const filteredProfiles = useMemo(() => {
+    const q = memberSearch.trim().toLowerCase();
+    if (!q) return bookableProfiles;
+    return bookableProfiles.filter((p) => profileLabel(p).toLowerCase().includes(q));
+  }, [bookableProfiles, memberSearch]);
 
   const saveDraft = async () => {
     if (!subject.trim() && !bodyHtml.trim()) {
@@ -244,7 +296,12 @@ function EmailPage() {
     const payload = {
       subject: subject.trim() || "(no subject)",
       body_html: bodyHtml,
-      recipient_filter: { type: recipientType, role: roleValue },
+      recipient_filter: {
+        type: recipientType,
+        role: roleValue,
+        individual_profile_id: individualProfileId || null,
+        specific_profile_ids: specificProfileIds,
+      },
       status: "draft" as const,
       created_by: user?.id ?? null,
     };
@@ -308,7 +365,12 @@ function EmailPage() {
     const payload = {
       subject: subject.trim() || "(no subject)",
       body_html: bodyHtml,
-      recipient_filter: { type: recipientType, role: roleValue },
+      recipient_filter: {
+        type: recipientType,
+        role: roleValue,
+        individual_profile_id: individualProfileId || null,
+        specific_profile_ids: specificProfileIds,
+      },
       sent_at: new Date().toISOString(),
       sent_count: success,
       status: "sent" as const,
@@ -345,13 +407,25 @@ function EmailPage() {
       case "all":
         return "All members";
       case "active":
-        return "Active members (booked in last 30 days)";
-      case "with_credits":
-        return "Members with credits";
+        return "Active only (booked in last 30 days)";
+      case "lapsed":
+        return "Lapsed only (no booking in 30 days)";
       case "role":
-        return `Role: ${roleValue}`;
+        if (roleValue === "customer" && individualProfileId) {
+          const p = bookableProfiles.find((x) => x.id === individualProfileId);
+          return p ? `Customer: ${profileLabel(p)}` : "One customer";
+        }
+        return `By role: ${roleValue}`;
+      case "specific":
+        return `Specific members (${specificProfileIds.length} selected)`;
     }
-  }, [recipientType, roleValue]);
+  }, [
+    recipientType,
+    roleValue,
+    individualProfileId,
+    specificProfileIds.length,
+    bookableProfiles,
+  ]);
 
   const openCampaign = (c: CampaignRow) => setDetail(c);
 
@@ -553,28 +627,112 @@ function EmailPage() {
               </div>
 
               <div className="mt-3 grid gap-1.5">
+                <Label>Templates</Label>
+                <div className="flex flex-wrap gap-2">
+                  {EMAIL_CAMPAIGN_TEMPLATES.map((tpl) => (
+                    <Button
+                      key={tpl.id}
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="text-xs"
+                      onClick={() => applyTemplate(tpl.id)}
+                    >
+                      {tpl.label}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-3 grid gap-1.5">
                 <Label>Recipients</Label>
                 <Select
                   value={recipientType}
-                  onValueChange={(v) => setRecipientType(v as RecipientFilter)}
+                  onValueChange={(v) => {
+                    setRecipientType(v as RecipientFilter);
+                    if (v !== "specific") setSpecificProfileIds([]);
+                    if (v !== "role") setIndividualProfileId("");
+                  }}
                 >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All members</SelectItem>
-                    <SelectItem value="active">Active members (booked in last 30 days)</SelectItem>
-                    <SelectItem value="with_credits">Members with credits</SelectItem>
-                    <SelectItem value="role">Specific role</SelectItem>
+                    <SelectItem value="specific">Specific members</SelectItem>
+                    <SelectItem value="role">By role</SelectItem>
+                    <SelectItem value="active">Active only</SelectItem>
+                    <SelectItem value="lapsed">Lapsed only</SelectItem>
                   </SelectContent>
                 </Select>
                 {recipientType === "role" && (
-                  <Input
-                    value={roleValue}
-                    onChange={(e) => setRoleValue(e.target.value)}
-                    placeholder="customer"
-                    className="mt-2"
-                  />
+                  <div className="mt-2 space-y-2">
+                    <Select value={roleValue} onValueChange={setRoleValue}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="customer">Customer</SelectItem>
+                        <SelectItem value="guide">Guide</SelectItem>
+                        <SelectItem value="management">Management</SelectItem>
+                        <SelectItem value="director">Director</SelectItem>
+                        <SelectItem value="front_desk">Front desk</SelectItem>
+                        <SelectItem value="team">Team</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {roleValue === "customer" ? (
+                      <Select
+                        value={individualProfileId || "__all__"}
+                        onValueChange={(v) =>
+                          setIndividualProfileId(v === "__all__" ? "" : v)
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select a customer" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__all__">All customers</SelectItem>
+                          {bookableProfiles.map((p) => (
+                            <SelectItem key={p.id} value={p.id}>
+                              {profileLabel(p)}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : null}
+                  </div>
+                )}
+                {recipientType === "specific" && (
+                  <div className="mt-2 space-y-2 rounded-lg border border-border p-3">
+                    <Input
+                      value={memberSearch}
+                      onChange={(e) => setMemberSearch(e.target.value)}
+                      placeholder="Search members…"
+                    />
+                    <div className="max-h-48 space-y-2 overflow-y-auto">
+                      {filteredProfiles.map((p) => {
+                        const checked = specificProfileIds.includes(p.id);
+                        return (
+                          <label
+                            key={p.id}
+                            className="flex cursor-pointer items-start gap-2 text-sm"
+                          >
+                            <Checkbox
+                              checked={checked}
+                              onCheckedChange={(next) => {
+                                setSpecificProfileIds((prev) =>
+                                  next === true
+                                    ? [...prev, p.id]
+                                    : prev.filter((id) => id !== p.id),
+                                );
+                              }}
+                            />
+                            <span className="min-w-0 break-all">{profileLabel(p)}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
                 )}
                 {recipientCount != null && (
                   <p className="mt-1 text-xs text-muted-foreground">
@@ -665,6 +823,14 @@ function EmailPage() {
                     const filter = (detail.recipient_filter ?? {}) as Record<string, unknown>;
                     setRecipientType((filter.type as RecipientFilter) ?? "all");
                     if (filter.role) setRoleValue(String(filter.role));
+                    setIndividualProfileId(
+                      filter.individual_profile_id ? String(filter.individual_profile_id) : "",
+                    );
+                    setSpecificProfileIds(
+                      Array.isArray(filter.specific_profile_ids)
+                        ? (filter.specific_profile_ids as string[])
+                        : [],
+                    );
                     setDetail(null);
                     setTab("compose");
                   }}

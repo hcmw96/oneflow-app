@@ -1,5 +1,4 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { userCreditCoversClassType } from "@/lib/allowedClassTypes";
 import { isPastDateKey, STUDIO_TIMEZONE } from "@/lib/timezone";
 
 export type BookedClassInterval = {
@@ -120,30 +119,15 @@ type BookableProductRow = {
   category: string | null;
 };
 
-function productCoversClassType(product: BookableProductRow, classType: string): boolean {
-  return userCreditCoversClassType({
-    category: product.category,
-    allowed_class_types: product.allowed_class_types,
-    classType,
-  });
-}
-
-/** True when booking should skip credits/payment (free class, R0 product, or no paid product applies). */
+/** True when booking should skip credits/payment (intro / beginner classes only). */
 export function classSkipsPayment(
   classType: string | null | undefined,
-  catalog: readonly BookableProductRow[],
+  _catalog?: readonly BookableProductRow[],
 ): boolean {
-  if (isFreeBeginnerClass(classType)) return true;
-  const ct = String(classType ?? "").trim();
-  if (!ct) return false;
-
-  const covering = catalog.filter((p) => productCoversClassType(p, ct));
-  if (covering.some((p) => Number(p.price_zar ?? 0) === 0)) return true;
-  if (covering.length === 0) return true;
-  return false;
+  return isFreeBeginnerClass(classType);
 }
 
-/** Load active non-addon products used to decide if a class requires payment. */
+/** Load customer-facing products (excludes staff / café / complimentary catalog). */
 export async function fetchBookableProductCatalog(
   client: SupabaseClient,
 ): Promise<BookableProductRow[]> {
@@ -151,7 +135,10 @@ export async function fetchBookableProductCatalog(
     .from("products")
     .select("price_zar, allowed_class_types, category")
     .eq("is_active", true)
-    .eq("is_addon", false);
+    .eq("is_addon", false)
+    .eq("is_staff_only", false)
+    .gt("price_zar", 0)
+    .not("category", "in", "(staff,cafe,complimentary)");
   if (error) {
     console.error("fetchBookableProductCatalog", error);
     return [];

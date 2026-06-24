@@ -368,7 +368,7 @@ async function wrapHtml(content: string): Promise<string> {
           </tr>
           <tr>
             <td style="padding:24px 40px;background-color:#f5f5f0;text-align:center;border-top:1px solid #e8e8e4;">
-              <p style="margin:0 0 8px;font-size:13px;color:#888;">One Flow Wellness Studio · Cape Town</p>
+              <p style="margin:0 0 8px;font-size:13px;color:#888;">One Flow Yoga &amp; Wellness · Cape Town</p>
               <p style="margin:0;font-size:12px;color:#aaa;">
                 <a href="https://oneflow.co.za" style="color:#a3b693;text-decoration:none;">oneflow.co.za</a>
               </p>

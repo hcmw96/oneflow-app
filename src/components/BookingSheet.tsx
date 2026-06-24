@@ -72,6 +72,25 @@ type FriendOption = {
   avatar_url: string | null;
 };
 
+type AddonProduct = {
+  id: string;
+  name: string;
+  price_zar: number;
+};
+
+function addonKindFromName(name: string): "mat" | "towel" | null {
+  const n = name.trim().toLowerCase();
+  if (n.includes("towel")) return "towel";
+  if (n.includes("mat")) return "mat";
+  return null;
+}
+
+function formatAddonPrice(zar: number): string {
+  const n = Number(zar);
+  if (!Number.isFinite(n) || n <= 0) return "";
+  return `R${n.toLocaleString("en-ZA", { maximumFractionDigits: 0 })}`;
+}
+
 function friendLabel(f: FriendOption): string {
   return [f.first_name, f.last_name].filter(Boolean).join(" ").trim() || "Friend";
 }
@@ -89,6 +108,7 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
   const [usePoints, setUsePoints] = useState(false);
   const [matAddon, setMatAddon] = useState(false);
   const [towelAddon, setTowelAddon] = useState(false);
+  const [addonProducts, setAddonProducts] = useState<AddonProduct[]>([]);
   const [loading, setLoading] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [userRole, setUserRole] = useState<string | null>(null);
@@ -124,7 +144,20 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
 
       const catalog = await fetchBookableProductCatalog(supabase);
       const skipPayment = classSkipsPayment(session.class_type, catalog);
+      console.info("[BookingSheet] payment check on open", {
+        classId: session.id,
+        classType: session.class_type,
+        skipPayment,
+      });
       setIsFreeClass(skipPayment);
+
+      const addonPromise = supabase
+        .from("products")
+        .select("id, name, price_zar")
+        .eq("is_active", true)
+        .eq("is_addon", true)
+        .order("sort_order", { ascending: true })
+        .order("name", { ascending: true });
 
       const creditsPromise = skipPayment
         ? Promise.resolve({ data: null, error: null })
@@ -143,6 +176,7 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
         { data: creditsData, error: creditsErr },
         { data: pointsData },
         { data: ships },
+        { data: addonData, error: addonErr },
         waitlistMine,
       ] = await Promise.all([
         creditsPromise,
@@ -152,6 +186,7 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
           .select("requester_id, addressee_id")
           .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`)
           .eq("status", "accepted"),
+        addonPromise,
         fetchMyWaitlistEntryForClass(session.id, user.id).catch((err) => {
           console.error("[BookingSheet] waitlist lookup failed", err);
           return null;
@@ -159,6 +194,17 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
       ]);
 
       setWaitlistEntry(waitlistMine);
+
+      const addons = (addonData ?? []) as AddonProduct[];
+      console.info("[BookingSheet] addon products loaded", {
+        count: addons.length,
+        addons: addons.map((a) => ({ id: a.id, name: a.name, price_zar: a.price_zar })),
+        error: addonErr?.message ?? null,
+      });
+      setAddonProducts(addons);
+      if (addonErr) {
+        console.error("[BookingSheet] addon products query failed", addonErr);
+      }
 
       if (skipPayment) {
         setCredits([]);
@@ -313,7 +359,16 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
       return;
     }
 
+    console.info("[BookingSheet] confirm payment check", {
+      classId: session.id,
+      classType: session.class_type,
+      isFreeClass,
+      selectedCredit,
+      usePoints,
+    });
+
     if (isFreeClass) {
+      console.info("[BookingSheet] free class path — skipping credit checks");
       setLoading(true);
       const { data: booking, error } = await supabase
         .from("bookings")
@@ -343,6 +398,7 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
       }
 
       await afterBookingConfirmed(booking.id as string);
+      console.info("[BookingSheet] free class booking complete", { bookingId: booking.id });
       toast.success("You're booked! See you on the mat 🌿");
       setLoading(false);
       onBookingConfirmed?.(session.id);
@@ -492,6 +548,11 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
     if (!userId || !session) return;
     const email = validateInviteEmail();
     if (!email) return;
+    console.info("[BookingSheet] email invite submit", {
+      email,
+      classId: session.id,
+      inviteeName: inviteEmailName.trim() || null,
+    });
     setInviteBusy(true);
     const { data: row, error } = await supabase
       .from("class_invites")
@@ -507,14 +568,23 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
       })
       .select("id")
       .maybeSingle();
+    console.info("[BookingSheet] class_invites insert result", {
+      inviteId: (row as { id?: string } | null)?.id ?? null,
+      error: error?.message ?? null,
+    });
     if (error || !row) {
       toast.error(error?.message ?? "Could not create invite");
       setInviteBusy(false);
       return;
     }
     const inviteId = (row as { id: string }).id;
-    const { error: finErr } = await supabase.functions.invoke("finalize-class-invite", {
+    const { data: finData, error: finErr } = await supabase.functions.invoke("finalize-class-invite", {
       body: { class_invite_id: inviteId, after_payment: false },
+    });
+    console.info("[BookingSheet] finalize-class-invite result", {
+      inviteId,
+      error: finErr?.message ?? null,
+      data: finData,
     });
     if (finErr) {
       toast.error(finErr.message ?? "Invite created but email failed.");
@@ -806,30 +876,35 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
               </button>
             )}
 
-            {!isFreeClass && (
+            {!isFreeClass && addonProducts.length > 0 && (
               <>
                 <p className="mt-6 text-sm font-semibold">Add-ons:</p>
-                <div className="mt-2 flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setMatAddon((v) => !v)}
-                    className={cn(
-                      "flex-1 rounded-xl border py-2.5 text-sm font-semibold transition-colors",
-                      matAddon ? "border-primary bg-primary/10" : "border-border bg-card",
-                    )}
-                  >
-                    🧘 Mat
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setTowelAddon((v) => !v)}
-                    className={cn(
-                      "flex-1 rounded-xl border py-2.5 text-sm font-semibold transition-colors",
-                      towelAddon ? "border-primary bg-primary/10" : "border-border bg-card",
-                    )}
-                  >
-                    🏷️ Towel
-                  </button>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {addonProducts.map((addon) => {
+                    const kind = addonKindFromName(addon.name);
+                    if (!kind) return null;
+                    const selected = kind === "mat" ? matAddon : towelAddon;
+                    const toggle = kind === "mat" ? setMatAddon : setTowelAddon;
+                    const price = formatAddonPrice(addon.price_zar);
+                    return (
+                      <button
+                        key={addon.id}
+                        type="button"
+                        onClick={() => toggle((v) => !v)}
+                        className={cn(
+                          "min-w-[7rem] flex-1 rounded-xl border py-2.5 text-sm font-semibold transition-colors",
+                          selected ? "border-primary bg-primary/10" : "border-border bg-card",
+                        )}
+                      >
+                        {kind === "mat" ? "🧘" : "🏷️"} {addon.name}
+                        {price ? (
+                          <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
+                            {price}
+                          </span>
+                        ) : null}
+                      </button>
+                    );
+                  })}
                 </div>
               </>
             )}

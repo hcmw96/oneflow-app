@@ -1,7 +1,21 @@
 import { supabase } from "@/lib/supabase";
 import { BOOKABLE_MEMBER_OR_FILTER } from "@/lib/bookableMembers";
 
-export type CampaignRecipientFilter = "all" | "active" | "with_credits" | "role";
+export type CampaignRecipientFilter =
+  | "all"
+  | "active"
+  | "lapsed"
+  | "role"
+  | "specific";
+
+export type CampaignRecipientOptions = {
+  filter: CampaignRecipientFilter;
+  roleValue?: string;
+  /** When role is customer, send to one member only. */
+  individualProfileId?: string | null;
+  /** When filter is specific, send to these profile ids. */
+  specificProfileIds?: string[];
+};
 
 function normalizeEmails(rows: { email: string | null }[]): string[] {
   const out = new Set<string>();
@@ -26,11 +40,28 @@ function isActiveCreditRow(row: {
   return Number.isFinite(rem) && rem > 0;
 }
 
+async function emailsForProfileIds(profileIds: string[]): Promise<string[]> {
+  if (profileIds.length === 0) return [];
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("email")
+    .or(BOOKABLE_MEMBER_OR_FILTER)
+    .in("id", profileIds);
+  if (error) throw error;
+  return normalizeEmails((data ?? []) as { email: string | null }[]);
+}
+
 /** Resolve campaign recipient emails for the selected filter (no PostgREST embeds). */
 export async function fetchCampaignRecipientEmails(
-  filter: CampaignRecipientFilter,
-  roleValue: string,
+  options: CampaignRecipientOptions,
 ): Promise<string[]> {
+  const { filter, roleValue = "customer", individualProfileId, specificProfileIds = [] } =
+    options;
+
+  if (filter === "specific") {
+    return emailsForProfileIds(specificProfileIds);
+  }
+
   if (filter === "all") {
     const { data, error } = await supabase
       .from("profiles")
@@ -43,7 +74,10 @@ export async function fetchCampaignRecipientEmails(
 
   if (filter === "role") {
     const role = roleValue.trim() || "customer";
-    let query = supabase.from("profiles").select("email");
+    if (role === "customer" && individualProfileId) {
+      return emailsForProfileIds([individualProfileId]);
+    }
+    let query = supabase.from("profiles").select("email").eq("is_active", true);
     if (role === "customer") {
       query = query.or(BOOKABLE_MEMBER_OR_FILTER);
     } else {
@@ -52,31 +86,6 @@ export async function fetchCampaignRecipientEmails(
     const { data, error } = await query;
     if (error) throw error;
     return normalizeEmails((data ?? []) as { email: string | null }[]);
-  }
-
-  if (filter === "with_credits") {
-    const { data: creditRows, error: creditsErr } = await supabase
-      .from("user_credits")
-      .select("profile_id, credits_remaining, is_unlimited, expires_at");
-    if (creditsErr) throw creditsErr;
-
-    const profileIds = [
-      ...new Set(
-        (creditRows ?? [])
-          .filter((r) => isActiveCreditRow(r as Parameters<typeof isActiveCreditRow>[0]))
-          .map((r) => String((r as { profile_id: string }).profile_id))
-          .filter(Boolean),
-      ),
-    ];
-    if (profileIds.length === 0) return [];
-
-    const { data: profiles, error: profilesErr } = await supabase
-      .from("profiles")
-      .select("email")
-      .or(BOOKABLE_MEMBER_OR_FILTER)
-      .in("id", profileIds);
-    if (profilesErr) throw profilesErr;
-    return normalizeEmails((profiles ?? []) as { email: string | null }[]);
   }
 
   if (filter === "active") {
@@ -96,16 +105,56 @@ export async function fetchCampaignRecipientEmails(
           .filter(Boolean),
       ),
     ];
-    if (profileIds.length === 0) return [];
+    return emailsForProfileIds(profileIds);
+  }
 
-    const { data: profiles, error: profilesErr } = await supabase
-      .from("profiles")
-      .select("email")
-      .or(BOOKABLE_MEMBER_OR_FILTER)
-      .in("id", profileIds);
-    if (profilesErr) throw profilesErr;
-    return normalizeEmails((profiles ?? []) as { email: string | null }[]);
+  if (filter === "lapsed") {
+    const since = new Date();
+    since.setDate(since.getDate() - 30);
+    const sinceIso = since.toISOString();
+
+    const [{ data: allMembers, error: membersErr }, { data: recentBookings, error: bookingsErr }] =
+      await Promise.all([
+        supabase
+          .from("profiles")
+          .select("id, email")
+          .or(BOOKABLE_MEMBER_OR_FILTER)
+          .eq("is_active", true),
+        supabase
+          .from("bookings")
+          .select("profile_id")
+          .gte("created_at", sinceIso)
+          .neq("status", "cancelled"),
+      ]);
+    if (membersErr) throw membersErr;
+    if (bookingsErr) throw bookingsErr;
+
+    const activeIds = new Set(
+      (recentBookings ?? []).map((r) => String((r as { profile_id: string }).profile_id)),
+    );
+    const lapsed = (allMembers ?? []).filter(
+      (r) => !activeIds.has(String((r as { id: string }).id)),
+    );
+    return normalizeEmails(lapsed as { email: string | null }[]);
   }
 
   return [];
+}
+
+export type BookableProfilePick = {
+  id: string;
+  first_name: string | null;
+  last_name: string | null;
+  email: string | null;
+};
+
+export async function fetchBookableProfilesForCampaign(): Promise<BookableProfilePick[]> {
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id, first_name, last_name, email")
+    .or(BOOKABLE_MEMBER_OR_FILTER)
+    .eq("is_active", true)
+    .order("first_name", { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as BookableProfilePick[];
 }

@@ -10,6 +10,8 @@ import {
   maxPackFlowPointsRedemption,
   parseFlowPointsConversionRate,
 } from "@/lib/flowPointsRedemption";
+import { buildProductCreditRows } from "@/lib/multiCreditProducts";
+import { defaultAllowedClassTypesForCreditCategory } from "@/lib/allowedClassTypes";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/pricing")({
@@ -54,9 +56,11 @@ type ProductRow = {
   credit_count: number | null;
   description: string | null;
   is_active?: boolean | null;
+  is_staff_only?: boolean | null;
   sort_order?: number | null;
   category: string | null;
   allowed_class_types: string[] | null;
+  validity_days?: number | null;
 };
 
 function formatPriceZar(zar: number) {
@@ -88,11 +92,15 @@ function isCustomerPricingCategory(cat: string | null | undefined): cat is Custo
   return (CUSTOMER_PRICING_CATEGORY_ORDER as readonly string[]).includes(c);
 }
 
-/** Never surface staff- or café-category packs on the public pricing page. */
+const EXCLUDED_PRICING_CATEGORIES = new Set(["staff", "cafe", "complimentary"]);
+
+/** Belt-and-suspenders client filter matching the products query. */
 function filterCustomerPricingProducts(rows: ProductRow[]): ProductRow[] {
   return rows.filter((p) => {
+    if (p.is_staff_only === true) return false;
+    if (Number(p.price_zar ?? 0) <= 0) return false;
     const cat = String(p.category ?? "").toLowerCase();
-    if (cat === "staff" || cat === "cafe") return false;
+    if (EXCLUDED_PRICING_CATEGORIES.has(cat)) return false;
     return isCustomerPricingCategory(cat);
   });
 }
@@ -100,6 +108,7 @@ function filterCustomerPricingProducts(rows: ProductRow[]): ProductRow[] {
 function PricingPage() {
   const router = useRouter();
   const [products, setProducts] = useState<ProductRow[]>([]);
+  const [freeProducts, setFreeProducts] = useState<ProductRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [buyingId, setBuyingId] = useState<string | null>(null);
   const [checkoutSlow, setCheckoutSlow] = useState(false);
@@ -153,29 +162,53 @@ function PricingPage() {
 
     async function fetchOnce() {
       setLoading(true);
-      const { data, error } = await supabase
-        .from("products")
-        .select("*")
-        .eq("is_active", true)
-        .eq("is_addon", false)
-        .eq("is_staff_only", false)
-        .gt("price_zar", 0)
-        .not("category", "in", "(staff,cafe,complimentary)")
-        .order("category", { ascending: true })
-        .order("name", { ascending: true });
+      const [paidRes, freeRes] = await Promise.all([
+        supabase
+          .from("products")
+          .select(
+            "id, name, price_zar, credit_count, description, is_active, is_staff_only, sort_order, category, allowed_class_types, validity_days",
+          )
+          .eq("is_active", true)
+          .eq("is_addon", false)
+          .eq("is_staff_only", false)
+          .gt("price_zar", 0)
+          .not("category", "in", "(staff,cafe,complimentary)")
+          .order("category", { ascending: true })
+          .order("name", { ascending: true }),
+        supabase
+          .from("products")
+          .select(
+            "id, name, price_zar, credit_count, description, is_active, is_staff_only, sort_order, category, allowed_class_types, validity_days",
+          )
+          .eq("is_active", true)
+          .eq("is_addon", false)
+          .eq("is_staff_only", false)
+          .eq("price_zar", 0)
+          .not("category", "in", "(staff,cafe)")
+          .order("sort_order", { ascending: true })
+          .order("name", { ascending: true }),
+      ]);
 
       if (cancelled) return;
 
-      if (error) {
-        console.error(error);
-        toast.error(supabaseErrorMessage(error, "Could not load products"));
+      if (paidRes.error) {
+        console.error(paidRes.error);
+        toast.error(supabaseErrorMessage(paidRes.error, "Could not load products"));
         setProducts([]);
+        setFreeProducts([]);
         setLoading(false);
         return;
       }
 
-      const rows = filterCustomerPricingProducts(dedupeProductsById((data ?? []) as ProductRow[]));
+      const rows = filterCustomerPricingProducts(
+        dedupeProductsById((paidRes.data ?? []) as ProductRow[]),
+      );
       setProducts(rows);
+      setFreeProducts(
+        dedupeProductsById((freeRes.data ?? []) as ProductRow[]).filter(
+          (p) => !p.is_staff_only && Number(p.price_zar ?? 0) === 0,
+        ),
+      );
       setLoading(false);
     }
 
@@ -236,7 +269,53 @@ function PricingPage() {
       return;
     }
 
-    const product = products.find((x) => x.id === packId);
+    const product =
+      products.find((x) => x.id === packId) ?? freeProducts.find((x) => x.id === packId);
+    if (!product) {
+      toast.error("Product not found");
+      return;
+    }
+
+    const price = Number(product.price_zar ?? 0);
+    if (price === 0) {
+      setBuyingId(packId);
+      const validityDays = product.validity_days ?? 30;
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + validityDays);
+      const purchasedAt = new Date().toISOString();
+      const rawCount =
+        typeof product.credit_count === "number"
+          ? product.credit_count
+          : Number(product.credit_count ?? 1);
+      const isUnlimited = Number.isFinite(rawCount) && rawCount >= 999;
+      const total = isUnlimited ? rawCount : Math.trunc(rawCount || 1);
+      const category = product.category ?? "yoga";
+      const creditRows = buildProductCreditRows({
+        productName: product.name,
+        profileId: user.id,
+        productId: product.id,
+        expiresAt: expiresAt.toISOString(),
+        paymentId: "free_intro",
+        purchasedAt,
+        category,
+        allowedClassTypes: product.allowed_class_types?.length
+          ? product.allowed_class_types
+          : [...defaultAllowedClassTypesForCreditCategory(category)],
+        creditsTotal: total,
+        creditsRemaining: total,
+        isUnlimited,
+      });
+      const { error } = await supabase.from("user_credits").insert(creditRows);
+      setBuyingId(null);
+      if (error) {
+        console.error("[pricing] free product credit insert failed", error);
+        toast.error(supabaseErrorMessage(error, "Could not claim free class"));
+        return;
+      }
+      toast.success(`${product.name} added to your account — book from Schedule`);
+      return;
+    }
+
     const usePts =
       typeof flowPointsState === "number" &&
       flowPointsState > 0 &&
@@ -605,14 +684,51 @@ function PricingPage() {
             </div>
           )}
 
+          {!loading && freeProducts.length > 0 ? (
+            <div className="rounded-2xl border border-[#a3b693]/40 bg-[#f4f7f0]/80 p-4">
+              <h2 className="font-display text-lg font-semibold text-[#4a6b3c]">Complimentary</h2>
+              <ul className="mt-3 space-y-3">
+                {freeProducts.map((p) => (
+                  <li
+                    key={p.id}
+                    className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div>
+                      <p className="font-semibold">{p.name}</p>
+                      {p.description ? (
+                        <p className="mt-1 text-sm text-muted-foreground">{p.description}</p>
+                      ) : null}
+                      <p className="mt-1 text-sm font-medium text-[#a3b693]">Free</p>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={buyingId === p.id}
+                      onClick={() => void buyNow(p.id)}
+                      className="shrink-0 rounded-full bg-[#a3b693] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#8fa67d] disabled:opacity-60"
+                    >
+                      {buyingId === p.id ? (
+                        <span className="inline-flex items-center gap-2">
+                          <Loader2 className="h-4 w-4 animate-spin" /> Claiming…
+                        </span>
+                      ) : (
+                        "Claim free class"
+                      )}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
           <p className="text-center text-xs text-muted-foreground">
             Questions?{" "}
-            <Link
-              to="/me"
+            <button
+              type="button"
+              onClick={() => window.open("https://wa.me/27825533032", "_blank")}
               className="font-medium text-[#a3b693] underline-offset-2 hover:underline dark:text-primary"
             >
-              Contact us from your profile
-            </Link>
+              Contact us on WhatsApp
+            </button>
             .
           </p>
         </main>

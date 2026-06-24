@@ -222,8 +222,8 @@ serve(async (req) => {
       const emailRes = await fetch(`${SUPABASE_URL}/functions/v1/send-email`, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
+          apikey: SUPABASE_SERVICE_KEY,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({

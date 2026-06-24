@@ -43,6 +43,11 @@ export function MessageStudioSheet({ open, onOpenChange }: Props) {
     }
 
     setSending(true);
+    console.info("[MessageStudio] submit", {
+      profileId: user.id,
+      subject: subject.trim() || null,
+      bodyLength: trimmedBody.length,
+    });
     const { error } = await supabase.from("member_messages").insert({
       profile_id: user.id,
       subject: subject.trim() || null,
@@ -52,10 +57,12 @@ export function MessageStudioSheet({ open, onOpenChange }: Props) {
     setSending(false);
 
     if (error) {
-      console.error("member_messages insert failed", error);
+      console.error("[MessageStudio] member_messages insert failed", error);
       toast.error(supabaseErrorMessage(error, "Could not send message"));
       return;
     }
+
+    console.info("[MessageStudio] message sent");
 
     toast.success("Message sent to the studio");
     reset();

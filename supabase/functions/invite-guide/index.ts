@@ -61,15 +61,15 @@ function normalizeDisciplines(raw: unknown): string[] {
 
 async function sendBrandedInviteEmail(
   supabaseUrl: string,
-  anonKey: string,
+  serviceKey: string,
   to: string,
   data: Record<string, unknown>,
 ): Promise<void> {
   const emailRes = await fetch(`${supabaseUrl}/functions/v1/send-email`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${anonKey}`,
-      apikey: anonKey,
+      Authorization: `Bearer ${serviceKey}`,
+      apikey: serviceKey,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
@@ -229,7 +229,7 @@ serve(async (req) => {
       }
     }
 
-    await sendBrandedInviteEmail(SUPABASE_URL, SUPABASE_ANON_KEY, email, {
+    await sendBrandedInviteEmail(SUPABASE_URL, adminApiKey, email, {
       first_name,
       last_name,
       role_label: ROLE_EMAIL_LABEL[role] ?? "member",
