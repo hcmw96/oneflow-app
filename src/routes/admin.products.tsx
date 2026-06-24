@@ -1,10 +1,20 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
-import { Loader2, Pencil, Plus } from "lucide-react";
+import { Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/admin/PageHeader";
 import { supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { allowedClassTypeCheckboxOptions } from "@/lib/allowedClassTypes";
 import {
   CREDIT_CATEGORY_ORDERED,
@@ -152,16 +162,25 @@ function compareProductName(a: ProductRow, b: ProductRow): number {
   return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
 }
 
+function isProductDeleteBlockedByFk(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const e = error as { code?: string; message?: string };
+  if (e.code === "23503") return true;
+  return /foreign key|violates foreign key constraint|still referenced/i.test(e.message ?? "");
+}
+
 function AdminProductTableRow({
   product: p,
   togglingId,
   onPersistActive,
   onEdit,
+  onDelete,
 }: {
   product: ProductRow;
   togglingId: string | null;
   onPersistActive: (id: string, next: boolean) => void;
   onEdit: (p: ProductRow) => void;
+  onDelete: (p: ProductRow) => void;
 }) {
   return (
     <tr className="border-t border-border">
@@ -195,16 +214,28 @@ function AdminProductTableRow({
         </div>
       </td>
       <td className="px-4 py-3 text-right sm:px-5">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="gap-1 border-[#c5d4b8] bg-card"
-          onClick={() => onEdit(p)}
-        >
-          <Pencil className="h-3.5 w-3.5" aria-hidden />
-          Edit
-        </Button>
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="gap-1 border-[#c5d4b8] bg-card"
+            onClick={() => onEdit(p)}
+          >
+            <Pencil className="h-3.5 w-3.5" aria-hidden />
+            Edit
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="gap-1 border-destructive/30 text-destructive hover:bg-destructive/10"
+            onClick={() => onDelete(p)}
+          >
+            <Trash2 className="h-3.5 w-3.5" aria-hidden />
+            Delete
+          </Button>
+        </div>
       </td>
     </tr>
   );
@@ -218,6 +249,9 @@ function ProductsPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ProductRow | null>(null);
+  const [deleteFkBlocked, setDeleteFkBlocked] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const [name, setName] = useState("");
   const [category, setCategory] = useState<CreditCategory>("yoga");
@@ -356,6 +390,37 @@ function ProductsPage() {
     }
     setRows((prev) => prev.map((r) => (r.id === id ? { ...r, is_active: next } : r)));
     toast.success(next ? "Product activated" : "Product hidden from pricing");
+  };
+
+  const openDeleteDialog = (product: ProductRow) => {
+    setDeleteFkBlocked(false);
+    setDeleteTarget(product);
+  };
+
+  const confirmDeleteProduct = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    const { error } = await supabase.from("products").delete().eq("id", deleteTarget.id);
+    setDeleting(false);
+    if (error) {
+      if (isProductDeleteBlockedByFk(error)) {
+        setDeleteFkBlocked(true);
+        return;
+      }
+      toast.error(supabaseErrorMessage(error, "Could not delete product"));
+      return;
+    }
+    toast.success(`Deleted ${deleteTarget.name}`);
+    setRows((prev) => prev.filter((r) => r.id !== deleteTarget.id));
+    setDeleteTarget(null);
+    setDeleteFkBlocked(false);
+  };
+
+  const deactivateFromDeleteDialog = async () => {
+    if (!deleteTarget) return;
+    await persistActive(deleteTarget.id, false);
+    setDeleteTarget(null);
+    setDeleteFkBlocked(false);
   };
 
   const saveProduct = async () => {
@@ -528,6 +593,7 @@ function ProductsPage() {
                           togglingId={togglingId}
                           onPersistActive={persistActive}
                           onEdit={openEdit}
+                          onDelete={openDeleteDialog}
                         />
                       ))}
                     </Fragment>
@@ -539,6 +605,7 @@ function ProductsPage() {
                       togglingId={togglingId}
                       onPersistActive={persistActive}
                       onEdit={openEdit}
+                      onDelete={openDeleteDialog}
                     />
                   ))}
             </tbody>
@@ -551,6 +618,70 @@ function ProductsPage() {
           No products yet. Add one to get started.
         </p>
       )}
+
+      <AlertDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleteTarget(null);
+            setDeleteFkBlocked(false);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {deleteFkBlocked ? "Cannot delete product" : "Delete product?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteFkBlocked ? (
+                <>
+                  This product has been purchased by members and cannot be deleted. You can
+                  deactivate it instead.
+                </>
+              ) : (
+                <>
+                  Are you sure you want to delete{" "}
+                  <span className="font-semibold text-foreground">{deleteTarget?.name}</span>?
+                  This cannot be undone.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            {deleteFkBlocked ? (
+              <AlertDialogAction
+                className="bg-[#a3b693] text-white hover:bg-[#8fa67d]"
+                onClick={(e) => {
+                  e.preventDefault();
+                  void deactivateFromDeleteDialog();
+                }}
+              >
+                Deactivate
+              </AlertDialogAction>
+            ) : (
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                disabled={deleting}
+                onClick={(e) => {
+                  e.preventDefault();
+                  void confirmDeleteProduct();
+                }}
+              >
+                {deleting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />
+                    Deleting…
+                  </>
+                ) : (
+                  "Delete"
+                )}
+              </AlertDialogAction>
+            )}
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Sheet open={sheetOpen} onOpenChange={(o) => !o && closeSheet()}>
         <SheetContent

@@ -4,6 +4,7 @@ import { Filter, Loader2, Mail, Package, Plus, Search, X } from "lucide-react";
 import { toast } from "sonner";
 import {
   currentPlanLabel,
+  currentPlanLabels,
   isActiveUserCredit,
   type UserCreditPlanRow,
 } from "@/lib/currentPlan";
@@ -107,20 +108,30 @@ function creditsDisplayFromActive(active: EmbeddedCreditRow[]): {
 }
 
 function mergeCreditsAfterAssign(
-  member: Pick<MemberRow, "creditsDisplay" | "hasActiveCredits">,
+  member: Pick<MemberRow, "creditsDisplay" | "hasActiveCredits" | "currentPlans">,
   row: AssignedCreditRow,
-): Pick<MemberRow, "creditsDisplay" | "hasActiveCredits"> {
-  if (row.is_unlimited || member.creditsDisplay === "Unlimited") {
-    return { creditsDisplay: "Unlimited", hasActiveCredits: true };
-  }
-  const add = Math.max(0, Math.round(Number(row.credits_remaining) || 0));
-  const prevTotal =
-    member.hasActiveCredits && member.creditsDisplay !== "—"
-      ? Math.round(Number(member.creditsDisplay) || 0)
-      : 0;
-  const total = prevTotal + add;
-  if (total <= 0) return { creditsDisplay: "—", hasActiveCredits: false };
-  return { creditsDisplay: String(total), hasActiveCredits: true };
+): Pick<MemberRow, "creditsDisplay" | "hasActiveCredits" | "currentPlans"> {
+  const creditsPart = (() => {
+    if (row.is_unlimited || member.creditsDisplay === "Unlimited") {
+      return { creditsDisplay: "Unlimited", hasActiveCredits: true };
+    }
+    const add = Math.max(0, Math.round(Number(row.credits_remaining) || 0));
+    const prevTotal =
+      member.hasActiveCredits && member.creditsDisplay !== "—"
+        ? Math.round(Number(member.creditsDisplay) || 0)
+        : 0;
+    const total = prevTotal + add;
+    if (total <= 0) return { creditsDisplay: "—", hasActiveCredits: false };
+    return { creditsDisplay: String(total), hasActiveCredits: true };
+  })();
+
+  const name = row.product_name?.trim();
+  const currentPlans =
+    name && !member.currentPlans.some((p) => p.toLowerCase() === name.toLowerCase())
+      ? [...member.currentPlans, name]
+      : member.currentPlans;
+
+  return { ...creditsPart, currentPlans };
 }
 
 type EmbeddedCreditRow = UserCreditPlanRow;
@@ -157,7 +168,7 @@ type MemberRow = {
   role: string;
   secondaryRoles: string[];
   plan: string;
-  currentPlan: string | null;
+  currentPlans: string[];
   creditsDisplay: string;
   hasActiveCredits: boolean;
   lastVisit: string;
@@ -392,7 +403,7 @@ function CustomersPage() {
         supabase
           .from("user_credits")
           .select(
-            "profile_id, product_name, category, credits_remaining, is_unlimited, expires_at, purchased_at, created_at, product_id, products(name)",
+            "profile_id, product_name, category, credits_remaining, is_unlimited, expires_at, purchased_at, created_at, product_id, products(name, is_addon)",
           )
           .in("profile_id", ids),
       ]);
@@ -442,7 +453,7 @@ function CustomersPage() {
           ? (p.secondary_roles as string[]).map((r) => String(r).toLowerCase())
           : [],
         plan: planLabelFromActiveCredits(active, nowMs),
-        currentPlan: currentPlanLabel(embedded, nowMs),
+        currentPlans: currentPlanLabels(embedded, nowMs),
         creditsDisplay,
         hasActiveCredits,
         lastVisit: "—",
@@ -1132,11 +1143,21 @@ function CustomersPage() {
                         </SelectContent>
                       </Select>
                     </td>
-                    <td className={CUSTOMERS_COL.planTd} title={m.currentPlan ?? undefined}>
-                      {m.currentPlan ? (
-                        <span className="inline-flex max-w-full truncate rounded-full bg-[#e8efe3] px-2 py-0.5 text-[10px] font-semibold text-[#3d4f36]">
-                          {m.currentPlan}
-                        </span>
+                    <td className={CUSTOMERS_COL.planTd}>
+                      {m.currentPlans.length > 0 ? (
+                        <div
+                          className="flex max-w-full flex-col gap-0.5"
+                          title={m.currentPlans.join(" · ")}
+                        >
+                          {m.currentPlans.map((plan) => (
+                            <span
+                              key={plan}
+                              className="inline-flex max-w-full truncate rounded-full bg-[#e8efe3] px-2 py-0.5 text-[10px] font-semibold text-[#3d4f36]"
+                            >
+                              {plan}
+                            </span>
+                          ))}
+                        </div>
                       ) : (
                         <span className="text-muted-foreground">—</span>
                       )}

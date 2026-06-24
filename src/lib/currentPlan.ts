@@ -6,7 +6,7 @@ export type UserCreditPlanRow = {
   expires_at: string | null;
   purchased_at?: string | null;
   created_at?: string | null;
-  products?: { name: string } | { name: string }[] | null;
+  products?: { name: string; is_addon?: boolean | null } | { name: string; is_addon?: boolean | null }[] | null;
 };
 
 function productNameFromJoin(products: UserCreditPlanRow["products"]): string | null {
@@ -14,6 +14,13 @@ function productNameFromJoin(products: UserCreditPlanRow["products"]): string | 
   const row = Array.isArray(products) ? products[0] : products;
   const name = row?.name?.trim();
   return name || null;
+}
+
+function productIsAddon(c: UserCreditPlanRow): boolean {
+  const products = c.products;
+  if (!products) return false;
+  const row = Array.isArray(products) ? products[0] : products;
+  return row?.is_addon === true;
 }
 
 export function isActiveUserCredit(c: UserCreditPlanRow, nowMs: number): boolean {
@@ -36,17 +43,42 @@ function creditRecencyMs(c: UserCreditPlanRow): number {
   return 0;
 }
 
-/** Most recent active credit joined to products.name, or product_name fallback. */
+function creditDisplayName(c: UserCreditPlanRow): string | null {
+  return productNameFromJoin(c.products) || c.product_name?.trim() || null;
+}
+
+/** All active credits (including add-ons), main packages first then by recency. */
+export function currentPlanLabels(
+  credits: UserCreditPlanRow[],
+  nowMs: number = Date.now(),
+): string[] {
+  const active = credits.filter((c) => isActiveUserCredit(c, nowMs));
+  if (active.length === 0) return [];
+
+  const sorted = [...active].sort((a, b) => {
+    const addonDelta = Number(productIsAddon(a)) - Number(productIsAddon(b));
+    if (addonDelta !== 0) return addonDelta;
+    return creditRecencyMs(b) - creditRecencyMs(a);
+  });
+
+  const labels: string[] = [];
+  const seen = new Set<string>();
+  for (const credit of sorted) {
+    const name = creditDisplayName(credit);
+    if (!name) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    labels.push(name);
+  }
+  return labels;
+}
+
+/** Joined label for compact display, e.g. "Drop In · Mat Monthly". */
 export function currentPlanLabel(
   credits: UserCreditPlanRow[],
   nowMs: number = Date.now(),
 ): string | null {
-  const active = credits.filter((c) => isActiveUserCredit(c, nowMs));
-  if (active.length === 0) return null;
-
-  const sorted = [...active].sort((a, b) => creditRecencyMs(b) - creditRecencyMs(a));
-  const top = sorted[0];
-  const joined = productNameFromJoin(top.products);
-  const fallback = top.product_name?.trim();
-  return joined || fallback || null;
+  const labels = currentPlanLabels(credits, nowMs);
+  return labels.length > 0 ? labels.join(" · ") : null;
 }

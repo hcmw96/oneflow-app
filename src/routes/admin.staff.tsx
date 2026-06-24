@@ -49,7 +49,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { getUser, supabase } from "@/lib/supabase";
-import { currentPlanLabel, type UserCreditPlanRow } from "@/lib/currentPlan";
+import { currentPlanLabels, type UserCreditPlanRow } from "@/lib/currentPlan";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { cn } from "@/lib/utils";
 
@@ -103,7 +103,7 @@ type StaffRow = {
   role: StaffRole;
   avatarUrl: string | null;
   createdAt: string;
-  currentPlan: string | null;
+  currentPlans: string[];
 };
 
 type SortKey = "name_asc" | "name_desc" | "joined_desc" | "joined_asc" | "role";
@@ -213,7 +213,7 @@ function StaffPage() {
           role,
           avatarUrl: (p.avatar_url as string | null) ?? null,
           createdAt: String(p.created_at ?? ""),
-          currentPlan: null as string | null,
+          currentPlans: [] as string[],
         };
       })
       .filter((x): x is StaffRow => x !== null);
@@ -224,7 +224,7 @@ function StaffPage() {
       const { data: creditRows, error: creditsErr } = await supabase
         .from("user_credits")
         .select(
-          "profile_id, product_name, category, credits_remaining, is_unlimited, expires_at, purchased_at, created_at, product_id, products(name)",
+          "profile_id, product_name, category, credits_remaining, is_unlimited, expires_at, purchased_at, created_at, product_id, products(name, is_addon)",
         )
         .in("profile_id", ids);
 
@@ -253,7 +253,7 @@ function StaffPage() {
 
       for (const row of mapped) {
         const embedded = creditsByProfile.get(row.id) ?? [];
-        row.currentPlan = currentPlanLabel(embedded, nowMs);
+        row.currentPlans = currentPlanLabels(embedded, nowMs);
       }
     }
 
@@ -649,13 +649,20 @@ function StaffPage() {
                     </span>
                   </td>
                   <td className="max-w-[10rem] px-5 py-3">
-                    {r.currentPlan ? (
-                      <span
-                        className="inline-flex max-w-full truncate rounded-full bg-[#e8efe3] px-2 py-0.5 text-[10px] font-semibold text-[#3d4f36]"
-                        title={r.currentPlan}
+                    {r.currentPlans.length > 0 ? (
+                      <div
+                        className="flex max-w-full flex-col gap-0.5"
+                        title={r.currentPlans.join(" · ")}
                       >
-                        {r.currentPlan}
-                      </span>
+                        {r.currentPlans.map((plan) => (
+                          <span
+                            key={plan}
+                            className="inline-flex max-w-full truncate rounded-full bg-[#e8efe3] px-2 py-0.5 text-[10px] font-semibold text-[#3d4f36]"
+                          >
+                            {plan}
+                          </span>
+                        ))}
+                      </div>
                     ) : (
                       <span className="text-muted-foreground">—</span>
                     )}
