@@ -20,14 +20,22 @@ const MAY_END = "2026-05-31";
 type DebugStep = Record<string, unknown>;
 
 function adminApiKey(): string {
+  const service = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (service) return service;
+
   const secretKeysRaw = Deno.env.get("SUPABASE_SECRET_KEYS");
   if (secretKeysRaw) {
     const secretKeys = JSON.parse(secretKeysRaw) as Record<string, string>;
     if (secretKeys["default"]) return secretKeys["default"];
   }
-  const service = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (service) return service;
+
   throw new Error("No admin API key configured");
+}
+
+function createAdminClient(url: string, key: string): SupabaseClient {
+  return createClient(url, key, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
 }
 
 function classDateFromStartsAtIso(startsAtIso: string): string {
@@ -122,7 +130,7 @@ serve(async (req) => {
       );
     }
 
-    const admin = createClient(SUPABASE_URL, adminApiKey());
+    const admin = createAdminClient(SUPABASE_URL, adminApiKey());
     const waiverAt = new Date().toISOString();
 
     const { data: existingProfile, error: lookupErr } = await admin
