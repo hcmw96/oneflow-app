@@ -895,16 +895,8 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
               </div>
             ) : null}
 
-            {isFreeClass ? (
-              <div className="mt-6 rounded-2xl border border-[#a3b693]/50 bg-[#e8efe3]/80 px-4 py-4 text-center dark:bg-[#a3b693]/10">
-                <p className="text-sm font-semibold text-[#3d4f36] dark:text-foreground">
-                  Free intro class
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  No pass or payment needed — tap below to reserve your spot.
-                </p>
-              </div>
-            ) : credits.length === 0 && !isPaidClassTicket ? (
+            {!isFreeClass &&
+              (credits.length === 0 && !isPaidClassTicket ? (
               <div className="mt-6 rounded-2xl border border-dashed border-border bg-card p-4 text-center text-sm text-muted-foreground">
                 No eligible credits for this class.{" "}
                 <Link to="/pricing" className="text-primary underline">
@@ -952,7 +944,7 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
                   ))}
                 </div>
               </>
-            )}
+            ))}
 
             {!isFreeClass && !isPaidClassTicket && flowPoints >= 100 && (
               <button
