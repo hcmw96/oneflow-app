@@ -26,6 +26,10 @@ dist-ssr
 # Supabase CLI scratch
 supabase/.temp/
 
+# Legacy member import (PII — keep local only)
+members.csv
+legacy-import-report.csv
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

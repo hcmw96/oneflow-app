@@ -47,8 +47,10 @@ import {
 import {
   fetchBookableProfilesForCampaign,
   fetchCampaignRecipientEmails,
+  fetchLegacyMemberAudienceStats,
   type BookableProfilePick,
   type CampaignRecipientFilter,
+  type LegacyMemberAudienceStats,
 } from "@/lib/campaignRecipients";
 import { EMAIL_CAMPAIGN_TEMPLATES } from "@/lib/emailCampaignTemplates";
 import { uploadEmailCampaignImage } from "@/lib/uploadEmailCampaignImage";
@@ -140,6 +142,7 @@ function EmailPage() {
   const [confirmSendOpen, setConfirmSendOpen] = useState(false);
   const [recipientCount, setRecipientCount] = useState<number | null>(null);
   const [customerProfileCount, setCustomerProfileCount] = useState<number | null>(null);
+  const [legacyAudience, setLegacyAudience] = useState<LegacyMemberAudienceStats | null>(null);
   const [sendProgress, setSendProgress] = useState<{
     done: number;
     total: number;
@@ -182,6 +185,14 @@ function EmailPage() {
         return;
       }
       setCustomerProfileCount(count ?? 0);
+    })();
+    void (async () => {
+      try {
+        setLegacyAudience(await fetchLegacyMemberAudienceStats());
+      } catch (e) {
+        console.error("email: legacy audience stats", e);
+        setLegacyAudience(null);
+      }
     })();
     void (async () => {
       try {
@@ -467,6 +478,8 @@ function EmailPage() {
         return `By role: ${roleValue}`;
       case "specific":
         return `Specific members (${specificProfileIds.length} selected)`;
+      case "legacy_import":
+        return "Imported members (not signed up yet)";
     }
   }, [
     recipientType,
@@ -499,16 +512,29 @@ function EmailPage() {
           <span className="font-semibold text-foreground tabular-nums">
             {customerProfileCount == null ? "—" : customerProfileCount.toLocaleString()}
           </span>{" "}
-          customer profiles in the database (role = customer or customer in secondary roles).
-          Campaign “All members” uses this same filter. The count is low because bulk import from Mindbody has not run yet — that is a data
-          task, not a code bug.{" "}
+          registered customer profiles.{" "}
+          {legacyAudience && legacyAudience.unclaimed > 0 ? (
+            <>
+              Plus{" "}
+              <span className="font-semibold text-foreground tabular-nums">
+                {legacyAudience.unclaimed.toLocaleString()}
+              </span>{" "}
+              imported Mindbody members waiting to sign up (
+              {legacyAudience.claimed.toLocaleString()} already re-registered). Campaign{" "}
+              <span className="font-medium text-foreground">All members</span> and{" "}
+              <span className="font-medium text-foreground">Imported members (not signed up yet)</span>{" "}
+              include those staging emails.
+            </>
+          ) : (
+            <>Use campaign filters below to choose who receives each send.</>
+          )}{" "}
           <Link
             to="/admin/customers"
             className="font-semibold text-[#a3b693] underline-offset-2 hover:underline"
           >
-            Manage / import members
-          </Link>
-          .
+            Customers
+          </Link>{" "}
+          lists registered profiles only; legacy import progress appears there.
         </p>
       </div>
 
@@ -734,6 +760,9 @@ function EmailPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All members</SelectItem>
+                    <SelectItem value="legacy_import">
+                      Imported members (not signed up yet)
+                    </SelectItem>
                     <SelectItem value="specific">Specific members</SelectItem>
                     <SelectItem value="role">By role</SelectItem>
                     <SelectItem value="active">Active only</SelectItem>

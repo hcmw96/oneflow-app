@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Filter, Loader2, Mail, Package, Plus, Search, X } from "lucide-react";
 import { toast } from "sonner";
@@ -401,19 +401,35 @@ function CustomersPage() {
 
     let legacyClaimedProfileIds = new Set<string>();
     if (canManageCustomers) {
-      const { data: legacyRows, error: legacyErr, count: legacyTotal } = await supabase
-        .from("legacy_members")
-        .select("claimed_by", { count: "exact" });
+      const [
+        { count: legacyTotal, error: legacyTotalErr },
+        { count: legacyClaimed, error: legacyClaimedErr },
+      ] = await Promise.all([
+        supabase.from("legacy_members").select("id", { count: "exact", head: true }),
+        supabase
+          .from("legacy_members")
+          .select("id", { count: "exact", head: true })
+          .not("claimed_at", "is", null),
+      ]);
 
-      if (legacyErr) {
-        console.error("customers: legacy_members load failed", legacyErr);
+      if (legacyTotalErr || legacyClaimedErr) {
+        console.error("customers: legacy_members load failed", legacyTotalErr ?? legacyClaimedErr);
       } else {
-        const claimed = (legacyRows ?? []).filter(
-          (r) => (r as { claimed_by: string | null }).claimed_by != null,
-        ).length;
-        setLegacyMigration({ claimed, total: legacyTotal ?? 0 });
+        const total = legacyTotal ?? 0;
+        const claimed = legacyClaimed ?? 0;
+        setLegacyMigration({ claimed, total });
+      }
+
+      const { data: legacyClaimRows, error: legacyClaimErr } = await supabase
+        .from("legacy_members")
+        .select("claimed_by")
+        .not("claimed_at", "is", null);
+
+      if (legacyClaimErr) {
+        console.error("customers: legacy claimed_by load failed", legacyClaimErr);
+      } else {
         legacyClaimedProfileIds = new Set(
-          (legacyRows ?? [])
+          (legacyClaimRows ?? [])
             .map((r) => (r as { claimed_by: string | null }).claimed_by)
             .filter((id): id is string => typeof id === "string" && id.length > 0),
         );
@@ -783,7 +799,11 @@ function CustomersPage() {
         <p className="mb-4 rounded-xl border border-[#c5d4b8]/80 bg-[#e8efe3]/50 px-4 py-3 text-sm text-[#3d4f36]">
           <span className="font-semibold">Legacy migration:</span>{" "}
           {legacyMigration.claimed.toLocaleString()} of {legacyMigration.total.toLocaleString()}{" "}
-          legacy members have re-registered.
+          imported members have re-registered. Unclaimed rows are not listed below — email them from{" "}
+          <Link to="/admin/email" className="font-semibold underline-offset-2 hover:underline">
+            Email Marketing
+          </Link>{" "}
+          (All members or Imported members).
         </p>
       ) : null}
 

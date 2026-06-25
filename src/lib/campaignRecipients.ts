@@ -6,7 +6,8 @@ export type CampaignRecipientFilter =
   | "active"
   | "lapsed"
   | "role"
-  | "specific";
+  | "specific"
+  | "legacy_import";
 
 export type CampaignRecipientOptions = {
   filter: CampaignRecipientFilter;
@@ -17,6 +18,12 @@ export type CampaignRecipientOptions = {
   specificProfileIds?: string[];
 };
 
+export type LegacyMemberAudienceStats = {
+  total: number;
+  unclaimed: number;
+  claimed: number;
+};
+
 function normalizeEmails(rows: { email: string | null }[]): string[] {
   const out = new Set<string>();
   for (const row of rows) {
@@ -24,6 +31,66 @@ function normalizeEmails(rows: { email: string | null }[]): string[] {
     if (email && email.includes("@")) out.add(email);
   }
   return [...out];
+}
+
+function mergeRecipientEmails(...lists: string[][]): string[] {
+  const out = new Set<string>();
+  for (const list of lists) {
+    for (const email of list) out.add(email);
+  }
+  return [...out];
+}
+
+/** Unclaimed Mindbody import rows (staging table — not signed up yet). */
+export async function fetchUnclaimedLegacyMemberEmails(): Promise<string[]> {
+  const out = new Set<string>();
+  const pageSize = 1000;
+  let from = 0;
+
+  for (;;) {
+    const { data, error } = await supabase
+      .from("legacy_members")
+      .select("email")
+      .is("claimed_at", null)
+      .range(from, from + pageSize - 1);
+
+    if (error) throw error;
+
+    const rows = data ?? [];
+    for (const row of rows) {
+      const email = String((row as { email: string }).email ?? "")
+        .trim()
+        .toLowerCase();
+      if (email && email.includes("@")) out.add(email);
+    }
+
+    if (rows.length < pageSize) break;
+    from += pageSize;
+  }
+
+  return [...out];
+}
+
+export async function fetchLegacyMemberAudienceStats(): Promise<LegacyMemberAudienceStats> {
+  const [{ count: total, error: totalErr }, { count: unclaimed, error: unclaimedErr }] =
+    await Promise.all([
+      supabase.from("legacy_members").select("id", { count: "exact", head: true }),
+      supabase
+        .from("legacy_members")
+        .select("id", { count: "exact", head: true })
+        .is("claimed_at", null),
+    ]);
+
+  if (totalErr) throw totalErr;
+  if (unclaimedErr) throw unclaimedErr;
+
+  const totalN = total ?? 0;
+  const unclaimedN = unclaimed ?? 0;
+  return {
+    total: totalN,
+    unclaimed: unclaimedN,
+    claimed: Math.max(0, totalN - unclaimedN),
+  };
 }
 
 function isActiveCreditRow(row: {
@@ -62,14 +129,24 @@ export async function fetchCampaignRecipientEmails(
     return emailsForProfileIds(specificProfileIds);
   }
 
+  if (filter === "legacy_import") {
+    return fetchUnclaimedLegacyMemberEmails();
+  }
+
   if (filter === "all") {
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("email")
-      .or(BOOKABLE_MEMBER_OR_FILTER)
-      .eq("is_active", true);
+    const [{ data, error }, legacyEmails] = await Promise.all([
+      supabase
+        .from("profiles")
+        .select("email")
+        .or(BOOKABLE_MEMBER_OR_FILTER)
+        .eq("is_active", true),
+      fetchUnclaimedLegacyMemberEmails(),
+    ]);
     if (error) throw error;
-    return normalizeEmails((data ?? []) as { email: string | null }[]);
+    return mergeRecipientEmails(
+      normalizeEmails((data ?? []) as { email: string | null }[]),
+      legacyEmails,
+    );
   }
 
   if (filter === "role") {
@@ -85,7 +162,12 @@ export async function fetchCampaignRecipientEmails(
     }
     const { data, error } = await query;
     if (error) throw error;
-    return normalizeEmails((data ?? []) as { email: string | null }[]);
+    const profileEmails = normalizeEmails((data ?? []) as { email: string | null }[]);
+    if (role === "customer") {
+      const legacyEmails = await fetchUnclaimedLegacyMemberEmails();
+      return mergeRecipientEmails(profileEmails, legacyEmails);
+    }
+    return profileEmails;
   }
 
   if (filter === "active") {
