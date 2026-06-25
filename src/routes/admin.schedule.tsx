@@ -29,6 +29,11 @@ import {
   type CustomClassType,
 } from "@/lib/classTypeOptions";
 import { displayClassType } from "@/types/studio";
+import {
+  createClassTicketProduct,
+  parseTicketPriceZar,
+  updateClassTicketProduct,
+} from "@/lib/classTicketProduct";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -98,6 +103,7 @@ type ClassRow = {
   guide_name: string | null;
   description: string | null;
   is_cancelled: boolean;
+  product_id: string | null;
 };
 
 type GuideOption = GuideSelectRow;
@@ -286,6 +292,8 @@ function SchedulePage() {
   const [endTime, setEndTime] = useState("10:00");
   const [capacity, setCapacity] = useState("12");
   const [description, setDescription] = useState("");
+  const [ticketPriceZar, setTicketPriceZar] = useState("");
+  const [linkedProductId, setLinkedProductId] = useState<string | null>(null);
   const [repeatMode, setRepeatMode] = useState<"none" | "weekly">("none");
   const [repeatWeeks, setRepeatWeeks] = useState("4");
   const [deleteFromDialog, setDeleteFromDialog] = useState<ClassRow | null>(null);
@@ -417,7 +425,7 @@ function SchedulePage() {
     const { data, error } = await supabase
       .from("classes")
       .select(
-        "id, name, class_type, location, starts_at, ends_at, capacity, booked_count, guide_id, guide_name, description, is_cancelled",
+        "id, name, class_type, location, starts_at, ends_at, capacity, booked_count, guide_id, guide_name, description, is_cancelled, product_id",
       )
       .order("starts_at", { ascending: true })
       .limit(2000);
@@ -663,6 +671,8 @@ function SchedulePage() {
     setEndTime("10:00");
     setCapacity("12");
     setDescription("");
+    setTicketPriceZar("");
+    setLinkedProductId(null);
     setRepeatMode("none");
     setRepeatWeeks("4");
   };
@@ -731,7 +741,7 @@ function SchedulePage() {
     setDialogOpen(true);
   };
 
-  const openEdit = (c: ClassRow) => {
+  const openEdit = async (c: ClassRow) => {
     setDialogMode("edit");
     setEditingId(c.id);
     setName(c.name);
@@ -744,6 +754,18 @@ function SchedulePage() {
     setEndTime(toTimeInputValue(e));
     setCapacity(String(c.capacity));
     setDescription(c.description ?? "");
+    setLinkedProductId(c.product_id);
+    setTicketPriceZar("");
+    if (c.product_id) {
+      const { data: prod } = await supabase
+        .from("products")
+        .select("price_zar")
+        .eq("id", c.product_id)
+        .maybeSingle();
+      if (prod && typeof (prod as { price_zar?: number }).price_zar === "number") {
+        setTicketPriceZar(String((prod as { price_zar: number }).price_zar));
+      }
+    }
     setDialogOpen(true);
     const sid = c.guide_id;
     if (!sid) setGuideId(GUIDE_DIALOG_NONE);
@@ -767,6 +789,11 @@ function SchedulePage() {
     const end = combineDateTimeLocal(dateStr, endTime);
     if (end.getTime() <= start.getTime()) {
       toast.error("End time must be after start time");
+      return false;
+    }
+    const parsedTicket = parseTicketPriceZar(ticketPriceZar);
+    if (ticketPriceZar.trim() !== "" && parsedTicket == null) {
+      toast.error("Enter a valid ticket price in ZAR (0 for free events)");
       return false;
     }
     return true;
@@ -793,42 +820,95 @@ function SchedulePage() {
       guide_name: gName,
     };
 
+    const ticketPrice = parseTicketPriceZar(ticketPriceZar);
+    const wantsTicket = ticketPrice != null;
+
     try {
       if (editingId) {
+        if (linkedProductId && wantsTicket) {
+          await updateClassTicketProduct(supabase, linkedProductId, {
+            className: name.trim(),
+            classType,
+            priceZar: ticketPrice,
+            startsAt: start,
+            description: description.trim() || null,
+          });
+        } else if (linkedProductId && !wantsTicket) {
+          await supabase.from("classes").update({ product_id: null }).eq("id", editingId);
+        } else if (!linkedProductId && wantsTicket) {
+          const productId = await createClassTicketProduct(supabase, {
+            className: name.trim(),
+            classType,
+            priceZar: ticketPrice,
+            startsAt: start,
+            description: description.trim() || null,
+          });
+          const { error } = await supabase
+            .from("classes")
+            .update({ ...base, product_id: productId })
+            .eq("id", editingId);
+          if (error) throw error;
+          toast.success("Class updated with ticket product");
+          setDialogOpen(false);
+          setEditingId(null);
+          await load();
+          return;
+        }
+
         const { error } = await supabase.from("classes").update(base).eq("id", editingId);
         if (error) throw error;
         toast.success("Class updated");
       } else {
+        const attachTicket = async (
+          occStart: Date,
+          occEnd: Date,
+        ): Promise<{ product_id: string | null }> => {
+          if (!wantsTicket) return { product_id: null };
+          const productId = await createClassTicketProduct(supabase, {
+            className: name.trim(),
+            classType,
+            priceZar: ticketPrice,
+            startsAt: occStart,
+            description: description.trim() || null,
+          });
+          return { product_id: productId };
+        };
+
         if (repeatMode === "weekly") {
           const weeks = Math.max(1, Math.min(52, Math.floor(Number(repeatWeeks)) || 1));
           const durationMs = end.getTime() - start.getTime();
           const recurringGroupId = globalThis.crypto.randomUUID();
-          const inserts = Array.from({ length: weeks }, (_, i) => {
+          const inserts = [];
+          for (let i = 0; i < weeks; i++) {
             const occStart = new Date(start);
             occStart.setDate(occStart.getDate() + i * 7);
             const occEnd = new Date(occStart.getTime() + durationMs);
-            return {
+            const ticket = await attachTicket(occStart, occEnd);
+            inserts.push({
               ...base,
               starts_at: occStart.toISOString(),
               ends_at: occEnd.toISOString(),
               recurring_group_id: recurringGroupId,
               booked_count: 0,
               is_cancelled: false,
-            };
-          });
+              ...ticket,
+            });
+          }
           const { error } = await supabase.from("classes").insert(inserts);
           if (error) throw error;
           toast.success(
             weeks === 1 ? "Class created" : `${weeks} weekly classes created`,
           );
         } else {
+          const ticket = await attachTicket(start, end);
           const { error } = await supabase.from("classes").insert({
             ...base,
             booked_count: 0,
             is_cancelled: false,
+            ...ticket,
           });
           if (error) throw error;
-          toast.success("Class created");
+          toast.success(wantsTicket ? "Class and ticket product created" : "Class created");
         }
       }
       setDialogOpen(false);
@@ -1518,6 +1598,27 @@ function SchedulePage() {
                 disabled={!canManage}
               />
             </div>
+            {dialogMode === "create" || dialogMode === "edit" ? (
+              <div>
+                <Label htmlFor="cls-ticket-price">Ticket price (ZAR)</Label>
+                <Input
+                  id="cls-ticket-price"
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={ticketPriceZar}
+                  onChange={(e) => setTicketPriceZar(e.target.value)}
+                  disabled={!canManage}
+                  placeholder="Leave blank for normal class packs"
+                />
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  Set a price to create a one-off ticket product (use{" "}
+                  <span className="font-medium text-foreground">0</span> for a free
+                  ticketed event). Leave blank for regular schedule classes paid with
+                  member credits.
+                </p>
+              </div>
+            ) : null}
             <div>
               <Label htmlFor="cls-desc">Description</Label>
               <Textarea

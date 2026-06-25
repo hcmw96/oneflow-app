@@ -50,7 +50,7 @@ import {
 } from "@/components/ui/select";
 import { getUser, supabase } from "@/lib/supabase";
 import { currentPlanLabels, type UserCreditPlanRow } from "@/lib/currentPlan";
-import { supabaseErrorMessage } from "@/lib/supabaseErrors";
+import { edgeFunctionErrorMessage, isValidEmail, supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/admin/staff")({
@@ -411,10 +411,15 @@ function StaffPage() {
       toast.error("First name, last name, and email are required");
       return;
     }
+    if (!isValidEmail(iEmail)) {
+      toast.error("Enter a valid email address (e.g. name@example.com)");
+      return;
+    }
     setInviting(true);
     try {
       const { data, error } = await supabase.functions.invoke<{
         success?: boolean;
+        existing_user?: boolean;
         error?: string;
       }>("invite-guide", {
         body: {
@@ -426,7 +431,9 @@ function StaffPage() {
         },
       });
 
-      if (error) throw error;
+      if (error) {
+        throw new Error(await edgeFunctionErrorMessage(error, data, "Could not send invite"));
+      }
       if (data?.error) {
         throw new Error(
           typeof data.error === "string" && data.error.trim()
@@ -435,7 +442,11 @@ function StaffPage() {
         );
       }
 
-      toast.success(`${iFirst} ${iLast} invited as ${ROLE_LABEL[iRole]}`);
+      toast.success(
+        data?.existing_user
+          ? `${iFirst} ${iLast} added as ${ROLE_LABEL[iRole]} (already has an account — no invite email sent).`
+          : `${iFirst} ${iLast} invited as ${ROLE_LABEL[iRole]}`,
+      );
       setInviteOpen(false);
       setIFirst("");
       setILast("");

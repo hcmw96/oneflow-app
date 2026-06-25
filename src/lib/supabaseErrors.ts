@@ -1,3 +1,7 @@
+export function isValidEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
+
 /**
  * Supabase PostgREST errors are plain objects with `message` and may not be `instanceof Error`.
  * Use this whenever surfacing Supabase failures in toasts so users never see a blank message.

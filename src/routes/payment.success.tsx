@@ -35,6 +35,7 @@ type PageState =
       isUnlimited: boolean;
     }
   | { status: "success_class_invite" }
+  | { status: "success_class_booked"; productName: string; className: string }
   | { status: "success_generic" };
 
 const CREDIT_GRANT_KEY = "oneflow_credits_granted";
@@ -66,6 +67,42 @@ async function tryRedeemPackFlowPoints(args: {
   if (logErr) console.warn("flow_points ledger", logErr);
 }
 
+async function autoBookClassAfterTicketPurchase(args: {
+  profileId: string;
+  classId: string;
+  creditId: string | null;
+}): Promise<{ ok: true; className: string } | { ok: false; message: string }> {
+  const { data: cls, error: classErr } = await supabase
+    .from("classes")
+    .select("name")
+    .eq("id", args.classId)
+    .maybeSingle();
+  if (classErr || !cls) {
+    return { ok: false, message: "Could not find that class to complete your booking." };
+  }
+  const className = String((cls as { name?: string }).name ?? "your class");
+
+  const { error: bookErr } = await supabase.from("bookings").insert({
+    profile_id: args.profileId,
+    class_id: args.classId,
+    status: "confirmed",
+    payment_method: "credit",
+    credit_id: args.creditId,
+    flow_points_used: 0,
+    mat_addon: false,
+    towel_addon: false,
+    qr_token: globalThis.crypto.randomUUID(),
+  });
+
+  if (bookErr) {
+    if (bookErr.code === "23505") {
+      return { ok: true, className };
+    }
+    return { ok: false, message: bookErr.message ?? "Could not complete your booking." };
+  }
+  return { ok: true, className };
+}
+
 function PaymentSuccessPage() {
   const [state, setState] = useState<PageState>({ status: "loading" });
 
@@ -78,6 +115,8 @@ function PaymentSuccessPage() {
       const profileId = params.get("profile_id");
       const checkoutId = params.get("checkoutId");
       const classInviteId = params.get("class_invite_id");
+      const classId = params.get("class_id");
+      const autoBook = params.get("auto_book") === "1";
 
       const user = await getUser();
       if (!user) {
@@ -211,7 +250,10 @@ function PaymentSuccessPage() {
         isUnlimited,
       });
 
-      const { error: insertError } = await supabase.from("user_credits").insert(creditRows);
+      const { error: insertError, data: insertedCredits } = await supabase
+        .from("user_credits")
+        .insert(creditRows)
+        .select("id");
 
       if (insertError) {
         console.error(insertError);
@@ -232,6 +274,34 @@ function PaymentSuccessPage() {
         profileId,
         used: flowPointsUsed,
       });
+
+      if (classId && autoBook) {
+        const creditId =
+          (insertedCredits?.[0] as { id?: string } | undefined)?.id ?? null;
+        const booked = await autoBookClassAfterTicketPurchase({
+          profileId,
+          classId,
+          creditId,
+        });
+        if (!booked.ok) {
+          if (!cancelled) {
+            setState({
+              status: "error",
+              message: booked.message,
+            });
+          }
+          return;
+        }
+        if (!cancelled) {
+          setState({
+            status: "success_class_booked",
+            productName: p.name,
+            className: booked.className,
+          });
+        }
+        return;
+      }
+
       if (!cancelled) {
         const bundleUnlimited =
           isUnlimited || creditRows.some((row) => row.is_unlimited);
@@ -303,6 +373,16 @@ function PaymentSuccessPage() {
               Your friend has been notified and can book the class from their account.
             </p>
           </>
+        ) : state.status === "success_class_booked" ? (
+          <>
+            <h1 className="mt-8 font-display text-2xl font-bold leading-snug tracking-tight text-[#3d4f36] dark:text-foreground">
+              You&apos;re booked!
+            </h1>
+            <p className="mt-4 text-sm text-muted-foreground">
+              <span className="font-semibold text-foreground">{state.className}</span> is confirmed.
+              Ticket: {state.productName}.
+            </p>
+          </>
         ) : (
           <>
             <h1 className="mt-8 font-display text-2xl font-bold leading-snug tracking-tight text-[#3d4f36] dark:text-foreground">
@@ -323,13 +403,23 @@ function PaymentSuccessPage() {
           </>
         )}
 
-        <Link
-          to="/schedule"
-          className="mt-10 inline-flex items-center justify-center gap-2 rounded-full bg-[#4a6b3c] px-8 py-3.5 text-sm font-semibold text-white shadow-sm transition-opacity hover:opacity-95 dark:bg-primary dark:text-primary-foreground"
-        >
-          <CalendarDays className="h-4 w-4" />
-          Go to schedule
-        </Link>
+        {state.status !== "success_class_booked" ? (
+          <Link
+            to="/schedule"
+            className="mt-10 inline-flex items-center justify-center gap-2 rounded-full bg-[#4a6b3c] px-8 py-3.5 text-sm font-semibold text-white shadow-sm transition-opacity hover:opacity-95 dark:bg-primary dark:text-primary-foreground"
+          >
+            <CalendarDays className="h-4 w-4" />
+            Go to schedule
+          </Link>
+        ) : (
+          <Link
+            to="/schedule"
+            className="mt-10 inline-flex items-center justify-center gap-2 rounded-full bg-[#4a6b3c] px-8 py-3.5 text-sm font-semibold text-white shadow-sm transition-opacity hover:opacity-95 dark:bg-primary dark:text-primary-foreground"
+          >
+            <CalendarDays className="h-4 w-4" />
+            View schedule
+          </Link>
+        )}
       </div>
     </AppShell>
   );

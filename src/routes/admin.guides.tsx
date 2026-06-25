@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { getUser, supabase } from "@/lib/supabase";
-import { supabaseErrorMessage } from "@/lib/supabaseErrors";
+import { edgeFunctionErrorMessage, isValidEmail, supabaseErrorMessage } from "@/lib/supabaseErrors";
 import {
   AssignPackageDialog,
   type AssignPackageTarget,
@@ -141,10 +141,6 @@ function disciplinesRawToSlugs(raw: unknown): GuideDisciplineSlug[] {
     if (slug && !out.includes(slug)) out.push(slug);
   }
   return out;
-}
-
-function slugsToInviteLabels(slugs: GuideDisciplineSlug[]): string[] {
-  return slugs.map((s) => GUIDE_DISCIPLINE_SLUG_LABEL[s]);
 }
 
 function guideRowDisciplineKeys(disciplines: string[]): Set<string> {
@@ -460,24 +456,41 @@ function GuidesPage() {
       toast.error("First name, last name, and email are required.");
       return;
     }
+    if (!isValidEmail(payload.email)) {
+      toast.error("Enter a valid email address (e.g. name@example.com).");
+      return;
+    }
 
     setSaving(true);
 
     try {
       if (!editingId) {
-        const { error } = await supabase.functions.invoke("invite-guide", {
+        const { data, error } = await supabase.functions.invoke<{
+          success?: boolean;
+          existing_user?: boolean;
+          error?: string;
+        }>("invite-guide", {
           body: {
             email: payload.email,
             first_name: payload.first_name,
             last_name: payload.last_name,
             role: "guide",
-            disciplines: slugsToInviteLabels(disciplines),
+            disciplines,
           },
         });
 
-        if (error) throw error;
+        if (error) {
+          throw new Error(await edgeFunctionErrorMessage(error, data, "Could not send invite"));
+        }
+        if (data?.error) {
+          throw new Error(data.error.trim() || "Invite rejected by server");
+        }
 
-        toast.success("Guide invited.");
+        toast.success(
+          data?.existing_user
+            ? "Guide added — they already have an account, so no invite email was sent."
+            : "Guide invited.",
+        );
         closeSheet();
         void load();
         return;

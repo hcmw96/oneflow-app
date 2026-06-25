@@ -28,6 +28,7 @@ import { bookingCreditInsertErrorMessage } from "@/lib/bookingCredits";
 import { profileEarnsFlowPoints } from "@/lib/flowPoints";
 import { userCreditCoversClassType } from "@/lib/allowedClassTypes";
 import { classDateFromStartsAtIso } from "@/lib/mayChallengeCheckIn";
+import { formatTicketPriceLabel } from "@/lib/classTicketProduct";
 import {
   DEFAULT_MOVEMENT_CHALLENGE,
   fetchMovementChallengeConfig,
@@ -57,10 +58,12 @@ interface ClassRow {
   booked_count: number;
   guide_name?: string | null;
   description?: string | null;
+  product_id?: string | null;
 }
 
 interface Credit {
   id: string;
+  product_id?: string | null;
   product_name: string;
   credits_remaining: number | null;
   is_unlimited: boolean;
@@ -122,6 +125,11 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
   const [isFreeClass, setIsFreeClass] = useState(false);
   const [challengeConfig, setChallengeConfig] =
     useState<MovementChallengeConfig>(DEFAULT_MOVEMENT_CHALLENGE);
+  const [classTicketProduct, setClassTicketProduct] = useState<{
+    id: string;
+    name: string;
+    price_zar: number;
+  } | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -147,8 +155,31 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
       setUserId(user.id);
       setUserEmail(user.email ?? null);
 
+      setIsFreeClass(false);
+      setClassTicketProduct(null);
+
+      const ticketPromise = session.product_id
+        ? supabase
+            .from("products")
+            .select("id, name, price_zar")
+            .eq("id", session.product_id)
+            .maybeSingle()
+        : Promise.resolve({ data: null, error: null });
+
       const catalog = await fetchBookableProductCatalog(supabase);
-      const skipPayment = classSkipsPayment(session.class_type, catalog);
+      const ticketRes = await ticketPromise;
+      const ticketRow = ticketRes.data as {
+        id: string;
+        name: string;
+        price_zar: number;
+      } | null;
+      const ticket =
+        ticketRow && typeof ticketRow.price_zar === "number" ? ticketRow : null;
+      setClassTicketProduct(ticket);
+
+      const skipPayment =
+        classSkipsPayment(session.class_type, catalog) ||
+        (ticket != null && ticket.price_zar <= 0);
       console.info("[BookingSheet] payment check on open", {
         classId: session.id,
         classType: session.class_type,
@@ -171,7 +202,7 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
         : supabase
             .from("user_credits")
             .select(
-              "id, product_name, credits_remaining, is_unlimited, expires_at, allowed_class_types, category",
+              "id, product_id, product_name, credits_remaining, is_unlimited, expires_at, allowed_class_types, category",
             )
             .eq("profile_id", user.id);
 
@@ -239,13 +270,18 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
           return true;
         });
 
-        const eligible = pool.filter((c) =>
-          userCreditCoversClassType({
-            category: c.category,
-            allowed_class_types: c.allowed_class_types,
-            classType: session.class_type,
-          }),
-        );
+        const eligible = ticket
+          ? pool.filter(
+              (c) =>
+                String((c as { product_id?: string | null }).product_id ?? "") === ticket.id,
+            )
+          : pool.filter((c) =>
+              userCreditCoversClassType({
+                category: c.category,
+                allowed_class_types: c.allowed_class_types,
+                classType: session.class_type,
+              }),
+            );
 
         setCredits(eligible as Credit[]);
         setSelectedCredit(eligible[0]?.id ?? null);
@@ -291,6 +327,8 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
     challengeConfig.enabled &&
     ["yoga", "sauna_journey"].includes(session.class_type) &&
     isClassDateInChallenge(classDateFromStartsAtIso(session.starts_at), challengeConfig);
+  const isPaidClassTicket = Boolean(classTicketProduct && classTicketProduct.price_zar > 0);
+  const needsTicketPurchase = isPaidClassTicket && !selectedCredit;
   const pointsValue = Math.floor(flowPoints / 100) * 10;
 
   const afterBookingConfirmed = async (bookingId: string) => {
@@ -357,6 +395,10 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
 
   const confirm = async () => {
     if (!userId || !session) return;
+    if (needsTicketPurchase) {
+      await buyClassTicketAndBook();
+      return;
+    }
     if (classIsPast) {
       toast.error("This class has already passed — you can’t book it.");
       return;
@@ -486,6 +528,48 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
     setLoading(false);
     onBookingConfirmed?.(session.id);
     onOpenChange(false);
+  };
+
+  const buyClassTicketAndBook = async () => {
+    if (!userId || !session || !classTicketProduct) return;
+    if (classIsPast) {
+      toast.error("This class has already passed — you can’t book it.");
+      return;
+    }
+    setLoading(true);
+    setPayCheckoutSlow(false);
+    const slow = window.setTimeout(() => setPayCheckoutSlow(true), 5000);
+    const origin = window.location.origin;
+    const successQs = new URLSearchParams({
+      pack_id: classTicketProduct.id,
+      profile_id: userId,
+      class_id: session.id,
+      auto_book: "1",
+    });
+    const { data: checkout, error: yocoErr } = await supabase.functions.invoke("yoco-checkout", {
+      body: {
+        pack_id: classTicketProduct.id,
+        profile_id: userId,
+        success_url: `${origin}/payment/success?${successQs.toString()}`,
+        cancel_url: `${origin}/schedule?class=${session.id}`,
+      },
+    });
+    window.clearTimeout(slow);
+    setPayCheckoutSlow(false);
+    setLoading(false);
+    if (yocoErr) {
+      toast.error(yocoErr.message ?? "Checkout failed");
+      return;
+    }
+    const redirect =
+      (checkout as { redirectUrl?: string; redirect_url?: string } | null)?.redirectUrl ??
+      (checkout as { redirect_url?: string } | null)?.redirect_url ??
+      null;
+    if (redirect) {
+      window.location.href = redirect;
+    } else {
+      toast.error("Yoco didn't return a redirect URL");
+    }
   };
 
   const joinClassWaitlist = async () => {
@@ -798,6 +882,19 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
               </div>
             )}
 
+            {classTicketProduct ? (
+              <div className="mt-4 rounded-xl border border-[#c5d4b8]/70 bg-[#f4f7f0]/90 px-3 py-2.5 text-xs">
+                <p className="font-semibold text-[#3d4f36]">
+                  Event ticket · {formatTicketPriceLabel(classTicketProduct.price_zar)}
+                </p>
+                <p className="mt-0.5 text-muted-foreground">
+                  {classTicketProduct.price_zar > 0
+                    ? "Purchase this ticket to book — one credit per person."
+                    : "Free ticket — tap Book to reserve your spot."}
+                </p>
+              </div>
+            ) : null}
+
             {isFreeClass ? (
               <div className="mt-6 rounded-2xl border border-[#a3b693]/50 bg-[#e8efe3]/80 px-4 py-4 text-center dark:bg-[#a3b693]/10">
                 <p className="text-sm font-semibold text-[#3d4f36] dark:text-foreground">
@@ -807,7 +904,7 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
                   No pass or payment needed — tap below to reserve your spot.
                 </p>
               </div>
-            ) : credits.length === 0 ? (
+            ) : credits.length === 0 && !isPaidClassTicket ? (
               <div className="mt-6 rounded-2xl border border-dashed border-border bg-card p-4 text-center text-sm text-muted-foreground">
                 No eligible credits for this class.{" "}
                 <Link to="/pricing" className="text-primary underline">
@@ -857,7 +954,7 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
               </>
             )}
 
-            {!isFreeClass && flowPoints >= 100 && (
+            {!isFreeClass && !isPaidClassTicket && flowPoints >= 100 && (
               <button
                 type="button"
                 onClick={() => {
@@ -886,7 +983,7 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
               </button>
             )}
 
-            {!isFreeClass && (hireAddons.mat || hireAddons.towel) && (
+            {!isFreeClass && !isPaidClassTicket && (hireAddons.mat || hireAddons.towel) && (
               <>
                 <p className="mt-6 text-sm font-semibold">Add-ons for this class:</p>
                 <div className="mt-2 flex flex-wrap gap-2">
@@ -981,7 +1078,9 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
                   onClick={() => void joinClassWaitlist()}
                   disabled={
                     waitlistBusy ||
-                    (!isFreeClass && !selectedCredit && !usePoints)
+                    (needsTicketPurchase
+                      ? false
+                      : !isFreeClass && !selectedCredit && !usePoints)
                   }
                   className="mt-6 w-full rounded-xl bg-primary py-3.5 text-sm font-semibold text-primary-foreground transition-opacity active:opacity-90 disabled:opacity-50"
                 >
@@ -1011,10 +1110,14 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
                   {classIsPast
                     ? "Class has passed"
                     : loading
-                      ? "Confirming…"
-                      : isFreeClass
-                        ? "Book Free"
-                        : "Confirm Booking"}
+                      ? payCheckoutSlow
+                        ? "Redirecting to payment…"
+                        : "Confirming…"
+                      : needsTicketPurchase
+                        ? `Pay ${formatTicketPriceLabel(classTicketProduct!.price_zar)} & book`
+                        : isFreeClass
+                          ? "Book Free"
+                          : "Confirm Booking"}
                 </button>
                 <button
                   type="button"

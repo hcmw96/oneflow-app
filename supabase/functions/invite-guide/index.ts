@@ -32,31 +32,101 @@ const ROLE_EMAIL_LABEL: Record<string, string> = {
   team: "team member",
 };
 
-const DISCIPLINE_OPTIONS = new Set([
-  "Yoga",
-  "Sculpt",
-  "Wellzone",
-  "Sauna Journey",
-  "Power",
-  "Beginner",
-  "Beginner sculpt",
-  "Event",
-  "Pilates",
+const DISCIPLINE_SLUGS = new Set([
+  "yoga",
+  "sculpt",
+  "wellzone",
+  "sauna_journey",
+  "power",
+  "beginner",
+  "beginner_sculpt",
+  "event",
+  "pilates",
 ]);
+
+const DISCIPLINE_LABEL_TO_SLUG: Record<string, string> = {
+  yoga: "yoga",
+  sculpt: "sculpt",
+  wellzone: "wellzone",
+  sauna_journey: "sauna_journey",
+  sauna: "sauna_journey",
+  "sauna journey": "sauna_journey",
+  power: "power",
+  beginner: "beginner",
+  beginner_sculpt: "beginner_sculpt",
+  "beginner sculpt": "beginner_sculpt",
+  event: "event",
+  pilates: "pilates",
+};
 
 function normalizeDisciplines(raw: unknown): string[] {
   if (!Array.isArray(raw)) return [];
-  return raw
-    .map((value) => String(value).trim())
-    .filter(Boolean)
-    .map((value) => {
-      const lower = value.toLowerCase();
-      if (lower === "sauna_journey") return "Sauna Journey";
-      if (lower === "beginner_sculpt" || lower === "beginner sculpt") return "Beginner sculpt";
-      return value;
-    })
-    .filter((value) => DISCIPLINE_OPTIONS.has(value))
-    .filter((value, idx, arr) => arr.indexOf(value) === idx);
+  const out: string[] = [];
+  for (const item of raw) {
+    const trimmed = String(item).trim();
+    if (!trimmed) continue;
+    const lower = trimmed.toLowerCase().replace(/\s+/g, "_");
+    const slug =
+      DISCIPLINE_SLUGS.has(lower) ? lower : (DISCIPLINE_LABEL_TO_SLUG[trimmed.toLowerCase()] ?? null);
+    if (slug && !out.includes(slug)) out.push(slug);
+  }
+  return out;
+}
+
+function resolveAdminApiKey(): string {
+  const service = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (service) return service;
+
+  const secretKeysRaw = Deno.env.get("SUPABASE_SECRET_KEYS");
+  if (secretKeysRaw) {
+    const secretKeys = JSON.parse(secretKeysRaw) as Record<string, string>;
+    if (secretKeys["default"]) return secretKeys["default"];
+  }
+
+  throw new Error("No admin API key configured");
+}
+
+async function findAuthUserIdByEmail(
+  admin: ReturnType<typeof createClient>,
+  email: string,
+): Promise<string | null> {
+  const getByEmail = (
+    admin.auth.admin as { getUserByEmail?: (e: string) => Promise<{ data: { user: { id: string } | null } }> }
+  ).getUserByEmail;
+  if (getByEmail) {
+    try {
+      const { data } = await getByEmail.call(admin.auth.admin, email);
+      if (data?.user?.id) return data.user.id;
+    } catch {
+      // fall through to listUsers
+    }
+  }
+
+  let page = 1;
+  const perPage = 200;
+  while (page <= 10) {
+    const { data, error } = await admin.auth.admin.listUsers({ page, perPage });
+    if (error) throw error;
+    const match = data.users.find((u) => u.email?.toLowerCase() === email);
+    if (match?.id) return match.id;
+    if (data.users.length < perPage) break;
+    page += 1;
+  }
+  return null;
+}
+
+function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function isExistingUserInviteError(message: string): boolean {
+  const lower = message.toLowerCase();
+  return (
+    lower.includes("already been registered") ||
+    lower.includes("already registered") ||
+    lower.includes("user already exists") ||
+    lower.includes("email address has already")
+  );
 }
 
 async function sendBrandedInviteEmail(
@@ -90,17 +160,11 @@ serve(async (req) => {
   try {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
-    const secretKeysRaw = Deno.env.get("SUPABASE_SECRET_KEYS");
-    if (!secretKeysRaw) {
-      return new Response(JSON.stringify({ error: "SUPABASE_SECRET_KEYS is not configured" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-    const secretKeys = JSON.parse(secretKeysRaw) as Record<string, string>;
-    const adminApiKey = secretKeys["default"];
-    if (!adminApiKey) {
-      return new Response(JSON.stringify({ error: "No default key in SUPABASE_SECRET_KEYS" }), {
+    let serviceKey: string;
+    try {
+      serviceKey = resolveAdminApiKey();
+    } catch {
+      return new Response(JSON.stringify({ error: "No admin API key configured" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -170,33 +234,71 @@ serve(async (req) => {
       );
     }
 
-    const admin = createClient(SUPABASE_URL, adminApiKey);
+    if (!isValidEmail(email)) {
+      return new Response(
+        JSON.stringify({ error: "Enter a valid email address (e.g. name@example.com)" }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    const admin = createClient(SUPABASE_URL, serviceKey);
+
+    let invitedUserId: string;
+    let sentInviteEmail = false;
+    let effectiveRole = role;
 
     const { data: inviteData, error: inviteErr } = await admin.auth.admin.inviteUserByEmail(email, {
       redirectTo: APP_CALLBACK_URL,
       data: { first_name, last_name, role },
     });
-    if (inviteErr) {
-      return new Response(JSON.stringify({ error: inviteErr.message }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
 
-    const invitedUser = inviteData.user;
-    if (!invitedUser) {
-      return new Response(JSON.stringify({ error: "Invite did not return a user" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    if (inviteErr) {
+      if (!isExistingUserInviteError(inviteErr.message)) {
+        return new Response(JSON.stringify({ error: inviteErr.message }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const existingId = await findAuthUserIdByEmail(admin, email);
+      if (!existingId) {
+        return new Response(JSON.stringify({ error: inviteErr.message }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      invitedUserId = existingId;
+
+      const { data: existingProfile } = await admin
+        .from("profiles")
+        .select("role")
+        .eq("id", existingId)
+        .maybeSingle();
+      const existingRole = String(existingProfile?.role ?? "").toLowerCase();
+      if (existingRole === "director" || existingRole === "management") {
+        effectiveRole = existingRole;
+      }
+    } else {
+      const invitedUser = inviteData.user;
+      if (!invitedUser) {
+        return new Response(JSON.stringify({ error: "Invite did not return a user" }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      invitedUserId = invitedUser.id;
+      sentInviteEmail = true;
     }
 
     const profilePayload: Record<string, unknown> = {
-      id: invitedUser.id,
+      id: invitedUserId,
       email,
       first_name,
       last_name,
-      role,
+      role: effectiveRole,
     };
     if (phone) profilePayload.phone = phone;
     if (date_of_birth) profilePayload.date_of_birth = date_of_birth;
@@ -214,7 +316,7 @@ serve(async (req) => {
     if (role === "guide") {
       const { error: guideErr } = await admin.from("guides").upsert(
         {
-          profile_id: invitedUser.id,
+          profile_id: invitedUserId,
           disciplines,
           is_active: true,
         },
@@ -229,23 +331,27 @@ serve(async (req) => {
       }
     }
 
-    await sendBrandedInviteEmail(SUPABASE_URL, adminApiKey, email, {
-      first_name,
-      last_name,
-      role_label: ROLE_EMAIL_LABEL[role] ?? "member",
-      invite_url: APP_CALLBACK_URL,
-    });
+    if (sentInviteEmail) {
+      await sendBrandedInviteEmail(SUPABASE_URL, serviceKey, email, {
+        first_name,
+        last_name,
+        role_label: ROLE_EMAIL_LABEL[role] ?? "member",
+        invite_url: APP_CALLBACK_URL,
+      });
+    }
 
     return new Response(
       JSON.stringify({
         success: true,
-        user_id: invitedUser.id,
+        existing_user: !sentInviteEmail,
+        user_id: invitedUserId,
         email,
         first_name,
         last_name,
         full_name: `${first_name} ${last_name}`.trim(),
-        role,
+        role: effectiveRole,
         disciplines,
+        existing_user: !sentInviteEmail,
       }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },

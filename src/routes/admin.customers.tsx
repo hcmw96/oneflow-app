@@ -43,7 +43,7 @@ import {
 } from "@/components/ui/select";
 import { isBookableMember } from "@/lib/bookableMembers";
 import { getUser, supabase } from "@/lib/supabase";
-import { supabaseErrorMessage } from "@/lib/supabaseErrors";
+import { edgeFunctionErrorMessage, isValidEmail, supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { normalizeProductCategoryKey } from "@/lib/productCategories";
 import { cn } from "@/lib/utils";
 
@@ -87,9 +87,6 @@ function roleForSelect(role: string): AllRole {
   return isAllRole(r) ? r : "customer";
 }
 
-function isValidEmail(v: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
-}
 
 function creditsDisplayFromActive(active: EmbeddedCreditRow[]): {
   display: string;
@@ -732,7 +729,7 @@ function CustomersPage() {
     });
 
     if (error) {
-      toast.error(supabaseErrorMessage(error, "Could not create member"));
+      toast.error(await edgeFunctionErrorMessage(error, data, "Could not create member"));
       setSaving(false);
       return;
     }

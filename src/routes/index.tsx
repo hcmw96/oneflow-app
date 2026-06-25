@@ -18,6 +18,15 @@ import {
   isCafeCredit,
   sumCafeCreditsRemaining,
 } from "@/lib/cafeCredits";
+import {
+  activeMatAccessLabels,
+  activeTowelAccessLabels,
+  fetchMatTowelAccess,
+  hasActiveMatAccess,
+  hasActiveTowelAccess,
+  isMatTowelAccessCredit,
+  type MatTowelAccessRow,
+} from "@/lib/matTowelAccess";
 import { useTimezone } from "@/hooks/use-timezone";
 import {
   fetchUpcomingHomeBookings,
@@ -69,6 +78,8 @@ type UserCreditHomeRow = {
   expires_at: string | null;
   product_name: string | null;
   category: string | null;
+  mat_access?: boolean | null;
+  towel_access?: boolean | null;
 };
 
 function HomePage() {
@@ -80,6 +91,7 @@ function HomePage() {
   const [creditRows, setCreditRows] = useState<UserCreditHomeRow[]>([]);
   const [cafeCreditTotal, setCafeCreditTotal] = useState(0);
   const [cafeUnlimited, setCafeUnlimited] = useState(false);
+  const [matTowelRows, setMatTowelRows] = useState<MatTowelAccessRow[]>([]);
   const [completed, setCompleted] = useState(0);
   const [points, setPoints] = useState(0);
   const [weeklyGoal, setWeeklyGoal] = useState(3);
@@ -94,6 +106,10 @@ function HomePage() {
   const goalPct = weeklyGoal > 0 ? Math.min(100, (weeklyDone / weeklyGoal) * 100) : 0;
   const remaining = Math.max(0, weeklyGoal - weeklyDone);
   const showCafeTile = cafeUnlimited || cafeCreditTotal > 0;
+  const showMatTile = hasActiveMatAccess(matTowelRows);
+  const showTowelTile = hasActiveTowelAccess(matTowelRows);
+  const matAccessLabels = activeMatAccessLabels(matTowelRows);
+  const towelAccessLabels = activeTowelAccessLabels(matTowelRows);
 
   const { hasUnlimited, totalCredits } = useMemo(() => {
     const credits = creditRows;
@@ -105,7 +121,7 @@ function HomePage() {
     const hasUnlimited = (credits ?? []).some(
       (c) => Boolean(c.is_unlimited) && notExpired(c.expires_at),
     );
-    const classCredits = (credits ?? []).filter((c) => !isCafeCredit(c));
+    const classCredits = (credits ?? []).filter((c) => !isCafeCredit(c) && !isMatTowelAccessCredit(c));
     const hasUnlimitedClass = classCredits.some(
       (c) => Boolean(c.is_unlimited) && notExpired(c.expires_at),
     );
@@ -125,6 +141,7 @@ function HomePage() {
     setCreditRows([]);
     setCafeCreditTotal(0);
     setCafeUnlimited(false);
+    setMatTowelRows([]);
     setCompleted(0);
     setPoints(0);
     setFirstName(null);
@@ -150,6 +167,7 @@ function HomePage() {
       { data: profile },
       { data: fetchedUserCredits },
       cafeCredits,
+      matTowelAccess,
       { count: attendedCount, error: attendedErr },
       { count: weeklyAttended, error: weeklyErr },
       upcoming,
@@ -162,9 +180,12 @@ function HomePage() {
         .maybeSingle(),
       supabase
         .from("user_credits")
-        .select("id, credits_remaining, is_unlimited, expires_at, product_name, category")
+        .select(
+          "id, credits_remaining, is_unlimited, expires_at, product_name, category, mat_access, towel_access",
+        )
         .eq("profile_id", uid),
       fetchCafeCredits(uid),
+      fetchMatTowelAccess(uid),
       supabase
         .from("bookings")
         .select("id", { count: "exact", head: true })
@@ -191,6 +212,7 @@ function HomePage() {
     const cafeActive = hasActiveCafeCredits(cafeCredits);
     setCafeUnlimited(cafeActive && cafeSum === -1);
     setCafeCreditTotal(cafeActive && cafeSum > 0 ? cafeSum : 0);
+    setMatTowelRows(matTowelAccess);
     setCompleted(attendedCount ?? 0);
     const wgRaw = (profile as { weekly_goal?: number | null } | null)?.weekly_goal;
     const wg =
@@ -376,7 +398,65 @@ function HomePage() {
           </div>
         </section>
 
-        {showCafeTile ? (
+        {(showMatTile || showTowelTile || showCafeTile) ? (
+          <section className="space-y-3">
+            {showMatTile ? (
+              <div className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-card px-5 py-4">
+                <div className="flex min-w-0 flex-1 items-center gap-3">
+                  <span
+                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-xl"
+                    style={{ backgroundColor: `${SAGE}22` }}
+                    aria-hidden
+                  >
+                    🧘
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold">Mat storage</p>
+                    <p className="text-xs text-muted-foreground">
+                      {matAccessLabels.length === 1
+                        ? matAccessLabels[0]
+                        : `${matAccessLabels.length} active mat packages`}
+                    </p>
+                  </div>
+                </div>
+                <span
+                  className="inline-flex shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold text-white"
+                  style={{ backgroundColor: SAGE }}
+                >
+                  Active
+                </span>
+              </div>
+            ) : null}
+
+            {showTowelTile ? (
+              <div className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-card px-5 py-4">
+                <div className="flex min-w-0 flex-1 items-center gap-3">
+                  <span
+                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-xl"
+                    style={{ backgroundColor: `${SAGE}22` }}
+                    aria-hidden
+                  >
+                    🪣
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold">Towel service</p>
+                    <p className="text-xs text-muted-foreground">
+                      {towelAccessLabels.length === 1
+                        ? towelAccessLabels[0]
+                        : `${towelAccessLabels.length} active towel packages`}
+                    </p>
+                  </div>
+                </div>
+                <span
+                  className="inline-flex shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold text-white"
+                  style={{ backgroundColor: SAGE }}
+                >
+                  Active
+                </span>
+              </div>
+            ) : null}
+
+            {showCafeTile ? (
           <Link
             to="/cafe"
             className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-card px-5 py-4 transition-colors active:bg-muted/40"
@@ -405,6 +485,8 @@ function HomePage() {
             QR
           </span>
           </Link>
+            ) : null}
+          </section>
         ) : null}
 
         <div className="rounded-2xl border border-border bg-card px-5 py-5">

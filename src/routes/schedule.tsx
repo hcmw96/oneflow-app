@@ -64,6 +64,7 @@ type ClassRow = {
   is_cancelled: boolean;
   guide_name: string | null;
   description?: string;
+  product_id?: string | null;
 };
 
 /** Denormalized `classes.guide_name` from PostgREST (text); never guess a label when missing. */
@@ -211,7 +212,7 @@ export default function SchedulePage() {
       supabase
         .from("classes")
         .select(
-          "id, name, guide_name, class_type, location, starts_at, ends_at, capacity, booked_count, is_cancelled, description",
+          "id, name, guide_name, class_type, location, starts_at, ends_at, capacity, booked_count, is_cancelled, description, product_id",
         )
         .gte("starts_at", isoStart)
         .lte("starts_at", isoEnd)
