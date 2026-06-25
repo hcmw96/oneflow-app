@@ -269,7 +269,7 @@ export function buildBundleComponentCreditRow(args: {
       return {
         ...base,
         product_name: `${title} - Mat Storage`,
-        category: "yoga",
+        category: "mat_towel",
         allowed_class_types: [],
         mat_access: true,
       };
@@ -277,7 +277,7 @@ export function buildBundleComponentCreditRow(args: {
       return {
         ...base,
         product_name: `${title} - Towel Service`,
-        category: "yoga",
+        category: "mat_towel",
         allowed_class_types: [],
         towel_access: true,
       };

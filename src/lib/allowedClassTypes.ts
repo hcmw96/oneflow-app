@@ -74,7 +74,7 @@ export function defaultAllowedClassTypesForCreditCategory(
 ): AllowedClassTypeSlug[] {
   const k = normalizeProductCategoryKey(category);
   if (k === "all_access") return [...ALL_ALLOWED_CLASS_TYPES];
-  if (k === "yoga" || k === "power") return [...DEFAULTS_YOGA_STUDIO];
+  if (k === "yoga" || k === "power" || k === "mat_towel") return [...DEFAULTS_YOGA_STUDIO];
   if (k === "wellzone") return [...DEFAULTS_WELLZONE];
   return [...ALL_ALLOWED_CLASS_TYPES];
 }

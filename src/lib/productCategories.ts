@@ -3,7 +3,7 @@
  * revenue charts, and list ordering.
  *
  * DB `products.category` / `user_credits.category`: lowercase slugs
- * (yoga, wellzone, all_access, power, cafe, complimentary, staff).
+ * (yoga, wellzone, all_access, power, cafe, mat_towel, complimentary, staff).
  */
 
 export const PRODUCT_DISPLAY_GROUPS: readonly {
@@ -15,6 +15,7 @@ export const PRODUCT_DISPLAY_GROUPS: readonly {
   { keys: ["all_access"], label: "All Access" },
   { keys: ["power"], label: "Power" },
   { keys: ["cafe"], label: "Café" },
+  { keys: ["mat_towel"], label: "Mat & Towel" },
   { keys: ["complimentary"], label: "Complimentary" },
   { keys: ["staff"], label: "Staff" },
   { keys: ["other"], label: "Other" },
@@ -31,6 +32,7 @@ export const CREDIT_CATEGORY_ORDERED = [
   "all_access",
   "power",
   "cafe",
+  "mat_towel",
   "complimentary",
   "staff",
 ] as const;
@@ -44,6 +46,7 @@ export const PRODUCT_CATEGORY_SLUG_LABEL: Record<string, string> = {
   all_access: "All Access",
   power: "Power",
   cafe: "Café",
+  mat_towel: "Mat & Towel",
   complimentary: "Complimentary",
   staff: "Staff",
   other: "Other",
