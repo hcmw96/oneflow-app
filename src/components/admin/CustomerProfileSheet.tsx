@@ -650,8 +650,11 @@ export function CustomerProfileSheet({
     const removedId = removeCreditId;
     setRemovingCredit(true);
     setRemoveCreditId(null);
-    setCredits((prev) => prev.filter((c) => c.id !== removedId));
-    const { error } = await supabase.from("user_credits").delete().eq("id", removedId);
+    const { data, error } = await supabase
+      .from("user_credits")
+      .delete()
+      .eq("id", removedId)
+      .select("id");
     setRemovingCredit(false);
     if (error) {
       console.error("remove credit failed", error);
@@ -659,6 +662,13 @@ export function CustomerProfileSheet({
       await load();
       return;
     }
+    if (!data?.length) {
+      toast.error("Package was not removed — you may not have permission.");
+      await load();
+      return;
+    }
+    setCredits((prev) => prev.filter((c) => c.id !== removedId));
+    setCreditTransactions((prev) => prev.filter((tx) => tx.id !== removedId));
     toast.success("Package removed");
     onProfileUpdated?.();
   };
