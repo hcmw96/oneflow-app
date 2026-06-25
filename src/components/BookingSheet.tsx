@@ -24,7 +24,7 @@ import {
   bookingConfirmationEmailData,
   bookingConfirmationTemplateForClassType,
 } from "@/lib/bookingConfirmationEmail";
-import { bookingCreditInsertErrorMessage } from "@/lib/bookingCredits";
+import { bookingCreditInsertErrorMessage, isBookableClassCredit } from "@/lib/bookingCredits";
 import { profileEarnsFlowPoints } from "@/lib/flowPoints";
 import { userCreditCoversClassType } from "@/lib/allowedClassTypes";
 import { classDateFromStartsAtIso } from "@/lib/mayChallengeCheckIn";
@@ -69,7 +69,8 @@ interface Credit {
   is_unlimited: boolean;
   expires_at: string | null;
   allowed_class_types: string[] | null;
-  category?: string | null;
+  mat_access?: boolean | null;
+  towel_access?: boolean | null;
 }
 
 interface Props {
@@ -202,7 +203,7 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
         : supabase
             .from("user_credits")
             .select(
-              "id, product_id, product_name, credits_remaining, is_unlimited, expires_at, allowed_class_types, category",
+              "id, product_id, product_name, credits_remaining, is_unlimited, expires_at, allowed_class_types, category, mat_access, towel_access",
             )
             .eq("profile_id", user.id);
 
@@ -258,8 +259,7 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
         // Credits attach to profile_id (same as auth user id for all roles, including staff).
         const nowMs = Date.now();
         const pool = (creditsData ?? []).filter((c) => {
-          const cat = String((c as { category?: string | null }).category ?? "").toLowerCase();
-          if (cat === "cafe") return false;
+          if (!isBookableClassCredit(c)) return false;
           if (c.is_unlimited) {
             if (c.expires_at && new Date(c.expires_at).getTime() < nowMs) return false;
             return true;

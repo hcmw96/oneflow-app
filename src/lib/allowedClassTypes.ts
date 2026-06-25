@@ -92,6 +92,7 @@ export function userCreditCoversClassType(args: {
   classType: string;
 }): boolean {
   const cat = normalizeProductCategoryKey(args.category);
+  if (cat === "mat_towel" || cat === "cafe") return false;
   if (cat === "all_access") return true;
   const allowed = args.allowed_class_types;
   if (!allowed || allowed.length === 0) return true;

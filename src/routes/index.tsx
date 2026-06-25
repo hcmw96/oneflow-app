@@ -12,10 +12,10 @@ import {
 } from "@/lib/movementChallenge";
 import { HomeSpotlightCard, homeSpotlightCardVisible } from "@/components/HomeSpotlightCard";
 import { supabase } from "@/lib/supabase";
+import { isBookableClassCredit } from "@/lib/bookingCredits";
 import {
   fetchCafeCredits,
   hasActiveCafeCredits,
-  isCafeCredit,
   sumCafeCreditsRemaining,
 } from "@/lib/cafeCredits";
 import {
@@ -24,7 +24,6 @@ import {
   fetchMatTowelAccess,
   hasActiveMatAccess,
   hasActiveTowelAccess,
-  isMatTowelAccessCredit,
   type MatTowelAccessRow,
 } from "@/lib/matTowelAccess";
 import { useTimezone } from "@/hooks/use-timezone";
@@ -121,7 +120,7 @@ function HomePage() {
     const hasUnlimited = (credits ?? []).some(
       (c) => Boolean(c.is_unlimited) && notExpired(c.expires_at),
     );
-    const classCredits = (credits ?? []).filter((c) => !isCafeCredit(c) && !isMatTowelAccessCredit(c));
+    const classCredits = (credits ?? []).filter((c) => isBookableClassCredit(c));
     const hasUnlimitedClass = classCredits.some(
       (c) => Boolean(c.is_unlimited) && notExpired(c.expires_at),
     );
