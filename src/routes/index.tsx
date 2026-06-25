@@ -3,9 +3,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Calendar, Coffee, MapPin, QrCode, Sparkles, Ticket } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { Skeleton } from "@/components/ui/skeleton";
-import challengeBg from "@/assets/challenge-bg.jpg";
 import { useAuth } from "@/contexts/auth";
-import { countMayChallengeStampedDays } from "@/lib/mayChallengeCheckIn";
+import { countChallengeStampedDaysForConfig } from "@/lib/mayChallengeCheckIn";
+import {
+  fetchMovementChallengeConfig,
+  movementChallengeTotalDays,
+  type MovementChallengeConfig,
+} from "@/lib/movementChallenge";
+import { HomeSpotlightCard, homeSpotlightCardVisible } from "@/components/HomeSpotlightCard";
 import { supabase } from "@/lib/supabase";
 import {
   fetchCafeCredits,
@@ -80,8 +85,11 @@ function HomePage() {
   const [weeklyGoal, setWeeklyGoal] = useState(3);
   const [weeklyDone, setWeeklyDone] = useState(0);
   const [challengeStamped, setChallengeStamped] = useState(0);
+  const [challengeConfig, setChallengeConfig] = useState<MovementChallengeConfig | null>(null);
   const [upcomingBookings, setUpcomingBookings] = useState<HomeUpcomingBooking[]>([]);
-  const challengeTotalDays = 31;
+  const challengeTotalDays = challengeConfig
+    ? movementChallengeTotalDays(challengeConfig)
+    : 31;
   const SAGE = "#a3b693";
   const goalPct = weeklyGoal > 0 ? Math.min(100, (weeklyDone / weeklyGoal) * 100) : 0;
   const remaining = Math.max(0, weeklyGoal - weeklyDone);
@@ -123,6 +131,7 @@ function HomePage() {
     setWeeklyGoal(3);
     setWeeklyDone(0);
     setChallengeStamped(0);
+    setChallengeConfig(null);
     setUpcomingBookings([]);
 
     if (!user) {
@@ -144,7 +153,7 @@ function HomePage() {
       { count: attendedCount, error: attendedErr },
       { count: weeklyAttended, error: weeklyErr },
       upcoming,
-      stampedDays,
+      movementChallenge,
     ] = await Promise.all([
       supabase
         .from("profiles")
@@ -170,7 +179,7 @@ function HomePage() {
         .gte("checked_in_at", weekStartIso)
         .lt("checked_in_at", weekEndIso),
       fetchUpcomingHomeBookings(supabase, uid),
-      countMayChallengeStampedDays(uid),
+      fetchMovementChallengeConfig(),
     ]);
 
     if (attendedErr) console.error(attendedErr);
@@ -192,6 +201,10 @@ function HomePage() {
     setWeeklyDone(weeklyAttended ?? 0);
     const fpRaw = (profile as { flow_points?: number | null } | null)?.flow_points;
     setPoints(typeof fpRaw === "number" && Number.isFinite(fpRaw) ? Math.max(0, fpRaw) : 0);
+    setChallengeConfig(movementChallenge);
+    const stampedDays = movementChallenge.enabled
+      ? await countChallengeStampedDaysForConfig(uid, movementChallenge)
+      : 0;
     setChallengeStamped(stampedDays);
     setUpcomingBookings(upcoming);
     setLoading(false);
@@ -318,19 +331,13 @@ function HomePage() {
           Book a Class
         </Link>
 
-        <Link to="/challenge" className="relative block overflow-hidden rounded-2xl">
-          <img src={challengeBg} alt="" className="absolute inset-0 h-full w-full object-cover" />
-          <div className="absolute inset-0 bg-gradient-to-r from-black/80 via-black/55 to-black/25" />
-          <div className="relative p-5">
-            <span className="inline-block rounded-full bg-primary px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-primary-foreground">
-              May Challenge
-            </span>
-            <h3 className="mt-2 font-display text-2xl font-bold text-white">31 Days of Movement</h3>
-            <p className="mt-1 text-xs text-white/80">
-              {challengeStamped}/{challengeTotalDays} days · Tap to view →
-            </p>
-          </div>
-        </Link>
+        {challengeConfig && homeSpotlightCardVisible(challengeConfig) ? (
+          <HomeSpotlightCard
+            config={challengeConfig}
+            challengeStamped={challengeStamped}
+            challengeTotalDays={challengeTotalDays}
+          />
+        ) : null}
 
         <section className="grid grid-cols-2 gap-3">
           <div className="flex flex-col items-center justify-between rounded-2xl border border-border bg-card p-5 text-center">

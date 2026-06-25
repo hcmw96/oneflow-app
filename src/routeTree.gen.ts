@@ -50,6 +50,7 @@ import { Route as AdminCustomersRouteImport } from './routes/admin.customers'
 import { Route as AdminClientCommsRouteImport } from './routes/admin.client-comms'
 import { Route as AdminClassesRouteImport } from './routes/admin.classes'
 import { Route as AdminCheckInRouteImport } from './routes/admin.check-in'
+import { Route as AdminChallengeRouteImport } from './routes/admin.challenge'
 import { Route as AdminBookingsRouteImport } from './routes/admin.bookings'
 import { Route as AdminBadgesRouteImport } from './routes/admin.badges'
 import { Route as AdminCustomersCustomerIdRouteImport } from './routes/admin.customers.$customerId'
@@ -259,6 +260,11 @@ const AdminCheckInRoute = AdminCheckInRouteImport.update({
   path: '/check-in',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminChallengeRoute = AdminChallengeRouteImport.update({
+  id: '/challenge',
+  path: '/challenge',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminBookingsRoute = AdminBookingsRouteImport.update({
   id: '/bookings',
   path: '/bookings',
@@ -294,6 +300,7 @@ export interface FileRoutesByFullPath {
   '/schedule': typeof ScheduleRoute
   '/admin/badges': typeof AdminBadgesRoute
   '/admin/bookings': typeof AdminBookingsRoute
+  '/admin/challenge': typeof AdminChallengeRoute
   '/admin/check-in': typeof AdminCheckInRoute
   '/admin/classes': typeof AdminClassesRoute
   '/admin/client-comms': typeof AdminClientCommsRoute
@@ -339,6 +346,7 @@ export interface FileRoutesByTo {
   '/schedule': typeof ScheduleRoute
   '/admin/badges': typeof AdminBadgesRoute
   '/admin/bookings': typeof AdminBookingsRoute
+  '/admin/challenge': typeof AdminChallengeRoute
   '/admin/check-in': typeof AdminCheckInRoute
   '/admin/classes': typeof AdminClassesRoute
   '/admin/client-comms': typeof AdminClientCommsRoute
@@ -386,6 +394,7 @@ export interface FileRoutesById {
   '/schedule': typeof ScheduleRoute
   '/admin/badges': typeof AdminBadgesRoute
   '/admin/bookings': typeof AdminBookingsRoute
+  '/admin/challenge': typeof AdminChallengeRoute
   '/admin/check-in': typeof AdminCheckInRoute
   '/admin/classes': typeof AdminClassesRoute
   '/admin/client-comms': typeof AdminClientCommsRoute
@@ -434,6 +443,7 @@ export interface FileRouteTypes {
     | '/schedule'
     | '/admin/badges'
     | '/admin/bookings'
+    | '/admin/challenge'
     | '/admin/check-in'
     | '/admin/classes'
     | '/admin/client-comms'
@@ -479,6 +489,7 @@ export interface FileRouteTypes {
     | '/schedule'
     | '/admin/badges'
     | '/admin/bookings'
+    | '/admin/challenge'
     | '/admin/check-in'
     | '/admin/classes'
     | '/admin/client-comms'
@@ -525,6 +536,7 @@ export interface FileRouteTypes {
     | '/schedule'
     | '/admin/badges'
     | '/admin/bookings'
+    | '/admin/challenge'
     | '/admin/check-in'
     | '/admin/classes'
     | '/admin/client-comms'
@@ -864,6 +876,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminCheckInRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/challenge': {
+      id: '/admin/challenge'
+      path: '/challenge'
+      fullPath: '/admin/challenge'
+      preLoaderRoute: typeof AdminChallengeRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/bookings': {
       id: '/admin/bookings'
       path: '/bookings'
@@ -903,6 +922,7 @@ const AdminCustomersRouteWithChildren = AdminCustomersRoute._addFileChildren(
 interface AdminRouteChildren {
   AdminBadgesRoute: typeof AdminBadgesRoute
   AdminBookingsRoute: typeof AdminBookingsRoute
+  AdminChallengeRoute: typeof AdminChallengeRoute
   AdminCheckInRoute: typeof AdminCheckInRoute
   AdminClassesRoute: typeof AdminClassesRoute
   AdminClientCommsRoute: typeof AdminClientCommsRoute
@@ -928,6 +948,7 @@ interface AdminRouteChildren {
 const AdminRouteChildren: AdminRouteChildren = {
   AdminBadgesRoute: AdminBadgesRoute,
   AdminBookingsRoute: AdminBookingsRoute,
+  AdminChallengeRoute: AdminChallengeRoute,
   AdminCheckInRoute: AdminCheckInRoute,
   AdminClassesRoute: AdminClassesRoute,
   AdminClientCommsRoute: AdminClientCommsRoute,

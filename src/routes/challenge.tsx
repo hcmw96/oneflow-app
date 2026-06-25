@@ -12,34 +12,32 @@ import {
 import type { ChallengeCheckIn, ChallengeType } from "@/types/studio";
 import { displayClassType } from "@/types/studio";
 import { cn } from "@/lib/utils";
-import challengeBg from "@/assets/challenge-bg.jpg";
 import { getUser, supabase } from "@/lib/supabase";
 import { startOfDay } from "@/lib/format";
+import {
+  challengeDateForDayIndex,
+  challengeHeroImageUrl,
+  dayIndexInChallenge,
+  DEFAULT_MOVEMENT_CHALLENGE,
+  fetchMovementChallengeConfig,
+  movementChallengeTotalDays,
+  todayDayIndexInChallenge,
+  type MovementChallengeConfig,
+} from "@/lib/movementChallenge";
 
 export const Route = createFileRoute("/challenge")({
   head: () => ({
     meta: [
-      { title: "31 Days of Movement — One Flow" },
+      { title: "Movement Challenge — One Flow" },
       {
         name: "description",
-        content:
-          "Track your May challenge: earn up to 2 stamps per day when you check in during May 2026.",
-      },
-      { property: "og:title", content: "31 Days of Movement — One Flow" },
-      {
-        property: "og:description",
-        content: "Earn up to 2 stamps per day when you check in across May 2026.",
+        content: "Track your studio movement challenge and collect daily stamps when you check in.",
       },
     ],
   }),
   component: ChallengePage,
 });
 
-const CHALLENGE_YEAR = 2026;
-const CHALLENGE_MONTH_INDEX = 4;
-const MAY_START = "2026-05-01";
-const MAY_END = "2026-05-31";
-const TOTAL_DAYS = 31;
 const SAGE = "#a3b693";
 
 type CheckInApiRow = {
@@ -63,11 +61,6 @@ function oneBookingClass(
   return Array.isArray(c) ? (c[0] ?? null) : c;
 }
 
-function dayFromClassDate(classDate: string): number {
-  const d = Number(classDate.slice(8, 10));
-  return Number.isFinite(d) ? d : 0;
-}
-
 function mapRowToChallengeCheckIn(row: CheckInApiRow): ChallengeCheckIn {
   const cls = oneBookingClass(row.bookings);
   const label = displayClassType(cls?.class_type);
@@ -85,9 +78,13 @@ function ChallengePage() {
   const [signedIn, setSignedIn] = useState(false);
   const [checkins, setCheckins] = useState<CheckInApiRow[]>([]);
   const [activeDay, setActiveDay] = useState<number | null>(null);
+  const [config, setConfig] = useState<MovementChallengeConfig>(DEFAULT_MOVEMENT_CHALLENGE);
 
   const load = useCallback(async () => {
     setLoading(true);
+    const challengeConfig = await fetchMovementChallengeConfig();
+    setConfig(challengeConfig);
+
     const user = await getUser();
     if (!user) {
       setSignedIn(false);
@@ -96,6 +93,12 @@ function ChallengePage() {
       return;
     }
     setSignedIn(true);
+
+    if (!challengeConfig.enabled) {
+      setCheckins([]);
+      setLoading(false);
+      return;
+    }
 
     const { data, error } = await supabase
       .from("challenge_checkins")
@@ -111,8 +114,8 @@ function ChallengePage() {
       `,
       )
       .eq("profile_id", user.id)
-      .gte("class_date", MAY_START)
-      .lte("class_date", MAY_END)
+      .gte("class_date", challengeConfig.start_date)
+      .lte("class_date", challengeConfig.end_date)
       .order("class_date", { ascending: true });
 
     if (error) {
@@ -130,31 +133,37 @@ function ChallengePage() {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    document.title = `${config.title} — One Flow`;
+  }, [config.title]);
+
+  const totalDays = movementChallengeTotalDays(config);
+
   const stampedDays = useMemo(() => {
     const s = new Set<number>();
     for (const row of checkins) {
-      const d = dayFromClassDate(row.class_date);
-      if (d >= 1 && d <= TOTAL_DAYS) s.add(d);
+      const d = dayIndexInChallenge(row.class_date, config);
+      if (d != null && d >= 1 && d <= totalDays) s.add(d);
     }
     return s;
-  }, [checkins]);
+  }, [checkins, config, totalDays]);
 
   const stampedCount = stampedDays.size;
-  const pct = Math.min(100, (stampedCount / TOTAL_DAYS) * 100);
+  const pct = totalDays > 0 ? Math.min(100, (stampedCount / totalDays) * 100) : 0;
 
   const today = new Date();
   const startToday = startOfDay(today);
-  const inMay2026 =
-    today.getFullYear() === CHALLENGE_YEAR && today.getMonth() === CHALLENGE_MONTH_INDEX;
-  const todayDay = inMay2026 ? today.getDate() : 0;
+  const todayDay = todayDayIndexInChallenge(config, today);
 
   const dayCheckIns: ChallengeCheckIn[] = useMemo(() => {
     if (activeDay == null) return [];
-    const ymd = `${CHALLENGE_YEAR}-05-${String(activeDay).padStart(2, "0")}`;
+    const cellDate = challengeDateForDayIndex(config, activeDay);
+    if (!cellDate) return [];
+    const ymd = cellDate.toISOString().split("T")[0] ?? "";
     return checkins.filter((r) => r.class_date === ymd).map(mapRowToChallengeCheckIn);
-  }, [activeDay, checkins]);
+  }, [activeDay, checkins, config]);
 
-  const days = Array.from({ length: TOTAL_DAYS }, (_, i) => i + 1);
+  const days = Array.from({ length: totalDays }, (_, i) => i + 1);
 
   return (
     <AppShell>
@@ -169,9 +178,15 @@ function ChallengePage() {
       </div>
 
       <main className="flex-1 space-y-5 px-5 pt-3 pb-10">
-        {!signedIn && !loading && (
+        {!config.enabled && !loading && (
           <p className="rounded-2xl border border-border bg-card p-4 text-center text-sm text-muted-foreground">
-            Sign in to see your May challenge progress.
+            The movement challenge is not active right now.
+          </p>
+        )}
+
+        {!signedIn && !loading && config.enabled && (
+          <p className="rounded-2xl border border-border bg-card p-4 text-center text-sm text-muted-foreground">
+            Sign in to see your challenge progress.
           </p>
         )}
 
@@ -179,12 +194,12 @@ function ChallengePage() {
           <div className="flex justify-center py-16">
             <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" aria-label="Loading" />
           </div>
-        ) : (
+        ) : config.enabled ? (
           <>
             <section className="rounded-2xl border border-[#c5d4b8]/80 bg-[#f4f7f0]/90 p-4">
               <div className="flex items-center justify-between gap-3">
                 <p className="text-sm font-semibold text-[#3d4f36]">
-                  {stampedCount}/{TOTAL_DAYS} days stamped
+                  {stampedCount}/{totalDays} days stamped
                 </p>
                 <span className="text-xs tabular-nums text-muted-foreground">
                   {Math.round(pct)}%
@@ -200,21 +215,19 @@ function ChallengePage() {
 
             <section className="relative overflow-hidden rounded-3xl">
               <img
-                src={challengeBg}
+                src={challengeHeroImageUrl(config)}
                 alt=""
                 className="absolute inset-0 h-full w-full object-cover"
               />
               <div className="absolute inset-0 bg-gradient-to-br from-black/80 via-black/55 to-black/30" />
               <div className="relative p-6">
                 <span className="inline-block rounded-full bg-white/15 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-white ring-1 ring-white/40">
-                  MAY CHALLENGE
+                  {config.badge_label}
                 </span>
                 <h1 className="mt-3 font-display text-3xl font-bold leading-tight text-white">
-                  31 Days of Movement
+                  {config.title}
                 </h1>
-                <p className="mt-2 text-sm text-white/85">
-                  May 2026 · Check in at the studio to collect your daily stamp.
-                </p>
+                <p className="mt-2 text-sm text-white/85">{config.subtitle}</p>
               </div>
             </section>
 
@@ -222,17 +235,16 @@ function ChallengePage() {
               <div className="mb-4 flex items-center justify-between">
                 <h2 className="font-display text-lg font-bold">Your stamp card</h2>
                 <span className="text-xs font-medium text-muted-foreground">
-                  {stampedCount}/{TOTAL_DAYS}
+                  {stampedCount}/{totalDays}
                 </span>
               </div>
 
               <div className="grid grid-cols-7 gap-2 sm:gap-3">
                 {days.map((day) => {
-                  const cellStart = startOfDay(
-                    new Date(CHALLENGE_YEAR, CHALLENGE_MONTH_INDEX, day),
-                  );
+                  const cellDate = challengeDateForDayIndex(config, day);
+                  const cellStart = cellDate ? startOfDay(cellDate) : startToday;
                   const isStamped = stampedDays.has(day);
-                  const isToday = todayDay === day && inMay2026;
+                  const isToday = todayDay === day;
                   const isFuture = cellStart.getTime() > startToday.getTime();
                   const isPast = cellStart.getTime() < startToday.getTime();
 
@@ -281,19 +293,20 @@ function ChallengePage() {
               </div>
 
               <p className="mt-5 text-[11px] leading-relaxed text-muted-foreground">
-                Stamps appear when you&apos;re checked in at the desk during May 2026. One stamp per
-                calendar day (up to 2 per day).
+                {config.stamp_help_text}
               </p>
             </section>
           </>
-        )}
+        ) : null}
       </main>
 
       <Sheet open={activeDay != null} onOpenChange={(o) => !o && setActiveDay(null)}>
         <SheetContent side="bottom" className="rounded-t-3xl border-0 bg-background p-0">
           <div className="px-6 pb-8 pt-6">
             <SheetHeader className="text-center">
-              <SheetTitle className="font-display text-2xl font-bold">May {activeDay}</SheetTitle>
+              <SheetTitle className="font-display text-2xl font-bold">
+                Day {activeDay}
+              </SheetTitle>
               <SheetDescription className="text-sm text-muted-foreground">
                 {dayCheckIns.length} stamp{dayCheckIns.length === 1 ? "" : "s"} earned
               </SheetDescription>
@@ -323,5 +336,3 @@ function ChallengePage() {
     </AppShell>
   );
 }
-
-// Reward UI removed (May challenge no longer shows completion reward card).

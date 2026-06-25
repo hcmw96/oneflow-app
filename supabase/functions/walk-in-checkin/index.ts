@@ -14,8 +14,48 @@ const CHECK_IN_STAFF_ROLES = new Set([
   "boh",
 ]);
 
-const MAY_START = "2026-05-01";
-const MAY_END = "2026-05-31";
+type ChallengeWindow = {
+  enabled: boolean;
+  start: string;
+  end: string;
+};
+
+const DEFAULT_CHALLENGE_WINDOW: ChallengeWindow = {
+  enabled: true,
+  start: "2026-05-01",
+  end: "2026-05-31",
+};
+
+async function loadChallengeWindow(admin: SupabaseClient): Promise<ChallengeWindow> {
+  const { data } = await admin
+    .from("studio_settings")
+    .select("value")
+    .eq("key", "movement_challenge")
+    .maybeSingle();
+
+  const raw = (data as { value?: string | null } | null)?.value;
+  if (!raw?.trim()) return DEFAULT_CHALLENGE_WINDOW;
+
+  try {
+    const parsed = JSON.parse(raw) as {
+      enabled?: boolean;
+      start_date?: string;
+      end_date?: string;
+    };
+    return {
+      enabled: parsed.enabled !== false,
+      start: String(parsed.start_date ?? DEFAULT_CHALLENGE_WINDOW.start).trim(),
+      end: String(parsed.end_date ?? DEFAULT_CHALLENGE_WINDOW.end).trim(),
+    };
+  } catch {
+    return DEFAULT_CHALLENGE_WINDOW;
+  }
+}
+
+function isChallengeClassDate(dateStr: string, window: ChallengeWindow): boolean {
+  if (!window.enabled) return false;
+  return dateStr >= window.start && dateStr <= window.end;
+}
 
 type DebugStep = Record<string, unknown>;
 
@@ -40,10 +80,6 @@ function createAdminClient(url: string, key: string): SupabaseClient {
 
 function classDateFromStartsAtIso(startsAtIso: string): string {
   return new Date(startsAtIso).toISOString().split("T")[0] ?? "";
-}
-
-function isMay2026ClassDate(dateStr: string): boolean {
-  return dateStr >= MAY_START && dateStr <= MAY_END;
 }
 
 async function findAuthUserIdByEmail(
@@ -319,7 +355,8 @@ serve(async (req) => {
     }
 
     const classDate = classDateFromStartsAtIso(classRow.starts_at as string);
-    if (classDate && isMay2026ClassDate(classDate)) {
+    const challengeWindow = await loadChallengeWindow(admin);
+    if (classDate && isChallengeClassDate(classDate, challengeWindow)) {
       const { error: challengeErr } = await admin.from("challenge_checkins").upsert(
         {
           profile_id: profileId,

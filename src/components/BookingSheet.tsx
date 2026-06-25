@@ -27,6 +27,13 @@ import {
 import { bookingCreditInsertErrorMessage } from "@/lib/bookingCredits";
 import { profileEarnsFlowPoints } from "@/lib/flowPoints";
 import { userCreditCoversClassType } from "@/lib/allowedClassTypes";
+import { classDateFromStartsAtIso } from "@/lib/mayChallengeCheckIn";
+import {
+  DEFAULT_MOVEMENT_CHALLENGE,
+  fetchMovementChallengeConfig,
+  isClassDateInChallenge,
+  type MovementChallengeConfig,
+} from "@/lib/movementChallenge";
 import {
   fetchMyWaitlistEntryForClass,
   joinWaitlist,
@@ -113,6 +120,13 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
   const [waitlistEntry, setWaitlistEntry] = useState<WaitlistEntry | null>(null);
   const [waitlistBusy, setWaitlistBusy] = useState(false);
   const [isFreeClass, setIsFreeClass] = useState(false);
+  const [challengeConfig, setChallengeConfig] =
+    useState<MovementChallengeConfig>(DEFAULT_MOVEMENT_CHALLENGE);
+
+  useEffect(() => {
+    if (!open) return;
+    void fetchMovementChallengeConfig().then(setChallengeConfig);
+  }, [open]);
 
   useEffect(() => {
     if (!open) {
@@ -273,8 +287,10 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
   const durationMin = Math.round(
     (new Date(session.ends_at).getTime() - new Date(session.starts_at).getTime()) / 60000,
   );
-  const isMayChallenge = ["yoga", "sauna_journey"].includes(session.class_type);
-  const isMay = new Date(session.starts_at).getMonth() === 4;
+  const countsTowardChallenge =
+    challengeConfig.enabled &&
+    ["yoga", "sauna_journey"].includes(session.class_type) &&
+    isClassDateInChallenge(classDateFromStartsAtIso(session.starts_at), challengeConfig);
   const pointsValue = Math.floor(flowPoints / 100) * 10;
 
   const afterBookingConfirmed = async (bookingId: string) => {
@@ -775,10 +791,10 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
               </li>
             </ul>
 
-            {isMayChallenge && isMay && (
+            {countsTowardChallenge && (
               <div className="mt-4 flex items-center gap-2 rounded-xl bg-primary/10 px-3 py-2.5 text-xs font-medium">
                 <Sparkles className="h-3.5 w-3.5 text-primary" />
-                Counts toward 31 Days of Movement
+                {challengeConfig.booking_banner_text}
               </div>
             )}
 
