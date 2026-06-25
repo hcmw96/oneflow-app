@@ -5,6 +5,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Eye,
+  ImageIcon,
   Italic,
   Link as LinkIcon,
   Loader2,
@@ -50,6 +51,7 @@ import {
   type CampaignRecipientFilter,
 } from "@/lib/campaignRecipients";
 import { EMAIL_CAMPAIGN_TEMPLATES } from "@/lib/emailCampaignTemplates";
+import { uploadEmailCampaignImage } from "@/lib/uploadEmailCampaignImage";
 import { BOOKABLE_MEMBER_OR_FILTER } from "@/lib/bookableMembers";
 import { ensureMarketingAdminAccess } from "@/lib/ensureMarketingAdminAccess";
 import { getUser, supabase } from "@/lib/supabase";
@@ -144,6 +146,8 @@ function EmailPage() {
     failed: number;
   } | null>(null);
   const editorRef = useRef<HTMLDivElement | null>(null);
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
 
   // Detail dialog
   const [detail, setDetail] = useState<CampaignRow | null>(null);
@@ -193,15 +197,60 @@ function EmailPage() {
   const pageCount = Math.max(1, Math.ceil(campaigns.length / PAGE_SIZE));
   const pageRows = campaigns.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
+  const syncEditorHtml = () => {
+    if (editorRef.current) setBodyHtml(editorRef.current.innerHTML);
+  };
+
   const exec = (cmd: string, value?: string) => {
     document.execCommand(cmd, false, value);
-    if (editorRef.current) setBodyHtml(editorRef.current.innerHTML);
+    syncEditorHtml();
   };
 
   const insertLink = () => {
     const url = prompt("URL");
     if (!url) return;
     exec("createLink", url);
+  };
+
+  const insertImageHtml = (url: string, alt: string) => {
+    editorRef.current?.focus();
+    const safeAlt = alt.replace(/"/g, "&quot;");
+    const html = `<img src="${url}" alt="${safeAlt}" style="max-width:100%;height:auto;display:block;margin:12px 0;border-radius:8px;" />`;
+    document.execCommand("insertHTML", false, html);
+    syncEditorHtml();
+  };
+
+  const insertImageFromFile = async (file: File) => {
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please choose an image file");
+      return;
+    }
+    setUploadingImage(true);
+    try {
+      const url = await uploadEmailCampaignImage(file);
+      const alt = file.name.replace(/\.[^.]+$/, "").trim() || "Image";
+      insertImageHtml(url, alt);
+      toast.success("Image inserted");
+    } catch (e) {
+      console.error("email campaign image upload", e);
+      toast.error(supabaseErrorMessage(e, "Could not upload image"));
+    } finally {
+      setUploadingImage(false);
+      if (imageInputRef.current) imageInputRef.current.value = "";
+    }
+  };
+
+  const handleEditorPaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.type.startsWith("image/")) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (file) void insertImageFromFile(file);
+        return;
+      }
+    }
   };
 
   const recipientOptions = useMemo(
@@ -613,14 +662,40 @@ function EmailPage() {
                     >
                       <LinkIcon className="h-3.5 w-3.5" />
                     </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => imageInputRef.current?.click()}
+                      disabled={uploadingImage}
+                      aria-label="Insert image"
+                    >
+                      {uploadingImage ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <ImageIcon className="h-3.5 w-3.5" />
+                      )}
+                    </Button>
+                    <input
+                      ref={imageInputRef}
+                      type="file"
+                      accept="image/jpeg,image/png,image/gif,image/webp"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) void insertImageFromFile(file);
+                      }}
+                    />
                   </div>
                   <div
                     ref={editorRef}
                     contentEditable
                     role="textbox"
                     aria-multiline="true"
-                    className="min-h-[220px] px-3 py-3 text-sm outline-none"
-                    onInput={(e) => setBodyHtml((e.target as HTMLDivElement).innerHTML)}
+                    className="min-h-[220px] px-3 py-3 text-sm outline-none [&_img]:my-3 [&_img]:block [&_img]:h-auto [&_img]:max-w-full [&_img]:rounded-lg"
+                    onInput={syncEditorHtml}
+                    onPaste={handleEditorPaste}
                     suppressContentEditableWarning
                   />
                 </div>
