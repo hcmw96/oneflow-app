@@ -27,7 +27,6 @@ import {
 } from "@/lib/bookingConfirmationEmail";
 import { walkInCheckInToastMessage } from "@/lib/flowPoints";
 import { LIABILITY_WAIVER } from "@/lib/liabilityWaiver";
-import { upsertMayChallengeCheckIn } from "@/lib/mayChallengeCheckIn";
 import { supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 
@@ -149,112 +148,87 @@ export function WalkInSheet({ open, onOpenChange, onDone }: Props) {
     }
 
     const displayName = `${fn} ${ln}`.trim();
-    const waiverAt = new Date().toISOString();
+    const session = futureClasses.find((c) => c.id === classId);
 
     setSaving(true);
+    console.log("[walk-in] submit start", { email: em, classId, firstName: fn, lastName: ln });
 
-    const { data: existing, error: findErr } = await supabase
-      .from("profiles")
-      .select("id, role, waiver_accepted_at")
-      .ilike("email", em)
-      .maybeSingle();
-
-    if (findErr) {
-      console.error("walk-in profile lookup failed", findErr);
-      toast.error(supabaseErrorMessage(findErr, "Could not look up profile"));
-      setSaving(false);
-      return;
-    }
-
-    let profileId = existing?.id as string | undefined;
-
-    if (!profileId) {
-      const { data: created, error: createErr } = await supabase
-        .from("profiles")
-        .insert({
+    try {
+      const { data, error: fnErr } = await supabase.functions.invoke("walk-in-checkin", {
+        body: {
           first_name: fn,
           last_name: ln,
           email: em,
-          role: "customer",
-          waiver_accepted_at: waiverAt,
-        })
-        .select("id")
-        .single();
-
-      if (createErr || !created?.id) {
-        console.error("walk-in profile create failed", createErr);
-        toast.error(supabaseErrorMessage(createErr, "Could not create profile — please try again"));
-        setSaving(false);
-        return;
-      }
-      profileId = created.id as string;
-    } else if (!existing?.waiver_accepted_at) {
-      const { error: waiverErr } = await supabase
-        .from("profiles")
-        .update({ waiver_accepted_at: waiverAt })
-        .eq("id", profileId);
-      if (waiverErr) {
-        console.error("walk-in waiver update failed", waiverErr);
-        toast.error(supabaseErrorMessage(waiverErr, "Could not record waiver acceptance"));
-        setSaving(false);
-        return;
-      }
-    }
-
-    const session = futureClasses.find((c) => c.id === classId);
-    const checkedAt = new Date().toISOString();
-    const { data: newBooking, error: bookErr } = await supabase
-      .from("bookings")
-      .insert({
-        profile_id: profileId,
-        class_id: classId,
-        status: "attended",
-        payment_method: "drop_in",
-        qr_token: globalThis.crypto.randomUUID(),
-        checked_in: true,
-        checked_in_at: checkedAt,
-      })
-      .select("id")
-      .maybeSingle();
-
-    if (bookErr) {
-      console.error("walk-in booking insert failed", bookErr);
-      toast.error(supabaseErrorMessage(bookErr, "Could not create booking"));
-      setSaving(false);
-      return;
-    }
-
-    if (newBooking?.id && profileId && session?.starts_at) {
-      await upsertMayChallengeCheckIn({
-        profileId,
-        bookingId: newBooking.id as string,
-        classStartsAtIso: session.starts_at,
-      });
-    }
-
-    if (session?.starts_at) {
-      await supabase.functions.invoke("send-email", {
-        body: {
-          to: em,
-          template: bookingConfirmationTemplateForClassType(session.class_type),
-          data: bookingConfirmationEmailData({
-            className: session.name,
-            startsAtIso: session.starts_at,
-            guideName: session.guide_name,
-            location: session.location,
-            matAddon: false,
-            towelAddon: false,
-          }),
+          class_id: classId,
         },
       });
-    }
 
-    const walkInRole =
-      (existing as { role?: string | null } | null)?.role ?? "customer";
-    toast.success(walkInCheckInToastMessage(displayName, walkInRole));
-    setSaving(false);
-    onOpenChange(false);
-    onDone();
+      if (fnErr) {
+        console.error("[walk-in] error", fnErr);
+        toast.error(supabaseErrorMessage(fnErr, "Walk-in check-in failed"));
+        setSaving(false);
+        return;
+      }
+
+      const result = data as {
+        ok?: boolean;
+        error?: string;
+        role?: string;
+        debug?: {
+          profile_lookup?: unknown;
+          profile_create?: unknown;
+          waiver_update?: unknown;
+          booking_insert?: unknown;
+          challenge_checkin?: unknown;
+        };
+      };
+
+      console.log("[walk-in] after profile lookup by email", result.debug?.profile_lookup);
+
+      if (result.debug?.profile_create) {
+        console.log("[walk-in] after profile creation", result.debug.profile_create);
+      }
+      if (result.debug?.waiver_update) {
+        console.log("[walk-in] after waiver update", result.debug.waiver_update);
+      }
+      console.log("[walk-in] after booking insert", result.debug?.booking_insert);
+      if (result.debug?.challenge_checkin) {
+        console.log("[walk-in] after challenge_checkins insert", result.debug.challenge_checkin);
+      }
+
+      if (!result?.ok) {
+        console.error("[walk-in] error", result);
+        toast.error(result.error ?? "Walk-in check-in failed");
+        setSaving(false);
+        return;
+      }
+
+      if (session?.starts_at) {
+        await supabase.functions.invoke("send-email", {
+          body: {
+            to: em,
+            template: bookingConfirmationTemplateForClassType(session.class_type),
+            data: bookingConfirmationEmailData({
+              className: session.name,
+              startsAtIso: session.starts_at,
+              guideName: session.guide_name,
+              location: session.location,
+              matAddon: false,
+              towelAddon: false,
+            }),
+          },
+        });
+      }
+
+      toast.success(walkInCheckInToastMessage(displayName, result.role ?? "customer"));
+      setSaving(false);
+      onOpenChange(false);
+      onDone();
+    } catch (err) {
+      console.error("[walk-in] error", err);
+      toast.error(supabaseErrorMessage(err, "Walk-in check-in failed"));
+      setSaving(false);
+    }
   };
 
   return (
