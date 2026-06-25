@@ -33,6 +33,11 @@ import {
   leaveWaitlist,
   type WaitlistEntry,
 } from "@/lib/waitlist";
+import {
+  formatHireAddonPrice,
+  pickPerClassHireAddons,
+  type BookingHireAddon,
+} from "@/lib/bookingAddons";
 
 interface ClassRow {
   id: string;
@@ -72,25 +77,6 @@ type FriendOption = {
   avatar_url: string | null;
 };
 
-type AddonProduct = {
-  id: string;
-  name: string;
-  price_zar: number;
-};
-
-function addonKindFromName(name: string): "mat" | "towel" | null {
-  const n = name.trim().toLowerCase();
-  if (n.includes("towel")) return "towel";
-  if (n.includes("mat")) return "mat";
-  return null;
-}
-
-function formatAddonPrice(zar: number): string {
-  const n = Number(zar);
-  if (!Number.isFinite(n) || n <= 0) return "";
-  return `R${n.toLocaleString("en-ZA", { maximumFractionDigits: 0 })}`;
-}
-
 function friendLabel(f: FriendOption): string {
   return [f.first_name, f.last_name].filter(Boolean).join(" ").trim() || "Friend";
 }
@@ -108,7 +94,10 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
   const [usePoints, setUsePoints] = useState(false);
   const [matAddon, setMatAddon] = useState(false);
   const [towelAddon, setTowelAddon] = useState(false);
-  const [addonProducts, setAddonProducts] = useState<AddonProduct[]>([]);
+  const [hireAddons, setHireAddons] = useState<{
+    mat: BookingHireAddon | null;
+    towel: BookingHireAddon | null;
+  }>({ mat: null, towel: null });
   const [loading, setLoading] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [userRole, setUserRole] = useState<string | null>(null);
@@ -131,6 +120,8 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
       setSelectedFriendId(null);
       setInviteEmail("");
       setInviteEmailName("");
+      setMatAddon(false);
+      setTowelAddon(false);
     }
   }, [open]);
 
@@ -156,6 +147,8 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
         .select("id, name, price_zar")
         .eq("is_active", true)
         .eq("is_addon", true)
+        .ilike("name", "%hire%")
+        .not("name", "ilike", "%monthly%")
         .order("sort_order", { ascending: true })
         .order("name", { ascending: true });
 
@@ -195,13 +188,14 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
 
       setWaitlistEntry(waitlistMine);
 
-      const addons = (addonData ?? []) as AddonProduct[];
-      console.info("[BookingSheet] addon products loaded", {
-        count: addons.length,
-        addons: addons.map((a) => ({ id: a.id, name: a.name, price_zar: a.price_zar })),
+      const addons = (addonData ?? []) as { id: string; name: string; price_zar: number }[];
+      const hires = pickPerClassHireAddons(addons);
+      console.info("[BookingSheet] per-class hire addons loaded", {
+        mat: hires.mat?.name ?? null,
+        towel: hires.towel?.name ?? null,
         error: addonErr?.message ?? null,
       });
-      setAddonProducts(addons);
+      setHireAddons(hires);
       if (addonErr) {
         console.error("[BookingSheet] addon products query failed", addonErr);
       }
@@ -876,35 +870,46 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
               </button>
             )}
 
-            {!isFreeClass && addonProducts.length > 0 && (
+            {!isFreeClass && (hireAddons.mat || hireAddons.towel) && (
               <>
-                <p className="mt-6 text-sm font-semibold">Add-ons:</p>
+                <p className="mt-6 text-sm font-semibold">Add-ons for this class:</p>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {addonProducts.map((addon) => {
-                    const kind = addonKindFromName(addon.name);
-                    if (!kind) return null;
-                    const selected = kind === "mat" ? matAddon : towelAddon;
-                    const toggle = kind === "mat" ? setMatAddon : setTowelAddon;
-                    const price = formatAddonPrice(addon.price_zar);
-                    return (
-                      <button
-                        key={addon.id}
-                        type="button"
-                        onClick={() => toggle((v) => !v)}
-                        className={cn(
-                          "min-w-[7rem] flex-1 rounded-xl border py-2.5 text-sm font-semibold transition-colors",
-                          selected ? "border-primary bg-primary/10" : "border-border bg-card",
-                        )}
-                      >
-                        {kind === "mat" ? "🧘" : "🏷️"} {addon.name}
-                        {price ? (
-                          <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
-                            {price}
-                          </span>
-                        ) : null}
-                      </button>
-                    );
-                  })}
+                  {hireAddons.mat ? (
+                    <button
+                      key={hireAddons.mat.id}
+                      type="button"
+                      onClick={() => setMatAddon((v) => !v)}
+                      className={cn(
+                        "min-w-[7rem] flex-1 rounded-xl border py-2.5 text-sm font-semibold transition-colors",
+                        matAddon ? "border-primary bg-primary/10" : "border-border bg-card",
+                      )}
+                    >
+                      🧘 {hireAddons.mat.name}
+                      {formatHireAddonPrice(hireAddons.mat.price_zar) ? (
+                        <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
+                          {formatHireAddonPrice(hireAddons.mat.price_zar)}
+                        </span>
+                      ) : null}
+                    </button>
+                  ) : null}
+                  {hireAddons.towel ? (
+                    <button
+                      key={hireAddons.towel.id}
+                      type="button"
+                      onClick={() => setTowelAddon((v) => !v)}
+                      className={cn(
+                        "min-w-[7rem] flex-1 rounded-xl border py-2.5 text-sm font-semibold transition-colors",
+                        towelAddon ? "border-primary bg-primary/10" : "border-border bg-card",
+                      )}
+                    >
+                      🏷️ {hireAddons.towel.name}
+                      {formatHireAddonPrice(hireAddons.towel.price_zar) ? (
+                        <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
+                          {formatHireAddonPrice(hireAddons.towel.price_zar)}
+                        </span>
+                      ) : null}
+                    </button>
+                  ) : null}
                 </div>
               </>
             )}
