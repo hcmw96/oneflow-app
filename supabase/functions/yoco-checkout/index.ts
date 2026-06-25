@@ -146,9 +146,11 @@ serve(async (req) => {
   const priceZar = Number((pack as { price_zar?: number }).price_zar);
   const { data: profile } = await supabase
     .from("profiles")
-    .select("late_cancel_fee_pending, flow_points")
+    .select("first_name, last_name, late_cancel_fee_pending, flow_points")
     .eq("id", profile_id)
     .maybeSingle();
+  const buyerName =
+    [profile?.first_name, profile?.last_name].filter(Boolean).join(" ") || "Member";
   const hasLateCancelFee = Boolean(
     (profile as { late_cancel_fee_pending?: boolean } | null)?.late_cancel_fee_pending,
   );
@@ -274,6 +276,29 @@ serve(async (req) => {
     await supabase.from("promotions").update({ uses_count: next }).eq("id", promoApplied.id);
   }
 
+  const packName = String((pack as { name?: string }).name ?? "One Flow purchase");
+  const packLinePriceCents = Number.isFinite(packPayableCents)
+    ? packPayableCents
+    : Math.round(priceZar * 100);
+  const lineItems: Array<{
+    displayName: string;
+    quantity: number;
+    pricingDetails: { price: number };
+  }> = [
+    {
+      displayName: `${packName} — ${buyerName}`,
+      quantity: 1,
+      pricingDetails: { price: packLinePriceCents },
+    },
+  ];
+  if (hasLateCancelFee) {
+    lineItems.push({
+      displayName: "Late cancellation fee",
+      quantity: 1,
+      pricingDetails: { price: 10000 },
+    });
+  }
+
   const yocoRes = await fetch("https://payments.yoco.com/api/checkouts", {
     method: "POST",
     headers: {
@@ -283,15 +308,17 @@ serve(async (req) => {
     body: JSON.stringify({
       amount: amountCents,
       currency: "ZAR",
+      lineItems,
       description: hasLateCancelFee
-        ? `${(pack as { name?: string }).name ?? "One Flow purchase"} + R100 late cancellation fee`
-        : `${(pack as { name?: string }).name ?? "One Flow purchase"}`,
+        ? `${packName} — ${buyerName} + R100 late cancellation fee`
+        : `${packName} — ${buyerName}`,
       successUrl: success_url,
       cancelUrl: cancel_url,
       failureUrl: cancel_url,
       metadata: {
         pack_id,
         profile_id,
+        buyer_name: buyerName,
         late_cancel_fee_applied: hasLateCancelFee,
         description: hasLateCancelFee ? "+ R100 late cancellation fee" : "",
         promo_code_applied: promoApplied?.code ?? null,

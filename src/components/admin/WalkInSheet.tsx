@@ -28,7 +28,7 @@ import {
 import { walkInCheckInToastMessage } from "@/lib/flowPoints";
 import { LIABILITY_WAIVER } from "@/lib/liabilityWaiver";
 import { supabase } from "@/lib/supabase";
-import { supabaseErrorMessage } from "@/lib/supabaseErrors";
+import { edgeFunctionErrorMessage, supabaseErrorMessage } from "@/lib/supabaseErrors";
 
 const SAGE = "#a3b693";
 
@@ -164,8 +164,10 @@ export function WalkInSheet({ open, onOpenChange, onDone }: Props) {
       });
 
       if (fnErr) {
-        console.error("[walk-in] error", fnErr);
-        toast.error(supabaseErrorMessage(fnErr, "Walk-in check-in failed"));
+        console.error("[walk-in] error", fnErr, data);
+        toast.error(
+          await edgeFunctionErrorMessage(fnErr, data, "Walk-in check-in failed"),
+        );
         setSaving(false);
         return;
       }

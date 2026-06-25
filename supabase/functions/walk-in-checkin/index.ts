@@ -289,7 +289,7 @@ serve(async (req) => {
           profile_id: profileId,
           class_id,
           status: "attended",
-          payment_method: "drop_in",
+          payment_method: "cash",
           qr_token: qrToken,
           checked_in: true,
           checked_in_at: checkedAt,
