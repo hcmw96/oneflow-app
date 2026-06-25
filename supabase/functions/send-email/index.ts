@@ -3,6 +3,8 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 type TemplateName =
   | "booking_confirmation_class"
   | "booking_confirmation_sauna"
+  | "class_reminder"
+  | "class_reminder_sauna"
   | "booking_cancellation"
   | "late_cancellation"
   | "friend_request"
@@ -255,6 +257,50 @@ function buildTemplate(template: TemplateName, data: Record<string, unknown> = {
   const time = String(data.time ?? dt.time);
   const matAddon = Boolean(data.mat_addon);
   const towelAddon = Boolean(data.towel_addon);
+
+  if (template === "class_reminder_sauna") {
+    const addons = [towelAddon ? addonPill("🟢 Towel rental booked") : ""].join("");
+    return {
+      subject: `Reminder — Sauna Journey starts in 1 hour (${time})`,
+      content: `
+        <h2 style="font-size:22px;font-weight:600;color:#a3b693;margin:0 0 16px;">Class starts in 1 hour</h2>
+        <p style="font-size:15px;line-height:1.6;color:#444;margin:0 0 12px;">Your Sauna Journey on ${esc(date)} at ${esc(time)} is coming up soon.</p>
+        <div style="background:#f5f5f0;border-radius:8px;padding:16px 20px;margin:16px 0;">
+          ${detailRow("Date", date)}
+          ${detailRow("Time", time)}
+        </div>
+        <p style="font-size:15px;line-height:1.6;color:#444;margin:0 0 12px;">What to bring: shower towel only. No workout clothes needed.</p>
+        ${addons ? `<div style="margin:8px 0 0;">${addons}</div>` : ""}
+        ${ctaButton("https://oneflow1.netlify.app/bookings", "View booking")}
+        <p style="font-size:14px;color:#888;margin:24px 0 0;">See you soon — One Flow Team</p>
+      `,
+    };
+  }
+
+  if (template === "class_reminder") {
+    const addons = [
+      matAddon ? addonPill("🟢 Mat rental booked") : "",
+      towelAddon ? addonPill("🟢 Towel rental booked") : "",
+    ].join("");
+    return {
+      subject: `Reminder — ${className} starts in 1 hour (${time})`,
+      content: `
+        <h2 style="font-size:22px;font-weight:600;color:#a3b693;margin:0 0 16px;">Class starts in 1 hour</h2>
+        <p style="font-size:15px;line-height:1.6;color:#444;margin:0 0 12px;">Your ${esc(className)} class with ${esc(guideName)} starts at ${esc(time)} today.</p>
+        <div style="background:#f5f5f0;border-radius:8px;padding:16px 20px;margin:16px 0;">
+          ${detailRow("Class", className)}
+          ${detailRow("Date", date)}
+          ${detailRow("Time", time)}
+          ${detailRow("Guide", guideName)}
+          ${detailRow("Location", location)}
+        </div>
+        <p style="font-size:15px;line-height:1.6;color:#444;margin:0 0 12px;">What to bring: yoga mat (if not renting), water bottle, comfortable clothing. Your check-in QR is in the app under <strong>My bookings</strong>.</p>
+        ${addons ? `<div style="margin:8px 0 0;">${addons}</div>` : ""}
+        ${ctaButton("https://oneflow1.netlify.app/bookings", "View booking")}
+        <p style="font-size:14px;color:#888;margin:24px 0 0;">See you on the mat — One Flow Team</p>
+      `,
+    };
+  }
 
   if (template === "booking_confirmation_sauna") {
     const addons = [towelAddon ? addonPill("🟢 Towel rental booked") : ""].join("");
