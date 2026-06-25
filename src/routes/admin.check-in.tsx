@@ -26,6 +26,9 @@ import {
 } from "@/lib/checkInRoster";
 import { parseQrCheckInToken } from "@/lib/qrCheckIn";
 import { pickNextUpcomingClassId } from "@/lib/checkInUpcoming";
+import { orderClassesForLiveDay } from "@/lib/liveClassList";
+import { useNowMs } from "@/hooks/use-now-ms";
+import { useScrollToLiveClass } from "@/hooks/use-scroll-to-live-class";
 import { welcomeCheckInToastMessage } from "@/lib/flowPoints";
 
 export const Route = createFileRoute("/admin/check-in")({
@@ -59,10 +62,23 @@ function CheckInPage() {
   const qrDedupeRef = useRef<string | null>(null);
   const qrDedupeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const qrInvalidToastRef = useRef<string | null>(null);
+  const classListRef = useRef<HTMLDivElement>(null);
+  const nowMs = useNowMs();
+
+  const orderedClasses = useMemo(
+    () => orderClassesForLiveDay(todayClasses, nowMs),
+    [todayClasses, nowMs],
+  );
 
   const nextUpcomingClassId = useMemo(
-    () => pickNextUpcomingClassId(todayClasses),
-    [todayClasses],
+    () => pickNextUpcomingClassId(todayClasses, nowMs),
+    [todayClasses, nowMs],
+  );
+
+  useScrollToLiveClass(
+    nextUpcomingClassId,
+    !loading && orderedClasses.length > 0,
+    classListRef,
   );
 
   useEffect(() => {
@@ -192,7 +208,7 @@ function CheckInPage() {
   }, [loadData]);
 
   const sessions = useMemo(() => {
-    return todayClasses.map((c) => {
+    return orderedClasses.map((c) => {
       const forClass = rosterByClassId.get(c.id) ?? [];
       const attended = forClass.filter((b) => b.status === "attended").length;
       return {
@@ -204,7 +220,7 @@ function CheckInPage() {
         guideName: c.guide_name,
       };
     });
-  }, [todayClasses, rosterByClassId]);
+  }, [orderedClasses, rosterByClassId]);
 
   const toggleClassExpanded = (classId: string, open: boolean) => {
     setExpandedClassIds((prev) => {
@@ -429,12 +445,16 @@ function CheckInPage() {
             <p className="mb-2 shrink-0 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Today&apos;s classes
             </p>
-            <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto pr-0.5">
+            <div
+              ref={classListRef}
+              className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto pr-0.5"
+            >
               {sessions.length === 0 ? (
                 <p className="py-8 text-center text-sm text-muted-foreground">No classes today.</p>
               ) : (
                 sessions.map((s) => (
-                  <CheckInClassAccordion
+                  <div key={s.key} data-live-class-id={s.key}>
+                    <CheckInClassAccordion
                     key={s.key}
                     session={s}
                     roster={rosterByClassId.get(s.key) ?? []}
@@ -443,6 +463,7 @@ function CheckInPage() {
                     loading={loading}
                     onUpdated={loadData}
                   />
+                  </div>
                 ))
               )}
             </div>

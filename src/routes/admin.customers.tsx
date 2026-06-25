@@ -176,6 +176,7 @@ type MemberRow = {
   waiverSigned: boolean;
   hasBooking: boolean;
   joinedAt: string | null;
+  isReturningLegacy: boolean;
 };
 
 /** Responsive admin customers table — mobile: Name, Plan, Credits, Actions (+ checkbox). */
@@ -335,6 +336,10 @@ function CustomersPage() {
   const [sheetCustomerId, setSheetCustomerId] = useState<string | null>(null);
   const [sendEmailOpen, setSendEmailOpen] = useState(false);
   const [sendEmailTarget, setSendEmailTarget] = useState<SendMemberEmailTarget | null>(null);
+  const [legacyMigration, setLegacyMigration] = useState<{
+    claimed: number;
+    total: number;
+  } | null>(null);
 
   const canManageCustomers =
     (viewerRole ?? "").toLowerCase() === "director" ||
@@ -393,6 +398,29 @@ function CustomersPage() {
     }
 
     const ids = (profiles ?? []).map((p: { id: string }) => p.id);
+
+    let legacyClaimedProfileIds = new Set<string>();
+    if (canManageCustomers) {
+      const { data: legacyRows, error: legacyErr, count: legacyTotal } = await supabase
+        .from("legacy_members")
+        .select("claimed_by", { count: "exact" });
+
+      if (legacyErr) {
+        console.error("customers: legacy_members load failed", legacyErr);
+      } else {
+        const claimed = (legacyRows ?? []).filter(
+          (r) => (r as { claimed_by: string | null }).claimed_by != null,
+        ).length;
+        setLegacyMigration({ claimed, total: legacyTotal ?? 0 });
+        legacyClaimedProfileIds = new Set(
+          (legacyRows ?? [])
+            .map((r) => (r as { claimed_by: string | null }).claimed_by)
+            .filter((id): id is string => typeof id === "string" && id.length > 0),
+        );
+      }
+    } else {
+      setLegacyMigration(null);
+    }
 
     const creditsByProfile = new Map<string, EmbeddedCreditRow[]>();
     const bookedIds = new Set<string>();
@@ -461,13 +489,14 @@ function CustomersPage() {
         waiverSigned: Boolean(waiverAt),
         hasBooking: bookedIds.has(id),
         joinedAt: (p.created_at as string | null | undefined) ?? null,
+        isReturningLegacy: legacyClaimedProfileIds.has(id),
       };
     });
 
     setMembers(rows);
     setSelectedMemberIds([]);
     setLoading(false);
-  }, []);
+  }, [canManageCustomers]);
 
   useEffect(() => {
     void load();
@@ -749,6 +778,14 @@ function CustomersPage() {
           </Button>
         }
       />
+
+      {canManageCustomers && legacyMigration && legacyMigration.total > 0 ? (
+        <p className="mb-4 rounded-xl border border-[#c5d4b8]/80 bg-[#e8efe3]/50 px-4 py-3 text-sm text-[#3d4f36]">
+          <span className="font-semibold">Legacy migration:</span>{" "}
+          {legacyMigration.claimed.toLocaleString()} of {legacyMigration.total.toLocaleString()}{" "}
+          legacy members have re-registered.
+        </p>
+      ) : null}
 
       <CustomerProfileSheet
         customerId={sheetCustomerId}
@@ -1118,7 +1155,14 @@ function CustomersPage() {
                       />
                     </td>
                     <td className={CUSTOMERS_COL.nameTd}>
-                      <span className="block truncate font-semibold text-foreground">{m.name}</span>
+                      <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+                        <span className="truncate font-semibold text-foreground">{m.name}</span>
+                        {m.isReturningLegacy ? (
+                          <span className="shrink-0 rounded-full bg-[#e8efe3] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#3d4f36]">
+                            Returning member
+                          </span>
+                        ) : null}
+                      </span>
                     </td>
                     <td className={CUSTOMERS_COL.emailTd} title={m.email}>
                       {m.email}

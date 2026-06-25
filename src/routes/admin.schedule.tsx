@@ -62,6 +62,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useNowMs } from "@/hooks/use-now-ms";
+import { useScrollToLiveClass } from "@/hooks/use-scroll-to-live-class";
+import {
+  isClassEnded,
+  orderClassesForLiveDay,
+  pickFocusClassId,
+  type LiveClassRow,
+} from "@/lib/liveClassList";
 
 export const Route = createFileRoute("/admin/schedule")({
   head: () => ({
@@ -154,8 +162,8 @@ function jhbDayLabel(dayKey: string): string {
   });
 }
 
-/** Within calendar “today” (JHB), upcoming first then earlier-today at bottom. */
-function orderClassesChronologicalWithTodayPastAtBottom(
+/** Within calendar “today” (JHB), in-progress + upcoming first, ended at bottom. */
+function orderClassesForLiveViewIfToday(
   list: ClassRow[],
   dayKey: string,
   todayKey: string,
@@ -163,13 +171,12 @@ function orderClassesChronologicalWithTodayPastAtBottom(
   todaySubDay: number,
   nowMs: number,
 ): ClassRow[] {
-  const asc = [...list].sort((a, b) => a.starts_at.localeCompare(b.starts_at));
-  const splitToday =
+  const isLiveDay =
     todaySubDay === 0 && dayKey === todayKey && (tab === "today" || tab === "week");
-  if (!splitToday) return asc;
-  const upcoming = asc.filter((c) => new Date(c.starts_at).getTime() >= nowMs);
-  const past = asc.filter((c) => new Date(c.starts_at).getTime() < nowMs);
-  return [...upcoming, ...past];
+  if (!isLiveDay) {
+    return [...list].sort((a, b) => a.starts_at.localeCompare(b.starts_at));
+  }
+  return orderClassesForLiveDay(list as LiveClassRow[], nowMs) as ClassRow[];
 }
 
 function formatTime(iso: string): string {
@@ -505,7 +512,8 @@ function SchedulePage() {
   const todayKey = todayJhbDayKey();
   const weekStart = startOfWeekJhbDayKey();
   const weekEnd = endOfWeekJhbDayKey();
-  const nowMs = Date.now();
+  const nowMs = useNowMs();
+  const liveViewEnabled = tab === "today" && todaySubDay === 0;
 
   const stats = useMemo(() => {
     let today = 0;
@@ -592,7 +600,7 @@ function SchedulePage() {
 
     let entries: [string, ClassRow[]][] = [...map.entries()].map(([k, list]) => [
       k,
-      orderClassesChronologicalWithTodayPastAtBottom(list, k, todayKey, tab, todaySubDay, nowMs),
+      orderClassesForLiveViewIfToday(list, k, todayKey, tab, todaySubDay, nowMs),
     ]);
 
     if (tab === "week") {
@@ -611,6 +619,15 @@ function SchedulePage() {
     }
     return entries;
   }, [sorted, tab, todayKey, weekStart, weekEnd, todaySubDay, nowMs]);
+
+  const focusClassId = useMemo(() => {
+    if (!liveViewEnabled) return null;
+    const todayList = grouped.find(([k]) => k === todayKey)?.[1];
+    if (!todayList?.length) return null;
+    return pickFocusClassId(todayList, nowMs);
+  }, [grouped, liveViewEnabled, todayKey, nowMs]);
+
+  useScrollToLiveClass(focusClassId, liveViewEnabled && !loading);
 
   useEffect(() => {
     if (tab !== "today") setTodaySubDay(0);
@@ -1194,7 +1211,7 @@ function SchedulePage() {
                           const typeBadge =
                             TYPE_BADGE_CLASS[c.class_type] ?? "bg-muted text-foreground";
                           const isSelected = selected.has(c.id);
-                          const startedPast = new Date(c.starts_at).getTime() < nowMs;
+                          const startedPast = isClassEnded(c, nowMs);
                           const greyRow =
                             startedPast &&
                             ((tab === "today" && todaySubDay === 0 && dayKey === todayKey) ||
@@ -1202,6 +1219,7 @@ function SchedulePage() {
                           return (
                             <li
                               key={c.id}
+                              data-live-class-id={c.id}
                               className={cn(
                                 "flex items-start gap-3 px-4 py-3 hover:bg-muted/30",
                                 isSelected && "bg-[#e8efe3]/40",

@@ -27,6 +27,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as PaymentSuccessRouteImport } from './routes/payment.success'
 import { Route as MeFriendsRouteImport } from './routes/me.friends'
+import { Route as InviteInviteIdRouteImport } from './routes/invite.$inviteId'
 import { Route as ClassClassIdRouteImport } from './routes/class.$classId'
 import { Route as AuthResetPasswordRouteImport } from './routes/auth.reset-password'
 import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
@@ -142,6 +143,11 @@ const MeFriendsRoute = MeFriendsRouteImport.update({
   id: '/friends',
   path: '/friends',
   getParentRoute: () => MeRoute,
+} as any)
+const InviteInviteIdRoute = InviteInviteIdRouteImport.update({
+  id: '/invite/$inviteId',
+  path: '/invite/$inviteId',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const ClassClassIdRoute = ClassClassIdRouteImport.update({
   id: '/class/$classId',
@@ -310,6 +316,7 @@ export interface FileRoutesByFullPath {
   '/auth/callback': typeof AuthCallbackRoute
   '/auth/reset-password': typeof AuthResetPasswordRoute
   '/class/$classId': typeof ClassClassIdRoute
+  '/invite/$inviteId': typeof InviteInviteIdRoute
   '/me/friends': typeof MeFriendsRoute
   '/payment/success': typeof PaymentSuccessRoute
   '/admin/': typeof AdminIndexRoute
@@ -354,6 +361,7 @@ export interface FileRoutesByTo {
   '/auth/callback': typeof AuthCallbackRoute
   '/auth/reset-password': typeof AuthResetPasswordRoute
   '/class/$classId': typeof ClassClassIdRoute
+  '/invite/$inviteId': typeof InviteInviteIdRoute
   '/me/friends': typeof MeFriendsRoute
   '/payment/success': typeof PaymentSuccessRoute
   '/admin': typeof AdminIndexRoute
@@ -400,6 +408,7 @@ export interface FileRoutesById {
   '/auth/callback': typeof AuthCallbackRoute
   '/auth/reset-password': typeof AuthResetPasswordRoute
   '/class/$classId': typeof ClassClassIdRoute
+  '/invite/$inviteId': typeof InviteInviteIdRoute
   '/me/friends': typeof MeFriendsRoute
   '/payment/success': typeof PaymentSuccessRoute
   '/admin/': typeof AdminIndexRoute
@@ -447,6 +456,7 @@ export interface FileRouteTypes {
     | '/auth/callback'
     | '/auth/reset-password'
     | '/class/$classId'
+    | '/invite/$inviteId'
     | '/me/friends'
     | '/payment/success'
     | '/admin/'
@@ -491,6 +501,7 @@ export interface FileRouteTypes {
     | '/auth/callback'
     | '/auth/reset-password'
     | '/class/$classId'
+    | '/invite/$inviteId'
     | '/me/friends'
     | '/payment/success'
     | '/admin'
@@ -536,6 +547,7 @@ export interface FileRouteTypes {
     | '/auth/callback'
     | '/auth/reset-password'
     | '/class/$classId'
+    | '/invite/$inviteId'
     | '/me/friends'
     | '/payment/success'
     | '/admin/'
@@ -559,6 +571,7 @@ export interface RootRouteChildren {
   RewardsRoute: typeof RewardsRoute
   ScheduleRoute: typeof ScheduleRoute
   ClassClassIdRoute: typeof ClassClassIdRoute
+  InviteInviteIdRoute: typeof InviteInviteIdRoute
   PaymentSuccessRoute: typeof PaymentSuccessRoute
 }
 
@@ -689,6 +702,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/me/friends'
       preLoaderRoute: typeof MeFriendsRouteImport
       parentRoute: typeof MeRoute
+    }
+    '/invite/$inviteId': {
+      id: '/invite/$inviteId'
+      path: '/invite/$inviteId'
+      fullPath: '/invite/$inviteId'
+      preLoaderRoute: typeof InviteInviteIdRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/class/$classId': {
       id: '/class/$classId'
@@ -971,6 +991,7 @@ const rootRouteChildren: RootRouteChildren = {
   RewardsRoute: RewardsRoute,
   ScheduleRoute: ScheduleRoute,
   ClassClassIdRoute: ClassClassIdRoute,
+  InviteInviteIdRoute: InviteInviteIdRoute,
   PaymentSuccessRoute: PaymentSuccessRoute,
 }
 export const routeTree = rootRouteImport

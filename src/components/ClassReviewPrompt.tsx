@@ -14,7 +14,9 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import {
+  CLASS_REVIEW_FLOW_COMPLETE,
   fetchPendingClassReview,
+  reviewDismissedForSession,
   submitClassReview,
   type PendingClassReview,
 } from "@/lib/classReviews";
@@ -22,14 +24,7 @@ import {
 const DISMISS_KEY = "oneflow:class-review-dismissed";
 
 function sessionDismissed(bookingId: string): boolean {
-  try {
-    const raw = sessionStorage.getItem(DISMISS_KEY);
-    if (!raw) return false;
-    const ids = JSON.parse(raw) as string[];
-    return ids.includes(bookingId);
-  } catch {
-    return false;
-  }
+  return reviewDismissedForSession(bookingId);
 }
 
 function dismissForSession(bookingId: string) {
@@ -108,6 +103,11 @@ export function ClassReviewPrompt() {
     if (dismissed && bookingId) dismissForSession(bookingId);
     setOpen(false);
     setPending(null);
+    if (bookingId) {
+      window.dispatchEvent(
+        new CustomEvent(CLASS_REVIEW_FLOW_COMPLETE, { detail: { bookingId } }),
+      );
+    }
   };
 
   const submit = async () => {

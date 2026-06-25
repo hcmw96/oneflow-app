@@ -1,14 +1,28 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Loader2, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { applyStoredReferrerToProfile } from "@/lib/referral";
+import { consumePostOnboardingInvitePath } from "@/lib/classInvite";
+import {
+  ageFromDateOfBirth,
+  GENDER_OPTIONS,
+  resolveSignupSourceValue,
+  SIGNUP_SOURCE_OPTIONS,
+} from "@/lib/onboardingFields";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useAuth } from "@/contexts/auth";
 
 export const Route = createFileRoute("/onboarding")({
@@ -30,9 +44,8 @@ export const Route = createFileRoute("/onboarding")({
  *   where table_schema = 'public' and table_name = 'profiles'
  *   order by ordinal_position;
  *
- * This flow updates: first_name, last_name, phone, date_of_birth, avatar_url
- * (optional), waiver_accepted_at, onboarding_complete — adjust names to match
- * your schema if any differ (e.g. photo_url, waiver_signed_at).
+ * This flow updates: first_name, last_name, phone, date_of_birth, gender, location,
+ * age, signup_source, avatar_url (optional), waiver_accepted_at, onboarding_complete
  */
 
 const LIABILITY_WAIVER = `One Flow Liability Waiver
@@ -45,7 +58,9 @@ One Flow, its staff, and instructors are not liable for any injury, loss, or dam
 
 You confirm that the information you have provided is accurate and that you will follow staff instructions and facility rules at all times.`;
 
-const STEPS = 3;
+const STEPS = 4;
+
+const STEP_LABELS = ["Details", "About you", "Photo", "Waiver"] as const;
 
 function OnboardingPage() {
   const navigate = useNavigate();
@@ -58,10 +73,54 @@ function OnboardingPage() {
   const [phone, setPhone] = useState("");
   const [dateOfBirth, setDateOfBirth] = useState("");
 
+  const [gender, setGender] = useState("");
+  const [location, setLocation] = useState("");
+  const [age, setAge] = useState("");
+  const [signupSource, setSignupSource] = useState("");
+  const [signupSourceOther, setSignupSourceOther] = useState("");
+
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
 
   const [waiverAccepted, setWaiverAccepted] = useState(false);
+  const profilePrefilledRef = useRef(false);
+
+  useEffect(() => {
+    if (!authReady || !user?.id || profilePrefilledRef.current) return;
+
+    let cancelled = false;
+    void (async () => {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("first_name, last_name, phone, date_of_birth")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (cancelled) return;
+      profilePrefilledRef.current = true;
+
+      if (error) {
+        console.error("onboarding profile prefill", error);
+        return;
+      }
+
+      const fn = (data?.first_name ?? "").trim();
+      const ln = (data?.last_name ?? "").trim();
+      const ph = (data?.phone ?? "").trim();
+      const dobRaw = data?.date_of_birth;
+      const dob =
+        typeof dobRaw === "string" && dobRaw.trim() ? dobRaw.trim().slice(0, 10) : "";
+
+      if (fn) setFirstName(fn);
+      if (ln) setLastName(ln);
+      if (ph) setPhone(ph);
+      if (dob) setDateOfBirth(dob);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authReady, user?.id]);
 
   useEffect(() => {
     if (!photoFile) {
@@ -74,8 +133,19 @@ function OnboardingPage() {
   }, [photoFile]);
 
   useEffect(() => {
+    if (step !== 2 || age.trim() || !dateOfBirth) return;
+    const fromDob = ageFromDateOfBirth(dateOfBirth);
+    if (fromDob !== null) setAge(String(fromDob));
+  }, [step, dateOfBirth, age]);
+
+  useEffect(() => {
     if (!authReady || !user || !profileReady) return;
     if (profile?.onboarding_complete !== true) return;
+    const invitePath = consumePostOnboardingInvitePath();
+    if (invitePath) {
+      navigate({ to: invitePath, replace: true });
+      return;
+    }
     const role = (profile.role ?? "").toLowerCase();
     const isStaff = role === "director" || role === "management" || role === "guide";
     navigate({ to: isStaff ? "/admin" : "/", replace: true });
@@ -102,9 +172,35 @@ function OnboardingPage() {
     return true;
   };
 
+  const validateStep2 = () => {
+    if (!gender) {
+      toast.error("Please select your gender.");
+      return false;
+    }
+    if (!location.trim() || location.trim().length < 2) {
+      toast.error("Please enter where you are based.");
+      return false;
+    }
+    const ageNum = Number.parseInt(age, 10);
+    if (!Number.isFinite(ageNum) || ageNum < 13 || ageNum > 120) {
+      toast.error("Please enter a valid age (13–120).");
+      return false;
+    }
+    if (!signupSource) {
+      toast.error("Please tell us how you found One Flow.");
+      return false;
+    }
+    if (signupSource === "other" && !signupSourceOther.trim()) {
+      toast.error("Please tell us how you found One Flow.");
+      return false;
+    }
+    return true;
+  };
+
   const goNext = () => {
     if (step === 1 && !validateStep1()) return;
-    if (step === 3 && !waiverAccepted) {
+    if (step === 2 && !validateStep2()) return;
+    if (step === 4 && !waiverAccepted) {
       toast.error("Please accept the terms to continue.");
       return;
     }
@@ -150,6 +246,10 @@ function OnboardingPage() {
       last_name: lastName.trim(),
       phone: phone.trim(),
       date_of_birth: dateOfBirth,
+      gender,
+      location: location.trim(),
+      age: Number.parseInt(age, 10),
+      signup_source: resolveSignupSourceValue(signupSource, signupSourceOther),
       onboarding_complete: true,
       waiver_accepted_at: new Date().toISOString(),
     };
@@ -167,7 +267,8 @@ function OnboardingPage() {
     await applyStoredReferrerToProfile(user.id);
 
     toast.success("You’re all set — welcome to One Flow.");
-    navigate({ to: "/" });
+    const invitePath = consumePostOnboardingInvitePath();
+    navigate({ to: invitePath ?? "/" });
   };
 
   if (!authReady) {
@@ -211,7 +312,7 @@ function OnboardingPage() {
                   )}
                 />
                 <p className="mt-1.5 text-center text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                  {n === 1 ? "Details" : n === 2 ? "Photo" : "Waiver"}
+                  {STEP_LABELS[i] ?? `Step ${n}`}
                 </p>
               </div>
             );
@@ -270,6 +371,80 @@ function OnboardingPage() {
 
           {step === 2 && (
             <div className="space-y-4">
+              <h2 className="font-display text-lg font-semibold text-card-foreground">About you</h2>
+              <p className="text-xs text-muted-foreground">All fields are required.</p>
+              <div className="grid gap-2">
+                <Label htmlFor="ob-gender">Gender</Label>
+                <Select value={gender} onValueChange={setGender}>
+                  <SelectTrigger id="ob-gender" className="bg-background">
+                    <SelectValue placeholder="Select gender" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {GENDER_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="ob-location">Location</Label>
+                <Input
+                  id="ob-location"
+                  autoComplete="address-level2"
+                  placeholder="e.g. Sandton, Johannesburg"
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                  className="bg-background"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="ob-age">Age</Label>
+                <Input
+                  id="ob-age"
+                  type="number"
+                  inputMode="numeric"
+                  min={13}
+                  max={120}
+                  placeholder="Your age"
+                  value={age}
+                  onChange={(e) => setAge(e.target.value)}
+                  className="bg-background"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="ob-source">Where did you find us?</Label>
+                <Select value={signupSource} onValueChange={setSignupSource}>
+                  <SelectTrigger id="ob-source" className="bg-background">
+                    <SelectValue placeholder="Select an option" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SIGNUP_SOURCE_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {signupSource === "other" && (
+                <div className="grid gap-2">
+                  <Label htmlFor="ob-source-other">Please specify</Label>
+                  <Input
+                    id="ob-source-other"
+                    placeholder="How did you hear about us?"
+                    value={signupSourceOther}
+                    onChange={(e) => setSignupSourceOther(e.target.value)}
+                    className="bg-background"
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
+          {step === 3 && (
+            <div className="space-y-4">
               <h2 className="font-display text-lg font-semibold text-card-foreground">Profile photo</h2>
               <p className="text-xs text-muted-foreground">Optional — JPG, PNG, or WebP.</p>
               <label className="flex cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-primary/40 bg-primary-soft/30 px-4 py-8 transition-colors hover:bg-primary-soft/50">
@@ -297,7 +472,7 @@ function OnboardingPage() {
             </div>
           )}
 
-          {step === 3 && (
+          {step === 4 && (
             <div className="space-y-4">
               <h2 className="font-display text-lg font-semibold text-card-foreground">Liability waiver</h2>
               <div className="max-h-52 overflow-y-auto rounded-lg border border-border bg-background/80 p-3 text-xs leading-relaxed text-muted-foreground whitespace-pre-wrap">

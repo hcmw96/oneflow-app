@@ -1,5 +1,6 @@
 import { type ReactNode, useEffect, useState } from "react";
 import { ClassReviewPrompt } from "./ClassReviewPrompt";
+import { PracticeSharePrompt } from "./PracticeSharePrompt";
 import { WhatsAppFab } from "./WhatsAppFab";
 import { getUser, supabase } from "@/lib/supabase";
 import logo from "@/assets/oneflow-logo.webp";
@@ -51,6 +52,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </div>
       <ClassReviewPrompt />
+      <PracticeSharePrompt />
       <WhatsAppFab />
     </div>
   );

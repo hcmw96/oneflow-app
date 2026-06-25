@@ -19,6 +19,11 @@ import { toast } from "sonner";
 import oneflowLogo from "@/assets/oneflow-logo.webp";
 
 export const Route = createFileRoute("/auth")({
+  validateSearch: (raw: Record<string, unknown>) => ({
+    redirect: typeof raw.redirect === "string" ? raw.redirect : undefined,
+    email: typeof raw.email === "string" ? raw.email : undefined,
+    signup: raw.signup === "1" || raw.signup === true,
+  }),
   head: () => ({
     meta: [
       { title: "Sign in — One Flow" },
@@ -28,13 +33,26 @@ export const Route = createFileRoute("/auth")({
   component: AuthPage,
 });
 
-async function resolveDestination(userId: string) {
+async function resolveDestination(userId: string, redirectPath?: string) {
+  const safeRedirect =
+    redirectPath && redirectPath.startsWith("/invite/") ? redirectPath : undefined;
+
   const { data: profile } = await supabase
     .from("profiles")
     .select("phone, date_of_birth, role")
     .eq("id", userId)
     .maybeSingle();
-  if (!profile?.phone || !profile?.date_of_birth) return "/onboarding";
+  if (!profile?.phone || !profile?.date_of_birth) {
+    if (safeRedirect) {
+      try {
+        sessionStorage.setItem("oneflow_auth_redirect", safeRedirect);
+      } catch {
+        // ignore
+      }
+    }
+    return "/onboarding";
+  }
+  if (safeRedirect) return safeRedirect;
   const role = (profile.role ?? "").toLowerCase();
   if (role === "director" || role === "management" || role === "guide") return "/admin";
   return "/";
@@ -42,10 +60,16 @@ async function resolveDestination(userId: string) {
 
 export default function AuthPage() {
   const navigate = useNavigate();
+  const search = Route.useSearch();
 
   useEffect(() => {
     captureReferrerFromSearch(window.location.search);
   }, []);
+
+  useEffect(() => {
+    if (search.email) setEmail(search.email);
+    if (search.signup) setMode("signup");
+  }, [search.email, search.signup]);
 
   useEffect(() => {
     const init = async () => {
@@ -58,7 +82,7 @@ export default function AuthPage() {
       if (!error && data.session?.user) {
         await ensureProfileNamesFromOAuth(data.session.user);
         await applyStoredReferrerToProfile(data.session.user.id);
-        const dest = await resolveDestination(data.session.user.id);
+        const dest = await resolveDestination(data.session.user.id, search.redirect);
         navigate({ to: dest });
       }
     };
@@ -118,7 +142,7 @@ export default function AuthPage() {
     }
     const user = await getUser();
     if (user) {
-      const dest = await resolveDestination(user.id);
+      const dest = await resolveDestination(user.id, search.redirect);
       navigate({ to: dest });
     }
   };
@@ -148,7 +172,8 @@ export default function AuthPage() {
     }
     if (data.session?.user) {
       await applyStoredReferrerToProfile(data.session.user.id);
-      navigate({ to: "/onboarding" });
+      const dest = await resolveDestination(data.session.user.id, search.redirect);
+      navigate({ to: dest });
       return;
     }
     toast.success("Check your email to confirm your account, then sign in.");

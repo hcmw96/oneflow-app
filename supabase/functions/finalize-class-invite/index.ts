@@ -216,7 +216,7 @@ serve(async (req) => {
     }
 
     // Deep-link to the specific class so they land on the right card after login.
-    const openUrl = `https://oneflow1.netlify.app/schedule?class=${encodeURIComponent(row.class_id)}`;
+    const openUrl = `https://oneflow1.netlify.app/invite/${encodeURIComponent(classInviteId)}`;
 
     if (toEmail) {
       const emailRes = await fetch(`${SUPABASE_URL}/functions/v1/send-email`, {

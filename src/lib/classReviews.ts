@@ -1,5 +1,20 @@
 import { supabase } from "@/lib/supabase";
 
+const REVIEW_DISMISS_KEY = "oneflow:class-review-dismissed";
+
+export function reviewDismissedForSession(bookingId: string): boolean {
+  try {
+    const raw = sessionStorage.getItem(REVIEW_DISMISS_KEY);
+    if (!raw) return false;
+    const ids = JSON.parse(raw) as string[];
+    return ids.includes(bookingId);
+  } catch {
+    return false;
+  }
+}
+
+export const CLASS_REVIEW_FLOW_COMPLETE = "oneflow:class-review-flow-complete";
+
 export type PendingClassReview = {
   bookingId: string;
   classId: string;

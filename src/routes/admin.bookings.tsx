@@ -54,6 +54,9 @@ import {
   type RosterMemberAddonAccess,
   RosterAddonPills,
 } from "@/components/admin/RosterAddonPills";
+import { useNowMs } from "@/hooks/use-now-ms";
+import { useScrollToLiveClass } from "@/hooks/use-scroll-to-live-class";
+import { isClassEnded, orderClassesForLiveDay, pickFocusClassId } from "@/lib/liveClassList";
 
 export const Route = createFileRoute("/admin/bookings")({
   component: BookingsPage,
@@ -266,6 +269,11 @@ function BookingsPage() {
   const [waiveLateFee, setWaiveLateFee] = useState(false);
   const [removing, setRemoving] = useState(false);
 
+  const nowMs = useNowMs();
+  const todayKey = ymdInTimeZone(new Date(), STUDIO_TIMEZONE);
+  const selectedDayKey = ymdInTimeZone(selectedDay, STUDIO_TIMEZONE);
+  const isLiveDay = selectedDayKey === todayKey;
+
   const stripDays = useMemo(
     () => Array.from({ length: 7 }, (_, i) => addDays(viewWeekStart, i)),
     [viewWeekStart],
@@ -437,20 +445,36 @@ function BookingsPage() {
       if (!qNorm) return true;
       return roster.some((b) => b.memberFull.toLowerCase().includes(qNorm));
     });
-    if (bookingsSort !== "member_name") return filtered;
-    return [...filtered].sort((s1, s2) => {
-      const r1 = bookingsByClass.get(s1.id) ?? [];
-      const r2 = bookingsByClass.get(s2.id) ?? [];
-      const minName = (rows: AdminBookingRow[]): string =>
-        rows.length === 0
-          ? "\uffff"
-          : rows.reduce((best, b) => {
-              const n = b.memberFull.toLowerCase();
-              return n < best ? n : best;
-            }, rows[0]!.memberFull.toLowerCase());
-      return minName(r1).localeCompare(minName(r2));
-    });
-  }, [daySessionsFiltered, bookingsByClass, qNorm, bookingsSort]);
+    let sessions = filtered;
+    if (bookingsSort === "member_name") {
+      sessions = [...filtered].sort((s1, s2) => {
+        const r1 = bookingsByClass.get(s1.id) ?? [];
+        const r2 = bookingsByClass.get(s2.id) ?? [];
+        const minName = (rows: AdminBookingRow[]): string =>
+          rows.length === 0
+            ? "\uffff"
+            : rows.reduce((best, b) => {
+                const n = b.memberFull.toLowerCase();
+                return n < best ? n : best;
+              }, rows[0]!.memberFull.toLowerCase());
+        return minName(r1).localeCompare(minName(r2));
+      });
+    }
+    if (isLiveDay) return orderClassesForLiveDay(sessions, nowMs);
+    return sessions;
+  }, [daySessionsFiltered, bookingsByClass, qNorm, bookingsSort, isLiveDay, nowMs]);
+
+  const focusClassId = useMemo(
+    () => (isLiveDay ? pickFocusClassId(visibleSessions, nowMs) : null),
+    [isLiveDay, visibleSessions, nowMs],
+  );
+
+  useScrollToLiveClass(focusClassId, isLiveDay && !loading);
+
+  useEffect(() => {
+    if (!focusClassId || loading) return;
+    setExpanded((e) => ({ ...e, [focusClassId]: true }));
+  }, [focusClassId, loading]);
 
   const bookingsFilterBadgeCount = sessionFilterCount + (qNorm ? 1 : 0);
 
@@ -775,7 +799,11 @@ function BookingsPage() {
             return (
               <li
                 key={session.id}
-                className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm"
+                data-live-class-id={session.id}
+                className={cn(
+                  "overflow-hidden rounded-2xl border border-border bg-card shadow-sm",
+                  isLiveDay && isClassEnded(session, nowMs) && "opacity-60",
+                )}
               >
                 <button
                   type="button"
