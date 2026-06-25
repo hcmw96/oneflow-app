@@ -2,14 +2,31 @@ import { supabase } from "@/lib/supabase";
 
 const REVIEW_DISMISS_KEY = "oneflow:class-review-dismissed";
 
-export function reviewDismissedForSession(bookingId: string): boolean {
+/** Booking IDs the member chose not to review — persisted across sessions. */
+export function reviewDismissed(bookingId: string): boolean {
   try {
-    const raw = sessionStorage.getItem(REVIEW_DISMISS_KEY);
+    const raw = localStorage.getItem(REVIEW_DISMISS_KEY);
     if (!raw) return false;
     const ids = JSON.parse(raw) as string[];
     return ids.includes(bookingId);
   } catch {
     return false;
+  }
+}
+
+/** @deprecated Use reviewDismissed — kept for callers that used the old name. */
+export function reviewDismissedForSession(bookingId: string): boolean {
+  return reviewDismissed(bookingId);
+}
+
+export function dismissClassReview(bookingId: string): void {
+  try {
+    const raw = localStorage.getItem(REVIEW_DISMISS_KEY);
+    const ids: string[] = raw ? (JSON.parse(raw) as string[]) : [];
+    if (!ids.includes(bookingId)) ids.push(bookingId);
+    localStorage.setItem(REVIEW_DISMISS_KEY, JSON.stringify(ids.slice(-50)));
+  } catch {
+    /* ignore */
   }
 }
 
@@ -80,7 +97,9 @@ export async function fetchPendingClassReview(
   }
 
   const reviewed = new Set((reviews ?? []).map((r) => String((r as { booking_id: string }).booking_id)));
-  const pending = candidates.find((c) => !reviewed.has(c.bookingId));
+  const pending = candidates.find(
+    (c) => !reviewed.has(c.bookingId) && !reviewDismissed(c.bookingId),
+  );
   return pending ?? null;
 }
 

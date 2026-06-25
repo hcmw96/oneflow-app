@@ -1,4 +1,4 @@
-import { reviewDismissedForSession } from "@/lib/classReviews";
+import { reviewDismissed } from "@/lib/classReviews";
 import { supabase } from "@/lib/supabase";
 
 const SHARE_DISMISS_KEY = "oneflow:practice-share-dismissed";
@@ -96,7 +96,7 @@ export async function fetchPendingPracticeShare(
       .eq("booking_id", bookingId)
       .maybeSingle();
 
-    const reviewPending = !reviewRow && !reviewDismissedForSession(bookingId);
+    const reviewPending = !reviewRow && !reviewDismissed(bookingId);
     if (reviewPending) continue;
 
     return {

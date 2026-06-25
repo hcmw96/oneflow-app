@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Star } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/auth";
@@ -15,28 +15,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import {
   CLASS_REVIEW_FLOW_COMPLETE,
+  dismissClassReview,
   fetchPendingClassReview,
-  reviewDismissedForSession,
+  reviewDismissed,
   submitClassReview,
   type PendingClassReview,
 } from "@/lib/classReviews";
-
-const DISMISS_KEY = "oneflow:class-review-dismissed";
-
-function sessionDismissed(bookingId: string): boolean {
-  return reviewDismissedForSession(bookingId);
-}
-
-function dismissForSession(bookingId: string) {
-  try {
-    const raw = sessionStorage.getItem(DISMISS_KEY);
-    const ids: string[] = raw ? (JSON.parse(raw) as string[]) : [];
-    if (!ids.includes(bookingId)) ids.push(bookingId);
-    sessionStorage.setItem(DISMISS_KEY, JSON.stringify(ids.slice(-20)));
-  } catch {
-    /* ignore */
-  }
-}
 
 function StarRow({
   value,
@@ -75,6 +59,7 @@ export function ClassReviewPrompt() {
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const dismissedRef = useRef<Set<string>>(new Set());
 
   const loadPending = useCallback(async () => {
     if (!user?.id) {
@@ -83,7 +68,7 @@ export function ClassReviewPrompt() {
       return;
     }
     const next = await fetchPendingClassReview(user.id);
-    if (!next || sessionDismissed(next.bookingId)) {
+    if (!next || reviewDismissed(next.bookingId) || dismissedRef.current.has(next.bookingId)) {
       setPending(null);
       setOpen(false);
       return;
@@ -100,14 +85,12 @@ export function ClassReviewPrompt() {
   }, [authReady, loadPending]);
 
   const close = (bookingId: string | null, dismissed: boolean) => {
-    if (dismissed && bookingId) dismissForSession(bookingId);
+    if (dismissed && bookingId) {
+      dismissedRef.current.add(bookingId);
+      dismissClassReview(bookingId);
+    }
     setOpen(false);
     setPending(null);
-    if (bookingId) {
-      window.dispatchEvent(
-        new CustomEvent(CLASS_REVIEW_FLOW_COMPLETE, { detail: { bookingId } }),
-      );
-    }
   };
 
   const submit = async () => {
@@ -131,6 +114,9 @@ export function ClassReviewPrompt() {
     }
     toast.success("Thanks for your feedback!");
     close(pending.bookingId, false);
+    window.dispatchEvent(
+      new CustomEvent(CLASS_REVIEW_FLOW_COMPLETE, { detail: { bookingId: pending.bookingId } }),
+    );
     void loadPending();
   };
 
