@@ -31,7 +31,6 @@ import { Route as InviteInviteIdRouteImport } from './routes/invite.$inviteId'
 import { Route as ClassClassIdRouteImport } from './routes/class.$classId'
 import { Route as AuthResetPasswordRouteImport } from './routes/auth.reset-password'
 import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
-import { Route as AdminWhatsappRouteImport } from './routes/admin.whatsapp'
 import { Route as AdminWaiversRouteImport } from './routes/admin.waivers'
 import { Route as AdminTransactionsRouteImport } from './routes/admin.transactions'
 import { Route as AdminTimesheetsRouteImport } from './routes/admin.timesheets'
@@ -164,11 +163,6 @@ const AuthCallbackRoute = AuthCallbackRouteImport.update({
   id: '/callback',
   path: '/callback',
   getParentRoute: () => AuthRoute,
-} as any)
-const AdminWhatsappRoute = AdminWhatsappRouteImport.update({
-  id: '/whatsapp',
-  path: '/whatsapp',
-  getParentRoute: () => AdminRoute,
 } as any)
 const AdminWaiversRoute = AdminWaiversRouteImport.update({
   id: '/waivers',
@@ -319,7 +313,6 @@ export interface FileRoutesByFullPath {
   '/admin/timesheets': typeof AdminTimesheetsRoute
   '/admin/transactions': typeof AdminTransactionsRoute
   '/admin/waivers': typeof AdminWaiversRoute
-  '/admin/whatsapp': typeof AdminWhatsappRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/auth/reset-password': typeof AuthResetPasswordRoute
   '/class/$classId': typeof ClassClassIdRoute
@@ -365,7 +358,6 @@ export interface FileRoutesByTo {
   '/admin/timesheets': typeof AdminTimesheetsRoute
   '/admin/transactions': typeof AdminTransactionsRoute
   '/admin/waivers': typeof AdminWaiversRoute
-  '/admin/whatsapp': typeof AdminWhatsappRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/auth/reset-password': typeof AuthResetPasswordRoute
   '/class/$classId': typeof ClassClassIdRoute
@@ -413,7 +405,6 @@ export interface FileRoutesById {
   '/admin/timesheets': typeof AdminTimesheetsRoute
   '/admin/transactions': typeof AdminTransactionsRoute
   '/admin/waivers': typeof AdminWaiversRoute
-  '/admin/whatsapp': typeof AdminWhatsappRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/auth/reset-password': typeof AuthResetPasswordRoute
   '/class/$classId': typeof ClassClassIdRoute
@@ -462,7 +453,6 @@ export interface FileRouteTypes {
     | '/admin/timesheets'
     | '/admin/transactions'
     | '/admin/waivers'
-    | '/admin/whatsapp'
     | '/auth/callback'
     | '/auth/reset-password'
     | '/class/$classId'
@@ -508,7 +498,6 @@ export interface FileRouteTypes {
     | '/admin/timesheets'
     | '/admin/transactions'
     | '/admin/waivers'
-    | '/admin/whatsapp'
     | '/auth/callback'
     | '/auth/reset-password'
     | '/class/$classId'
@@ -555,7 +544,6 @@ export interface FileRouteTypes {
     | '/admin/timesheets'
     | '/admin/transactions'
     | '/admin/waivers'
-    | '/admin/whatsapp'
     | '/auth/callback'
     | '/auth/reset-password'
     | '/class/$classId'
@@ -742,13 +730,6 @@ declare module '@tanstack/react-router' {
       fullPath: '/auth/callback'
       preLoaderRoute: typeof AuthCallbackRouteImport
       parentRoute: typeof AuthRoute
-    }
-    '/admin/whatsapp': {
-      id: '/admin/whatsapp'
-      path: '/whatsapp'
-      fullPath: '/admin/whatsapp'
-      preLoaderRoute: typeof AdminWhatsappRouteImport
-      parentRoute: typeof AdminRoute
     }
     '/admin/waivers': {
       id: '/admin/waivers'
@@ -941,7 +922,6 @@ interface AdminRouteChildren {
   AdminTimesheetsRoute: typeof AdminTimesheetsRoute
   AdminTransactionsRoute: typeof AdminTransactionsRoute
   AdminWaiversRoute: typeof AdminWaiversRoute
-  AdminWhatsappRoute: typeof AdminWhatsappRoute
   AdminIndexRoute: typeof AdminIndexRoute
 }
 
@@ -967,7 +947,6 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminTimesheetsRoute: AdminTimesheetsRoute,
   AdminTransactionsRoute: AdminTransactionsRoute,
   AdminWaiversRoute: AdminWaiversRoute,
-  AdminWhatsappRoute: AdminWhatsappRoute,
   AdminIndexRoute: AdminIndexRoute,
 }
 

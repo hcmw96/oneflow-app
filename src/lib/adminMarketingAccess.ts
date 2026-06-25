@@ -4,10 +4,9 @@ export type AdminRoleProfile = {
   secondary_roles?: string[] | null;
 };
 
-/** Email / promotions / client comms / WhatsApp — require marketing admin permission. */
+/** Email / promotions / client comms — require marketing admin permission. */
 export const MARKETING_COMMS_ADMIN_ROUTES = [
   "/admin/email",
-  "/admin/whatsapp",
   "/admin/client-comms",
   "/admin/promotions",
 ] as const;
@@ -43,7 +42,7 @@ export function profileRoleSet(profile: AdminRoleProfile): Set<string> {
   return out;
 }
 
-/** Email / promotions / client comms / WhatsApp admin. */
+/** Email / promotions / client comms admin. */
 export function canAccessMarketingAdmin(profile: AdminRoleProfile): boolean {
   const roles = profileRoleSet(profile);
   return (
