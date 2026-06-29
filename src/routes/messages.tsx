@@ -138,8 +138,8 @@ function MessagesPage() {
           <ArrowLeft className="h-4 w-4" />
         </Link>
         <h1 className="font-display text-lg font-semibold">Messages</h1>
-        <div className="ml-auto">
-          <MessageStudioButton className="h-10 rounded-full border border-border bg-card px-3 text-xs font-semibold" />
+        <div className="ml-auto shrink-0">
+          <MessageStudioButton className="h-10 gap-1.5 rounded-full bg-[#a3b693] px-3 text-xs font-semibold text-white hover:bg-[#8fa67d]" />
         </div>
       </header>
 
