@@ -658,7 +658,11 @@ export function CustomerProfileSheet({
     setRemovingCredit(false);
     if (error) {
       console.error("remove credit failed", error);
-      toast.error(supabaseErrorMessage(error, "Could not remove credit"));
+      const msg = error.message ?? "";
+      const friendly = msg.includes("bookings_credit_id_fkey")
+        ? "This package was used for a booking. It will be removed and past bookings will no longer link to it — try again after the update deploys."
+        : supabaseErrorMessage(error, "Could not remove credit");
+      toast.error(friendly);
       await load();
       return;
     }
