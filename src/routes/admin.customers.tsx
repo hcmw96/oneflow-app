@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Filter, Loader2, Mail, Package, Plus, Search, X } from "lucide-react";
+import { Filter, Loader2, Mail, MessageSquare, Package, Plus, Search, X } from "lucide-react";
 import { toast } from "sonner";
 import {
   currentPlanLabel,
@@ -42,6 +42,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { isBookableMember } from "@/lib/bookableMembers";
+import { fetchAllMemberProfileIds, sendInAppMessagesToMembers } from "@/lib/studioMemberMessages";
 import { getUser, supabase } from "@/lib/supabase";
 import { edgeFunctionErrorMessage, isValidEmail, supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { normalizeProductCategoryKey } from "@/lib/productCategories";
@@ -315,6 +316,7 @@ function CustomersPage() {
   const [messageSubject, setMessageSubject] = useState("");
   const [messageBody, setMessageBody] = useState("");
   const [messageSending, setMessageSending] = useState(false);
+  const [messageAllMembers, setMessageAllMembers] = useState(false);
   const [addFieldErrors, setAddFieldErrors] = useState<{
     firstName?: string;
     lastName?: string;
@@ -657,47 +659,49 @@ function CustomersPage() {
     }
     const user = await getUser();
     setMessageSending(true);
-    let ok = 0;
-    let failed = 0;
-    for (const id of selectedMemberIds) {
-      const { data: inserted, error: msgErr } = await supabase
-        .from("studio_messages")
-        .insert({
-          from_profile_id: user?.id ?? null,
-          to_profile_id: id,
-          subject: messageSubject.trim() || null,
-          body: messageBody.trim(),
-          message_type: "direct",
-        })
-        .select("id")
-        .maybeSingle();
-      if (msgErr || !inserted?.id) {
-        failed += 1;
-        console.error(msgErr);
-        continue;
+    try {
+      const profileIds = messageAllMembers
+        ? await fetchAllMemberProfileIds()
+        : selectedMemberIds;
+      if (profileIds.length === 0) {
+        toast.error("No members selected");
+        setMessageSending(false);
+        return;
       }
-      await supabase.from("notifications").insert({
-        profile_id: id,
-        type: "message",
-        title: messageSubject.trim() || "New message",
-        body: messageBody.trim().slice(0, 200) || null,
-        metadata: { studio_message_id: inserted.id },
+      const { sent, failed } = await sendInAppMessagesToMembers({
+        fromProfileId: user?.id ?? null,
+        profileIds,
+        subject: messageSubject.trim() || null,
+        body: messageBody.trim(),
+        messageType: "direct",
       });
-      ok += 1;
+      setMessageSending(false);
+      setMessageOpen(false);
+      setMessageAllMembers(false);
+      setMessageSubject("");
+      setMessageBody("");
+      if (sent === 0) {
+        toast.error("Could not send messages — check permissions and try again.");
+        return;
+      }
+      if (failed > 0) {
+        toast.error(`Sent to ${sent} members, ${failed} failed.`);
+      } else {
+        toast.success(`Message sent to ${sent} member${sent === 1 ? "" : "s"}`);
+      }
+      if (!messageAllMembers) {
+        clearMemberSelection();
+      }
+    } catch (e) {
+      console.error(e);
+      setMessageSending(false);
+      toast.error(e instanceof Error ? e.message : "Could not send messages");
     }
-    setMessageSending(false);
-    setMessageOpen(false);
-    setMessageSubject("");
-    setMessageBody("");
-    if (failed === 0) {
-      toast.success(
-        ok === 1
-          ? `Message sent to ${selectedMemberRows.find((m) => m.id === selectedMemberIds[0])?.name ?? "1 member"}`
-          : `Message sent to ${ok} members`,
-      );
-    } else {
-      toast.error(`${ok} sent, ${failed} failed — check permissions or try again.`);
-    }
+  };
+
+  const openMessageAllMembers = () => {
+    setMessageAllMembers(true);
+    setMessageOpen(true);
   };
 
   const bumpMemberCreditsAfterAssign = (profileId: string, row: AssignedCreditRow) => {
@@ -784,16 +788,29 @@ function CustomersPage() {
         title="Customers"
         description={loading ? "Loading…" : `${members.length} people`}
         actions={
-          <Button
-            type="button"
-            className="w-full gap-2 bg-[#a3b693] text-white hover:bg-[#8fa67d] sm:w-auto"
-            onClick={() => {
-              resetAddForm();
-              setAddOpen(true);
-            }}
-          >
-            <Plus className="h-4 w-4 shrink-0" aria-hidden /> Add member
-          </Button>
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+            {canManageCustomers ? (
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full gap-2 sm:w-auto"
+                onClick={openMessageAllMembers}
+              >
+                <MessageSquare className="h-4 w-4 shrink-0" aria-hidden />
+                Message all members
+              </Button>
+            ) : null}
+            <Button
+              type="button"
+              className="w-full gap-2 bg-[#a3b693] text-white hover:bg-[#8fa67d] sm:w-auto"
+              onClick={() => {
+                resetAddForm();
+                setAddOpen(true);
+              }}
+            >
+              <Plus className="h-4 w-4 shrink-0" aria-hidden /> Add member
+            </Button>
+          </div>
         }
       />
 
@@ -955,13 +972,21 @@ function CustomersPage() {
         />
       ) : null}
 
-      <Dialog open={messageOpen} onOpenChange={setMessageOpen}>
+      <Dialog
+        open={messageOpen}
+        onOpenChange={(o) => {
+          setMessageOpen(o);
+          if (!o) setMessageAllMembers(false);
+        }}
+      >
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Send message</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            Sending to {selectedMemberIds.length} member{selectedMemberIds.length === 1 ? "" : "s"}.
+            {messageAllMembers
+              ? "Sending to all members with a customer account."
+              : `Sending to ${selectedMemberIds.length} member${selectedMemberIds.length === 1 ? "" : "s"}.`}
           </p>
           <div className="grid gap-3 py-2">
             <div>

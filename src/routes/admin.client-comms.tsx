@@ -19,7 +19,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { ensureMarketingAdminAccess } from "@/lib/ensureMarketingAdminAccess";
-import { BOOKABLE_MEMBER_OR_FILTER, isBookableMember } from "@/lib/bookableMembers";
+import { isBookableMember } from "@/lib/bookableMembers";
+import {
+  ALL_MEMBERS_RECIPIENT,
+  fetchAllMemberProfileIds,
+  sendInAppMessagesToMembers,
+} from "@/lib/studioMemberMessages";
 import { getUser, supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { cn } from "@/lib/utils";
@@ -338,16 +343,56 @@ function ClientCommsPage() {
   };
 
   const sendDirect = async () => {
-    if (!sendToId) {
-      toast.error("Pick a recipient");
-      return;
-    }
     if (!sendBody.trim() && !sendSubject.trim()) {
       toast.error("Add a subject or body");
       return;
     }
+    if (!sendToId) {
+      toast.error("Pick a recipient");
+      return;
+    }
     setSending(true);
     const user = await getUser();
+
+    if (sendToId === ALL_MEMBERS_RECIPIENT) {
+      try {
+        const ids = await fetchAllMemberProfileIds();
+        if (ids.length === 0) {
+          toast.error("No members to message");
+          setSending(false);
+          return;
+        }
+        const { sent, failed } = await sendInAppMessagesToMembers({
+          fromProfileId: user?.id ?? null,
+          profileIds: ids,
+          subject: sendSubject.trim() || null,
+          body: sendBody.trim(),
+          messageType: "direct",
+        });
+        setSending(false);
+        if (sent === 0) {
+          toast.error("Could not send messages — check permissions and try again.");
+          return;
+        }
+        if (failed > 0) {
+          toast.error(`Sent to ${sent} members, ${failed} failed.`);
+        } else {
+          toast.success(`Message sent to ${sent} member${sent === 1 ? "" : "s"}`);
+        }
+        setSendSubject("");
+        setSendBody("");
+        setSendToId("");
+        setSendSearch("");
+        await load();
+        return;
+      } catch (e) {
+        console.error(e);
+        setSending(false);
+        toast.error(e instanceof Error ? e.message : "Could not load members");
+        return;
+      }
+    }
+
     const { data: inserted, error: msgErr } = await supabase
       .from("studio_messages")
       .insert({
@@ -387,48 +432,38 @@ function ClientCommsPage() {
     }
     setAnnSending(true);
     const user = await getUser();
-    const { data: targets, error: tErr } = await supabase
-      .from("profiles")
-      .select("id")
-      .or(BOOKABLE_MEMBER_OR_FILTER);
-    if (tErr) {
+    try {
+      const ids = await fetchAllMemberProfileIds();
+      if (ids.length === 0) {
+        setAnnSending(false);
+        toast.error("No members to announce to");
+        return;
+      }
+      const { sent, failed } = await sendInAppMessagesToMembers({
+        fromProfileId: user?.id ?? null,
+        profileIds: ids,
+        subject: annSubject.trim() || null,
+        body: annBody.trim(),
+        messageType: "announcement",
+      });
       setAnnSending(false);
-      toast.error(supabaseErrorMessage(tErr, "Could not load recipients"));
-      return;
-    }
-    const ids = (targets ?? []).map((p: { id: string }) => p.id);
-    if (ids.length === 0) {
+      if (sent === 0) {
+        toast.error("Could not send announcement — check permissions and try again.");
+        return;
+      }
+      if (failed > 0) {
+        toast.error(`Announcement sent to ${sent} members, ${failed} failed.`);
+      } else {
+        toast.success(`Announcement sent to ${sent} member${sent === 1 ? "" : "s"}`);
+      }
+      setAnnSubject("");
+      setAnnBody("");
+      await load();
+    } catch (e) {
+      console.error(e);
       setAnnSending(false);
-      toast.error("No active members to announce to");
-      return;
+      toast.error(e instanceof Error ? e.message : "Could not load members");
     }
-    const messageInserts = ids.map((id: string) => ({
-      from_profile_id: user?.id ?? null,
-      to_profile_id: id,
-      subject: annSubject.trim() || null,
-      body: annBody.trim(),
-      message_type: "announcement" as const,
-    }));
-    const notifInserts = ids.map((id: string) => ({
-      profile_id: id,
-      type: "announcement",
-      title: annSubject.trim() || "Studio announcement",
-      body: annBody.trim().slice(0, 200) || null,
-    }));
-    const [mRes, nRes] = await Promise.all([
-      supabase.from("studio_messages").insert(messageInserts),
-      supabase.from("notifications").insert(notifInserts),
-    ]);
-    setAnnSending(false);
-    if (mRes.error) {
-      toast.error(supabaseErrorMessage(mRes.error, "Could not send announcement"));
-      return;
-    }
-    if (nRes.error) console.warn("notifications insert", nRes.error);
-    setAnnSubject("");
-    setAnnBody("");
-    toast.success(`Announcement sent to ${ids.length} member${ids.length === 1 ? "" : "s"}`);
-    await load();
   };
 
   const filteredMembers = useMemo(() => {
@@ -436,6 +471,8 @@ function ClientCommsPage() {
     if (!q) return members.slice(0, 50);
     return members.filter((m) => `${m.fullName} ${m.email}`.toLowerCase().includes(q)).slice(0, 50);
   }, [members, sendSearch]);
+
+  const allMembersLabel = `All members (${members.length})`;
 
   return (
     <div>
@@ -673,8 +710,21 @@ function ClientCommsPage() {
                 placeholder="Search by name or email…"
               />
               <ul className="mt-3 max-h-64 overflow-y-auto rounded-lg border border-border bg-background text-sm">
+                <li>
+                  <button
+                    type="button"
+                    onClick={() => setSendToId(ALL_MEMBERS_RECIPIENT)}
+                    className={cn(
+                      "flex w-full items-center justify-between gap-2 border-b border-border px-3 py-2.5 text-left font-semibold hover:bg-muted/40",
+                      sendToId === ALL_MEMBERS_RECIPIENT && "bg-[#e8efe3]/60",
+                    )}
+                  >
+                    <span>{allMembersLabel}</span>
+                    <Megaphone className="h-4 w-4 shrink-0 text-[#5f6b52]" aria-hidden />
+                  </button>
+                </li>
                 {filteredMembers.length === 0 ? (
-                  <li className="px-3 py-2 text-muted-foreground">No matches</li>
+                  <li className="px-3 py-2 text-muted-foreground">No individual matches</li>
                 ) : (
                   filteredMembers.map((m) => (
                     <li key={m.id}>
@@ -721,7 +771,7 @@ function ClientCommsPage() {
                 className="mt-4 gap-2 bg-[#a3b693] text-white hover:bg-[#8fa67d]"
               >
                 {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                Send message
+                {sendToId === ALL_MEMBERS_RECIPIENT ? "Send to all members" : "Send message"}
               </Button>
             </div>
           </div>
