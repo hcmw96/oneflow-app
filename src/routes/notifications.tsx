@@ -125,7 +125,7 @@ function NotificationsPage() {
         >
           <ArrowLeft className="h-4 w-4" />
         </Link>
-        <h1 className="font-display text-lg font-semibold">Notifications</h1>
+        <h1 className="font-display text-lg font-semibold">Notification preferences</h1>
       </header>
 
       <main className="flex-1 space-y-4 px-5 pb-10 pt-2">

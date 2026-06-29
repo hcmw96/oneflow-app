@@ -148,7 +148,8 @@ function MePage() {
           .from("notifications")
           .select("id", { count: "exact", head: true })
           .eq("profile_id", user.id)
-          .eq("is_read", false),
+          .eq("is_read", false)
+          .eq("type", "message"),
         supabase
           .from("bookings")
           .select("id, classes ( name, starts_at )")
@@ -195,8 +196,8 @@ function MePage() {
       <div className="flex items-center justify-between px-5 pt-3">
         <h1 className="font-display text-lg font-semibold text-muted-foreground">Profile</h1>
         <Link
-          to="/notifications"
-          aria-label="Notifications"
+          to="/messages"
+          aria-label="Messages"
           className="relative z-30 flex h-10 w-10 items-center justify-center rounded-full border border-border bg-card"
         >
           <Bell className="h-4 w-4" />
@@ -816,7 +817,7 @@ function SettingsPanel({
         <span className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-foreground">
           <Bell className="h-4 w-4" />
         </span>
-        <span className="flex-1 text-sm font-semibold">Notifications</span>
+        <span className="flex-1 text-sm font-semibold">Notification preferences</span>
         <ChevronRight className="h-4 w-4 text-muted-foreground" />
       </Link>
 

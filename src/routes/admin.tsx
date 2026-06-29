@@ -54,7 +54,7 @@ function AdminLayout() {
       const to = isMarketingScopedStaff(roleProfile)
         ? "/admin"
         : (roleProfile.role ?? "").toLowerCase() === "boh"
-          ? "/admin/timesheets"
+          ? "/admin/leave-requests"
           : "/admin/check-in";
       navigate({ to, replace: true });
       return;

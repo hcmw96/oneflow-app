@@ -8,8 +8,8 @@ import { consumePostOnboardingInvitePath } from "@/lib/classInvite";
 import {
   ageFromDateOfBirth,
   GENDER_OPTIONS,
-  resolveSignupSourceValue,
-  SIGNUP_SOURCE_OPTIONS,
+  resolveReferralSourceValue,
+  REFERRAL_SOURCE_OPTIONS,
 } from "@/lib/onboardingFields";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -45,7 +45,7 @@ export const Route = createFileRoute("/onboarding")({
  *   order by ordinal_position;
  *
  * This flow updates: first_name, last_name, phone, date_of_birth, gender, location,
- * age, signup_source, avatar_url (optional), waiver_accepted_at, onboarding_complete
+ * age, referral_source, avatar_url (optional), waiver_accepted_at, onboarding_complete
  */
 
 const LIABILITY_WAIVER = `One Flow Liability Waiver
@@ -76,8 +76,8 @@ function OnboardingPage() {
   const [gender, setGender] = useState("");
   const [location, setLocation] = useState("");
   const [age, setAge] = useState("");
-  const [signupSource, setSignupSource] = useState("");
-  const [signupSourceOther, setSignupSourceOther] = useState("");
+  const [referralSource, setReferralSource] = useState("");
+  const [referralSourceOther, setReferralSourceOther] = useState("");
 
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
@@ -186,11 +186,11 @@ function OnboardingPage() {
       toast.error("Please enter a valid age (13–120).");
       return false;
     }
-    if (!signupSource) {
+    if (!referralSource) {
       toast.error("Please tell us how you found One Flow.");
       return false;
     }
-    if (signupSource === "other" && !signupSourceOther.trim()) {
+    if (referralSource === "other" && !referralSourceOther.trim()) {
       toast.error("Please tell us how you found One Flow.");
       return false;
     }
@@ -249,7 +249,7 @@ function OnboardingPage() {
       gender,
       location: location.trim(),
       age: Number.parseInt(age, 10),
-      signup_source: resolveSignupSourceValue(signupSource, signupSourceOther),
+      referral_source: resolveReferralSourceValue(referralSource, referralSourceOther),
       onboarding_complete: true,
       waiver_accepted_at: new Date().toISOString(),
     };
@@ -414,13 +414,13 @@ function OnboardingPage() {
                 />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="ob-source">Where did you find us?</Label>
-                <Select value={signupSource} onValueChange={setSignupSource}>
+                <Label htmlFor="ob-source">How did you find us?</Label>
+                <Select value={referralSource} onValueChange={setReferralSource}>
                   <SelectTrigger id="ob-source" className="bg-background">
                     <SelectValue placeholder="Select an option" />
                   </SelectTrigger>
                   <SelectContent>
-                    {SIGNUP_SOURCE_OPTIONS.map((opt) => (
+                    {REFERRAL_SOURCE_OPTIONS.map((opt) => (
                       <SelectItem key={opt.value} value={opt.value}>
                         {opt.label}
                       </SelectItem>
@@ -428,14 +428,14 @@ function OnboardingPage() {
                   </SelectContent>
                 </Select>
               </div>
-              {signupSource === "other" && (
+              {referralSource === "other" && (
                 <div className="grid gap-2">
                   <Label htmlFor="ob-source-other">Please specify</Label>
                   <Input
                     id="ob-source-other"
                     placeholder="How did you hear about us?"
-                    value={signupSourceOther}
-                    onChange={(e) => setSignupSourceOther(e.target.value)}
+                    value={referralSourceOther}
+                    onChange={(e) => setReferralSourceOther(e.target.value)}
                     className="bg-background"
                   />
                 </div>

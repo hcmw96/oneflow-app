@@ -660,14 +660,18 @@ function CustomersPage() {
     let ok = 0;
     let failed = 0;
     for (const id of selectedMemberIds) {
-      const { error: msgErr } = await supabase.from("studio_messages").insert({
-        from_profile_id: user?.id ?? null,
-        to_profile_id: id,
-        subject: messageSubject.trim() || null,
-        body: messageBody.trim(),
-        message_type: "direct",
-      });
-      if (msgErr) {
+      const { data: inserted, error: msgErr } = await supabase
+        .from("studio_messages")
+        .insert({
+          from_profile_id: user?.id ?? null,
+          to_profile_id: id,
+          subject: messageSubject.trim() || null,
+          body: messageBody.trim(),
+          message_type: "direct",
+        })
+        .select("id")
+        .maybeSingle();
+      if (msgErr || !inserted?.id) {
         failed += 1;
         console.error(msgErr);
         continue;
@@ -677,6 +681,7 @@ function CustomersPage() {
         type: "message",
         title: messageSubject.trim() || "New message",
         body: messageBody.trim().slice(0, 200) || null,
+        metadata: { studio_message_id: inserted.id },
       });
       ok += 1;
     }

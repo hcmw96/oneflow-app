@@ -15,6 +15,7 @@ import { Route as PricingRouteImport } from './routes/pricing'
 import { Route as PackagesRouteImport } from './routes/packages'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as NotificationsRouteImport } from './routes/notifications'
+import { Route as MessagesRouteImport } from './routes/messages'
 import { Route as MeRouteImport } from './routes/me'
 import { Route as GoalsRouteImport } from './routes/goals'
 import { Route as FaqRouteImport } from './routes/faq'
@@ -33,7 +34,6 @@ import { Route as AuthResetPasswordRouteImport } from './routes/auth.reset-passw
 import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
 import { Route as AdminWaiversRouteImport } from './routes/admin.waivers'
 import { Route as AdminTransactionsRouteImport } from './routes/admin.transactions'
-import { Route as AdminTimesheetsRouteImport } from './routes/admin.timesheets'
 import { Route as AdminStaffRouteImport } from './routes/admin.staff'
 import { Route as AdminSettingsRouteImport } from './routes/admin.settings'
 import { Route as AdminSchedulingRouteImport } from './routes/admin.scheduling'
@@ -42,6 +42,7 @@ import { Route as AdminReportsRouteImport } from './routes/admin.reports'
 import { Route as AdminPromotionsRouteImport } from './routes/admin.promotions'
 import { Route as AdminProductsRouteImport } from './routes/admin.products'
 import { Route as AdminPayoutsRouteImport } from './routes/admin.payouts'
+import { Route as AdminLeaveRequestsRouteImport } from './routes/admin.leave-requests'
 import { Route as AdminInstallAppRouteImport } from './routes/admin.install-app'
 import { Route as AdminGuidesRouteImport } from './routes/admin.guides'
 import { Route as AdminEmailRouteImport } from './routes/admin.email'
@@ -82,6 +83,11 @@ const OnboardingRoute = OnboardingRouteImport.update({
 const NotificationsRoute = NotificationsRouteImport.update({
   id: '/notifications',
   path: '/notifications',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MessagesRoute = MessagesRouteImport.update({
+  id: '/messages',
+  path: '/messages',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MeRoute = MeRouteImport.update({
@@ -174,11 +180,6 @@ const AdminTransactionsRoute = AdminTransactionsRouteImport.update({
   path: '/transactions',
   getParentRoute: () => AdminRoute,
 } as any)
-const AdminTimesheetsRoute = AdminTimesheetsRouteImport.update({
-  id: '/timesheets',
-  path: '/timesheets',
-  getParentRoute: () => AdminRoute,
-} as any)
 const AdminStaffRoute = AdminStaffRouteImport.update({
   id: '/staff',
   path: '/staff',
@@ -217,6 +218,11 @@ const AdminProductsRoute = AdminProductsRouteImport.update({
 const AdminPayoutsRoute = AdminPayoutsRouteImport.update({
   id: '/payouts',
   path: '/payouts',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminLeaveRequestsRoute = AdminLeaveRequestsRouteImport.update({
+  id: '/leave-requests',
+  path: '/leave-requests',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminInstallAppRoute = AdminInstallAppRouteImport.update({
@@ -286,6 +292,7 @@ export interface FileRoutesByFullPath {
   '/faq': typeof FaqRoute
   '/goals': typeof GoalsRoute
   '/me': typeof MeRouteWithChildren
+  '/messages': typeof MessagesRoute
   '/notifications': typeof NotificationsRoute
   '/onboarding': typeof OnboardingRoute
   '/packages': typeof PackagesRoute
@@ -302,6 +309,7 @@ export interface FileRoutesByFullPath {
   '/admin/email': typeof AdminEmailRoute
   '/admin/guides': typeof AdminGuidesRoute
   '/admin/install-app': typeof AdminInstallAppRoute
+  '/admin/leave-requests': typeof AdminLeaveRequestsRoute
   '/admin/payouts': typeof AdminPayoutsRoute
   '/admin/products': typeof AdminProductsRoute
   '/admin/promotions': typeof AdminPromotionsRoute
@@ -310,7 +318,6 @@ export interface FileRoutesByFullPath {
   '/admin/scheduling': typeof AdminSchedulingRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/staff': typeof AdminStaffRoute
-  '/admin/timesheets': typeof AdminTimesheetsRoute
   '/admin/transactions': typeof AdminTransactionsRoute
   '/admin/waivers': typeof AdminWaiversRoute
   '/auth/callback': typeof AuthCallbackRoute
@@ -331,6 +338,7 @@ export interface FileRoutesByTo {
   '/faq': typeof FaqRoute
   '/goals': typeof GoalsRoute
   '/me': typeof MeRouteWithChildren
+  '/messages': typeof MessagesRoute
   '/notifications': typeof NotificationsRoute
   '/onboarding': typeof OnboardingRoute
   '/packages': typeof PackagesRoute
@@ -347,6 +355,7 @@ export interface FileRoutesByTo {
   '/admin/email': typeof AdminEmailRoute
   '/admin/guides': typeof AdminGuidesRoute
   '/admin/install-app': typeof AdminInstallAppRoute
+  '/admin/leave-requests': typeof AdminLeaveRequestsRoute
   '/admin/payouts': typeof AdminPayoutsRoute
   '/admin/products': typeof AdminProductsRoute
   '/admin/promotions': typeof AdminPromotionsRoute
@@ -355,7 +364,6 @@ export interface FileRoutesByTo {
   '/admin/scheduling': typeof AdminSchedulingRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/staff': typeof AdminStaffRoute
-  '/admin/timesheets': typeof AdminTimesheetsRoute
   '/admin/transactions': typeof AdminTransactionsRoute
   '/admin/waivers': typeof AdminWaiversRoute
   '/auth/callback': typeof AuthCallbackRoute
@@ -378,6 +386,7 @@ export interface FileRoutesById {
   '/faq': typeof FaqRoute
   '/goals': typeof GoalsRoute
   '/me': typeof MeRouteWithChildren
+  '/messages': typeof MessagesRoute
   '/notifications': typeof NotificationsRoute
   '/onboarding': typeof OnboardingRoute
   '/packages': typeof PackagesRoute
@@ -394,6 +403,7 @@ export interface FileRoutesById {
   '/admin/email': typeof AdminEmailRoute
   '/admin/guides': typeof AdminGuidesRoute
   '/admin/install-app': typeof AdminInstallAppRoute
+  '/admin/leave-requests': typeof AdminLeaveRequestsRoute
   '/admin/payouts': typeof AdminPayoutsRoute
   '/admin/products': typeof AdminProductsRoute
   '/admin/promotions': typeof AdminPromotionsRoute
@@ -402,7 +412,6 @@ export interface FileRoutesById {
   '/admin/scheduling': typeof AdminSchedulingRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/staff': typeof AdminStaffRoute
-  '/admin/timesheets': typeof AdminTimesheetsRoute
   '/admin/transactions': typeof AdminTransactionsRoute
   '/admin/waivers': typeof AdminWaiversRoute
   '/auth/callback': typeof AuthCallbackRoute
@@ -426,6 +435,7 @@ export interface FileRouteTypes {
     | '/faq'
     | '/goals'
     | '/me'
+    | '/messages'
     | '/notifications'
     | '/onboarding'
     | '/packages'
@@ -442,6 +452,7 @@ export interface FileRouteTypes {
     | '/admin/email'
     | '/admin/guides'
     | '/admin/install-app'
+    | '/admin/leave-requests'
     | '/admin/payouts'
     | '/admin/products'
     | '/admin/promotions'
@@ -450,7 +461,6 @@ export interface FileRouteTypes {
     | '/admin/scheduling'
     | '/admin/settings'
     | '/admin/staff'
-    | '/admin/timesheets'
     | '/admin/transactions'
     | '/admin/waivers'
     | '/auth/callback'
@@ -471,6 +481,7 @@ export interface FileRouteTypes {
     | '/faq'
     | '/goals'
     | '/me'
+    | '/messages'
     | '/notifications'
     | '/onboarding'
     | '/packages'
@@ -487,6 +498,7 @@ export interface FileRouteTypes {
     | '/admin/email'
     | '/admin/guides'
     | '/admin/install-app'
+    | '/admin/leave-requests'
     | '/admin/payouts'
     | '/admin/products'
     | '/admin/promotions'
@@ -495,7 +507,6 @@ export interface FileRouteTypes {
     | '/admin/scheduling'
     | '/admin/settings'
     | '/admin/staff'
-    | '/admin/timesheets'
     | '/admin/transactions'
     | '/admin/waivers'
     | '/auth/callback'
@@ -517,6 +528,7 @@ export interface FileRouteTypes {
     | '/faq'
     | '/goals'
     | '/me'
+    | '/messages'
     | '/notifications'
     | '/onboarding'
     | '/packages'
@@ -533,6 +545,7 @@ export interface FileRouteTypes {
     | '/admin/email'
     | '/admin/guides'
     | '/admin/install-app'
+    | '/admin/leave-requests'
     | '/admin/payouts'
     | '/admin/products'
     | '/admin/promotions'
@@ -541,7 +554,6 @@ export interface FileRouteTypes {
     | '/admin/scheduling'
     | '/admin/settings'
     | '/admin/staff'
-    | '/admin/timesheets'
     | '/admin/transactions'
     | '/admin/waivers'
     | '/auth/callback'
@@ -564,6 +576,7 @@ export interface RootRouteChildren {
   FaqRoute: typeof FaqRoute
   GoalsRoute: typeof GoalsRoute
   MeRoute: typeof MeRouteWithChildren
+  MessagesRoute: typeof MessagesRoute
   NotificationsRoute: typeof NotificationsRoute
   OnboardingRoute: typeof OnboardingRoute
   PackagesRoute: typeof PackagesRoute
@@ -617,6 +630,13 @@ declare module '@tanstack/react-router' {
       path: '/notifications'
       fullPath: '/notifications'
       preLoaderRoute: typeof NotificationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/messages': {
+      id: '/messages'
+      path: '/messages'
+      fullPath: '/messages'
+      preLoaderRoute: typeof MessagesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/me': {
@@ -745,13 +765,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminTransactionsRouteImport
       parentRoute: typeof AdminRoute
     }
-    '/admin/timesheets': {
-      id: '/admin/timesheets'
-      path: '/timesheets'
-      fullPath: '/admin/timesheets'
-      preLoaderRoute: typeof AdminTimesheetsRouteImport
-      parentRoute: typeof AdminRoute
-    }
     '/admin/staff': {
       id: '/admin/staff'
       path: '/staff'
@@ -806,6 +819,13 @@ declare module '@tanstack/react-router' {
       path: '/payouts'
       fullPath: '/admin/payouts'
       preLoaderRoute: typeof AdminPayoutsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/leave-requests': {
+      id: '/admin/leave-requests'
+      path: '/leave-requests'
+      fullPath: '/admin/leave-requests'
+      preLoaderRoute: typeof AdminLeaveRequestsRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/install-app': {
@@ -911,6 +931,7 @@ interface AdminRouteChildren {
   AdminEmailRoute: typeof AdminEmailRoute
   AdminGuidesRoute: typeof AdminGuidesRoute
   AdminInstallAppRoute: typeof AdminInstallAppRoute
+  AdminLeaveRequestsRoute: typeof AdminLeaveRequestsRoute
   AdminPayoutsRoute: typeof AdminPayoutsRoute
   AdminProductsRoute: typeof AdminProductsRoute
   AdminPromotionsRoute: typeof AdminPromotionsRoute
@@ -919,7 +940,6 @@ interface AdminRouteChildren {
   AdminSchedulingRoute: typeof AdminSchedulingRoute
   AdminSettingsRoute: typeof AdminSettingsRoute
   AdminStaffRoute: typeof AdminStaffRoute
-  AdminTimesheetsRoute: typeof AdminTimesheetsRoute
   AdminTransactionsRoute: typeof AdminTransactionsRoute
   AdminWaiversRoute: typeof AdminWaiversRoute
   AdminIndexRoute: typeof AdminIndexRoute
@@ -936,6 +956,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminEmailRoute: AdminEmailRoute,
   AdminGuidesRoute: AdminGuidesRoute,
   AdminInstallAppRoute: AdminInstallAppRoute,
+  AdminLeaveRequestsRoute: AdminLeaveRequestsRoute,
   AdminPayoutsRoute: AdminPayoutsRoute,
   AdminProductsRoute: AdminProductsRoute,
   AdminPromotionsRoute: AdminPromotionsRoute,
@@ -944,7 +965,6 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminSchedulingRoute: AdminSchedulingRoute,
   AdminSettingsRoute: AdminSettingsRoute,
   AdminStaffRoute: AdminStaffRoute,
-  AdminTimesheetsRoute: AdminTimesheetsRoute,
   AdminTransactionsRoute: AdminTransactionsRoute,
   AdminWaiversRoute: AdminWaiversRoute,
   AdminIndexRoute: AdminIndexRoute,
@@ -984,6 +1004,7 @@ const rootRouteChildren: RootRouteChildren = {
   FaqRoute: FaqRoute,
   GoalsRoute: GoalsRoute,
   MeRoute: MeRouteWithChildren,
+  MessagesRoute: MessagesRoute,
   NotificationsRoute: NotificationsRoute,
   OnboardingRoute: OnboardingRoute,
   PackagesRoute: PackagesRoute,

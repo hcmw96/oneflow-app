@@ -66,11 +66,8 @@ export function AdminShell({ children }: { children: ReactNode }) {
 
   const leaveRequestsActive = useRouterState({
     select: (s) => {
-      if (s.location.pathname !== "/admin/timesheets") return false;
-      const q = s.location.search as string | Record<string, unknown> | undefined;
-      if (typeof q === "string") return new URLSearchParams(q).get("tab") === "leave-requests";
-      if (q && typeof q === "object" && "tab" in q) return (q as { tab?: string }).tab === "leave-requests";
-      return false;
+      if (s.location.pathname !== "/admin/leave-requests") return false;
+      return true;
     },
   });
 
@@ -173,8 +170,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
         {canBadge ? (
           <div className={cn("border-t border-sidebar-border px-2 py-2", collapsed && "px-0")}>
             <Link
-              to="/admin/timesheets"
-              search={{ tab: "leave-requests" }}
+              to="/admin/leave-requests"
               className={cn(
                 "relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
                 leaveRequestsActive
@@ -242,8 +238,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
                   {canBadge ? (
                     <div className="border-t border-sidebar-border px-2 py-2">
                       <Link
-                        to="/admin/timesheets"
-                        search={{ tab: "leave-requests" }}
+                        to="/admin/leave-requests"
                         onClick={() => setMobileOpen(false)}
                         className={cn(
                           "relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",

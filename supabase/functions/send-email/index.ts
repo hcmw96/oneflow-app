@@ -187,7 +187,7 @@ function buildTemplate(template: TemplateName, data: Record<string, unknown> = {
           ${detailRow("Sick note", sickNote)}
         </div>
         <p style="font-size:15px;line-height:1.6;color:#444;margin:0 0 12px;">Log into the admin dashboard to approve or decline.</p>
-        ${ctaButton("https://oneflow1.netlify.app/admin/timesheets?tab=leave-requests", "Review Request")}
+        ${ctaButton("https://oneflow1.netlify.app/admin/leave-requests", "Review Request")}
         <p style="font-size:14px;color:#888;margin:24px 0 0;">One Flow Team</p>
       `,
     };

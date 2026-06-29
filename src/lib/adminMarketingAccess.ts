@@ -16,7 +16,6 @@ export const MARKETING_ADMIN_ROUTES = MARKETING_COMMS_ADMIN_ROUTES;
 
 /** Financial admin routes — marketing-scoped staff cannot open these. */
 export const MARKETING_FINANCIAL_ADMIN_ROUTES = [
-  "/admin/timesheets",
   "/admin/payouts",
   "/admin/transactions",
   "/admin/reports",

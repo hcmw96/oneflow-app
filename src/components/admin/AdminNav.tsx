@@ -46,7 +46,7 @@ export const LIMITED_ADMIN_ROUTES = [
   "/admin/bookings",
   "/admin/schedule",
   "/admin/classes",
-  "/admin/timesheets",
+  "/admin/leave-requests",
   // /admin/scheduling redirects to /admin/schedule; keep it allow-listed so
   // the redirect can complete before the limited-role guard fires.
   "/admin/scheduling",
@@ -71,7 +71,7 @@ export function isPathAllowedForLimitedRole(pathname: string) {
   return LIMITED_ADMIN_ROUTES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
-/** BOH is restricted to timesheets; guide/front_desk use LIMITED_ADMIN_ROUTES (+ marketing comms if allowed). */
+/** BOH is restricted to leave requests; guide/front_desk use LIMITED_ADMIN_ROUTES (+ marketing comms if allowed). */
 export function isPathAllowedForRestrictedAdmin(
   profile: AdminRoleProfile,
   pathname: string,
@@ -81,7 +81,7 @@ export function isPathAllowedForRestrictedAdmin(
     return true;
   }
   if (isBohRole(role)) {
-    return pathname === "/admin/timesheets" || pathname.startsWith("/admin/timesheets/");
+    return pathname === "/admin/leave-requests" || pathname.startsWith("/admin/leave-requests/");
   }
   if (isLimitedAdminRole(role)) {
     return isPathAllowedForLimitedRole(pathname);
@@ -97,7 +97,7 @@ export function navItemsForRole(profile: AdminRoleProfile): AdminNavItem[] {
   const r = (profile.role ?? "").toLowerCase();
   if (r === "director" || r === "management") return adminNavItems;
   if (isBohRole(profile.role)) {
-    return adminNavItems.filter((i) => i.to === "/admin/timesheets");
+    return adminNavItems.filter((i) => i.to === "/admin/leave-requests");
   }
   if (isMarketingScopedStaff(profile) && !isLimitedAdminRole(profile.role)) {
     return adminNavItems.filter((i) => !isMarketingFinancialAdminPath(i.to));
@@ -121,7 +121,7 @@ export const adminNavItems: AdminNavItem[] = [
   { to: "/admin/customers", label: "Customers", icon: Users },
   { to: "/admin/products", label: "Products", icon: Package },
   { to: "/admin/staff", label: "Staff", icon: UserCog },
-  { to: "/admin/timesheets", label: "Timesheets", icon: Clock },
+  { to: "/admin/leave-requests", label: "Leave requests", icon: Clock },
   { to: "/admin/guides", label: "Guides", icon: GraduationCap },
   { to: "/admin/payouts", label: "Payouts", icon: DollarSign },
   { to: "/admin/transactions", label: "Transactions", icon: Receipt },

@@ -5,16 +5,18 @@ export const GENDER_OPTIONS = [
   { value: "prefer_not_to_say", label: "Prefer not to say" },
 ] as const;
 
-export const SIGNUP_SOURCE_OPTIONS = [
+export const REFERRAL_SOURCE_OPTIONS = [
   { value: "instagram", label: "Instagram" },
   { value: "facebook", label: "Facebook" },
-  { value: "tiktok", label: "TikTok" },
-  { value: "friend_family", label: "Friend or family" },
-  { value: "google", label: "Google / online search" },
-  { value: "walk_in", label: "Saw the studio / walk-in" },
-  { value: "class_invite", label: "Class invite" },
+  { value: "google_search", label: "Google search" },
+  { value: "friend_word_of_mouth", label: "Friend / word of mouth" },
+  { value: "walked_past", label: "Walked past" },
+  { value: "event_popup", label: "Event / pop-up" },
   { value: "other", label: "Other" },
 ] as const;
+
+/** @deprecated Use REFERRAL_SOURCE_OPTIONS */
+export const SIGNUP_SOURCE_OPTIONS = REFERRAL_SOURCE_OPTIONS;
 
 export function ageFromDateOfBirth(dateOfBirth: string): number | null {
   const dob = new Date(dateOfBirth);
@@ -29,11 +31,16 @@ export function ageFromDateOfBirth(dateOfBirth: string): number | null {
   return age;
 }
 
-export function resolveSignupSourceValue(source: string, otherText: string): string {
+export function resolveReferralSourceValue(source: string, otherText: string): string {
   if (source !== "other") {
-    const opt = SIGNUP_SOURCE_OPTIONS.find((o) => o.value === source);
-    return opt?.label ?? source;
+    const opt = REFERRAL_SOURCE_OPTIONS.find((o) => o.value === source);
+    return opt?.value ?? source;
   }
   const custom = otherText.trim();
-  return custom ? `Other: ${custom}` : "";
+  return custom ? `other:${custom}` : "";
+}
+
+/** @deprecated Use resolveReferralSourceValue */
+export function resolveSignupSourceValue(source: string, otherText: string): string {
+  return resolveReferralSourceValue(source, otherText);
 }

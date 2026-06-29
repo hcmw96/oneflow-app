@@ -20,7 +20,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { ensureMarketingAdminAccess } from "@/lib/ensureMarketingAdminAccess";
 import { BOOKABLE_MEMBER_OR_FILTER, isBookableMember } from "@/lib/bookableMembers";
-import { plainTextToMarketingHtml, sendMarketingEmail } from "@/lib/marketingEmail";
 import { getUser, supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { cn } from "@/lib/utils";
@@ -286,11 +285,6 @@ function ClientCommsPage() {
 
   const sendMemberReply = async () => {
     if (!selectedMemberMsg) return;
-    const to = selectedMemberMsg.memberEmail.trim();
-    if (!to || !to.includes("@")) {
-      toast.error("This member has no email on file");
-      return;
-    }
     const body = replyBody.trim();
     if (!body) {
       toast.error("Write a reply message");
@@ -298,17 +292,35 @@ function ClientCommsPage() {
     }
     const subject = replySubject.trim() || "Reply from One Flow";
     setReplying(true);
-    const { ok, error } = await sendMarketingEmail(
-      to,
-      subject,
-      plainTextToMarketingHtml(body),
-    );
-    setReplying(false);
-    if (!ok) {
-      toast.error(error ?? "Could not send reply");
+    const user = await getUser();
+    const { data: inserted, error: msgErr } = await supabase
+      .from("studio_messages")
+      .insert({
+        from_profile_id: user?.id ?? null,
+        to_profile_id: selectedMemberMsg.profile_id,
+        subject,
+        body,
+        message_type: "direct",
+      })
+      .select("id")
+      .maybeSingle();
+    if (msgErr || !inserted?.id) {
+      setReplying(false);
+      toast.error(supabaseErrorMessage(msgErr, "Could not send reply"));
       return;
     }
-    toast.success(`Reply sent to ${selectedMemberMsg.memberName}`);
+    const { error: notifErr } = await supabase.from("notifications").insert({
+      profile_id: selectedMemberMsg.profile_id,
+      type: "message",
+      title: subject,
+      body: body.slice(0, 200) || null,
+      metadata: { studio_message_id: inserted.id },
+    });
+    setReplying(false);
+    if (notifErr) {
+      console.warn("notifications insert", notifErr);
+    }
+    toast.success(`Reply sent to ${selectedMemberMsg.memberName} in the app`);
     setReplyBody("");
     setSelectedMemberMsg(null);
   };
@@ -336,14 +348,18 @@ function ClientCommsPage() {
     }
     setSending(true);
     const user = await getUser();
-    const { error: msgErr } = await supabase.from("studio_messages").insert({
-      from_profile_id: user?.id ?? null,
-      to_profile_id: sendToId,
-      subject: sendSubject.trim() || null,
-      body: sendBody.trim(),
-      message_type: "direct",
-    });
-    if (msgErr) {
+    const { data: inserted, error: msgErr } = await supabase
+      .from("studio_messages")
+      .insert({
+        from_profile_id: user?.id ?? null,
+        to_profile_id: sendToId,
+        subject: sendSubject.trim() || null,
+        body: sendBody.trim(),
+        message_type: "direct",
+      })
+      .select("id")
+      .maybeSingle();
+    if (msgErr || !inserted?.id) {
       setSending(false);
       toast.error(supabaseErrorMessage(msgErr, "Could not send"));
       return;
@@ -353,6 +369,7 @@ function ClientCommsPage() {
       type: "message",
       title: sendSubject.trim() || "New message",
       body: sendBody.trim().slice(0, 200) || null,
+      metadata: { studio_message_id: inserted.id },
     });
     setSending(false);
     setSendSubject("");
@@ -633,7 +650,7 @@ function ClientCommsPage() {
                       ) : (
                         <Send className="h-4 w-4" />
                       )}
-                      Send reply by email
+                      Send reply in app
                     </Button>
                   </div>
                 </>
