@@ -60,6 +60,26 @@ export function ClassReviewPrompt() {
   const [comment, setComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const dismissedRef = useRef<Set<string>>(new Set());
+  const pendingRef = useRef<PendingClassReview | null>(null);
+  const openRef = useRef(false);
+  const checkedRef = useRef(false);
+
+  useEffect(() => {
+    pendingRef.current = pending;
+  }, [pending]);
+
+  useEffect(() => {
+    openRef.current = open;
+  }, [open]);
+
+  useEffect(() => {
+    return () => {
+      const row = pendingRef.current;
+      if (row && openRef.current) {
+        dismissClassReview(row.bookingId);
+      }
+    };
+  }, []);
 
   const loadPending = useCallback(async () => {
     if (!user?.id) {
@@ -67,12 +87,15 @@ export function ClassReviewPrompt() {
       setOpen(false);
       return;
     }
+    if (openRef.current) return;
+
     const next = await fetchPendingClassReview(user.id);
     if (!next || reviewDismissed(next.bookingId) || dismissedRef.current.has(next.bookingId)) {
       setPending(null);
       setOpen(false);
       return;
     }
+    dismissedRef.current.add(next.bookingId);
     setPending(next);
     setRating(0);
     setComment("");
@@ -80,15 +103,17 @@ export function ClassReviewPrompt() {
   }, [user?.id]);
 
   useEffect(() => {
-    if (!authReady) return;
+    if (!authReady || !user?.id || checkedRef.current) return;
+    checkedRef.current = true;
     void loadPending();
-  }, [authReady, loadPending]);
+  }, [authReady, user?.id, loadPending]);
 
   const close = (bookingId: string | null, dismissed: boolean) => {
-    if (dismissed && bookingId) {
+    if (bookingId) {
       dismissedRef.current.add(bookingId);
-      dismissClassReview(bookingId);
+      if (dismissed) dismissClassReview(bookingId);
     }
+    openRef.current = false;
     setOpen(false);
     setPending(null);
   };
@@ -112,12 +137,14 @@ export function ClassReviewPrompt() {
       toast.error(error);
       return;
     }
+    dismissClassReview(pending.bookingId);
     toast.success("Thanks for your feedback!");
-    close(pending.bookingId, false);
+    openRef.current = false;
+    setOpen(false);
+    setPending(null);
     window.dispatchEvent(
       new CustomEvent(CLASS_REVIEW_FLOW_COMPLETE, { detail: { bookingId: pending.bookingId } }),
     );
-    void loadPending();
   };
 
   if (!pending) return null;

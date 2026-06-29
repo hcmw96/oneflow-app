@@ -1,17 +1,32 @@
 import { supabase } from "@/lib/supabase";
 
 const REVIEW_DISMISS_KEY = "oneflow:class-review-dismissed";
+const REVIEW_DISMISS_SESSION_KEY = "oneflow:class-review-dismissed-session";
+
+function readDismissedIds(): string[] {
+  const ids = new Set<string>();
+  try {
+    const raw = localStorage.getItem(REVIEW_DISMISS_KEY);
+    if (raw) {
+      for (const id of JSON.parse(raw) as string[]) ids.add(id);
+    }
+  } catch {
+    /* ignore */
+  }
+  try {
+    const raw = sessionStorage.getItem(REVIEW_DISMISS_SESSION_KEY);
+    if (raw) {
+      for (const id of JSON.parse(raw) as string[]) ids.add(id);
+    }
+  } catch {
+    /* ignore */
+  }
+  return [...ids];
+}
 
 /** Booking IDs the member chose not to review — persisted across sessions. */
 export function reviewDismissed(bookingId: string): boolean {
-  try {
-    const raw = localStorage.getItem(REVIEW_DISMISS_KEY);
-    if (!raw) return false;
-    const ids = JSON.parse(raw) as string[];
-    return ids.includes(bookingId);
-  } catch {
-    return false;
-  }
+  return readDismissedIds().includes(bookingId);
 }
 
 /** @deprecated Use reviewDismissed — kept for callers that used the old name. */
@@ -20,14 +35,18 @@ export function reviewDismissedForSession(bookingId: string): boolean {
 }
 
 export function dismissClassReview(bookingId: string): void {
-  try {
-    const raw = localStorage.getItem(REVIEW_DISMISS_KEY);
-    const ids: string[] = raw ? (JSON.parse(raw) as string[]) : [];
-    if (!ids.includes(bookingId)) ids.push(bookingId);
-    localStorage.setItem(REVIEW_DISMISS_KEY, JSON.stringify(ids.slice(-50)));
-  } catch {
-    /* ignore */
-  }
+  const persist = (storage: Storage, key: string) => {
+    try {
+      const raw = storage.getItem(key);
+      const ids: string[] = raw ? (JSON.parse(raw) as string[]) : [];
+      if (!ids.includes(bookingId)) ids.push(bookingId);
+      storage.setItem(key, JSON.stringify(ids.slice(-50)));
+    } catch {
+      /* ignore */
+    }
+  };
+  persist(localStorage, REVIEW_DISMISS_KEY);
+  persist(sessionStorage, REVIEW_DISMISS_SESSION_KEY);
 }
 
 export const CLASS_REVIEW_FLOW_COMPLETE = "oneflow:class-review-flow-complete";
