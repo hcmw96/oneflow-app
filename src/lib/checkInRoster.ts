@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { awardClassesAttendedBadges } from "@/lib/badges";
 import { deleteMayChallengeCheckInForBooking } from "@/lib/mayChallengeCheckIn";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
+import { formatStudioEmailDate, formatStudioTime12Upper } from "@/lib/timezone";
 
 export type BookingStatus = "attended" | "confirmed" | "cancelled" | "no-show";
 
@@ -95,9 +96,7 @@ export function rosterAddonTruthy(v: unknown): boolean {
 }
 
 export function formatClassTime(iso: string) {
-  return new Date(iso)
-    .toLocaleTimeString("en-ZA", { hour: "numeric", minute: "2-digit", hour12: true })
-    .toUpperCase();
+  return formatStudioTime12Upper(iso);
 }
 
 export type RosterAddonAccessSets = {

@@ -28,6 +28,7 @@ import {
 import { walkInCheckInToastMessage } from "@/lib/flowPoints";
 import { LIABILITY_WAIVER } from "@/lib/liabilityWaiver";
 import { supabase } from "@/lib/supabase";
+import { formatStudioDateTime } from "@/lib/timezone";
 import { edgeFunctionErrorMessage, supabaseErrorMessage } from "@/lib/supabaseErrors";
 
 const SAGE = "#a3b693";
@@ -43,12 +44,8 @@ type FutureClassRow = {
 };
 
 function formatClassOptionLabel(c: FutureClassRow): string {
-  const when = new Date(c.starts_at).toLocaleString("en-ZA", {
+  const when = formatStudioDateTime(c.starts_at, {
     weekday: "short",
-    day: "numeric",
-    month: "short",
-    hour: "numeric",
-    minute: "2-digit",
     hour12: true,
   });
   return `${c.name} · ${when}`;

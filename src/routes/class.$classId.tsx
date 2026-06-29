@@ -4,6 +4,7 @@ import { ArrowLeft, Clock, MapPin, Users, CreditCard, Sparkles, Package } from "
 import { AppShell } from "@/components/AppShell";
 import { TypeBadge } from "@/components/TypeBadge";
 import { formatTime, formatRand } from "@/lib/format";
+import { formatStudioDateShort } from "@/lib/timezone";
 import { cn } from "@/lib/utils";
 import { getUser, supabase } from "@/lib/supabase";
 import { displayClassType } from "@/types/studio";
@@ -148,11 +149,7 @@ function ClassDetailPage() {
           ) : null}
           <div className="mt-3 grid grid-cols-2 gap-y-2 text-sm">
             <Info icon={<Clock className="h-3.5 w-3.5" />}>
-              {startsAt.toLocaleDateString("en-ZA", {
-                weekday: "long",
-                day: "numeric",
-                month: "short",
-              })}
+              {formatStudioDateShort(startsAt, { weekday: "long" })}
             </Info>
             <Info icon={<Clock className="h-3.5 w-3.5" />}>
               {formatTime(startsAt)} · {durationMin}m

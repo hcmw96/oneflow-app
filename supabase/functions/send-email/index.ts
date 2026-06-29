@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { formatEmailDateTime } from "../_shared/studioFormat.ts";
 
 type TemplateName =
   | "booking_confirmation_class"
@@ -102,14 +103,7 @@ function ctaButton(href: string, label: string): string {
 }
 
 function formatDateTime(value: unknown): { date: string; time: string } {
-  const raw = String(value ?? "");
-  const dt = raw ? new Date(raw) : new Date();
-  return {
-    date: dt.toLocaleDateString("en-ZA", { weekday: "short", day: "numeric", month: "long" }),
-    time: dt
-      .toLocaleTimeString("en-ZA", { hour: "numeric", minute: "2-digit", hour12: true })
-      .toUpperCase(),
-  };
+  return formatEmailDateTime(value);
 }
 
 function buildTemplate(template: TemplateName, data: Record<string, unknown> = {}) {
@@ -261,10 +255,10 @@ function buildTemplate(template: TemplateName, data: Record<string, unknown> = {
   if (template === "class_reminder_sauna") {
     const addons = [towelAddon ? addonPill("🟢 Towel rental booked") : ""].join("");
     return {
-      subject: `Reminder — Sauna Journey starts in 1 hour (${time})`,
+      subject: `Reminder — ${className} starts in 1 hour (${time})`,
       content: `
         <h2 style="font-size:22px;font-weight:600;color:#a3b693;margin:0 0 16px;">Class starts in 1 hour</h2>
-        <p style="font-size:15px;line-height:1.6;color:#444;margin:0 0 12px;">Your Sauna Journey on ${esc(date)} at ${esc(time)} is coming up soon.</p>
+        <p style="font-size:15px;line-height:1.6;color:#444;margin:0 0 12px;">Your ${esc(className)} on ${esc(date)} at ${esc(time)} is coming up soon.</p>
         <div style="background:#f5f5f0;border-radius:8px;padding:16px 20px;margin:16px 0;">
           ${detailRow("Date", date)}
           ${detailRow("Time", time)}

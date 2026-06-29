@@ -1,4 +1,9 @@
 /** Send-email template for a new booking (customer or admin walk-in). */
+import {
+  formatStudioDateLong,
+  formatStudioTime12Upper,
+} from "@/lib/timezone";
+
 export function bookingConfirmationTemplateForClassType(
   classType: string | null | undefined,
 ): "booking_confirmation_sauna" | "booking_confirmation_class" {
@@ -18,15 +23,8 @@ export function bookingConfirmationEmailData(args: {
   matAddon: boolean;
   towelAddon: boolean;
 }): Record<string, unknown> {
-  const start = new Date(args.startsAtIso);
-  const date = start.toLocaleDateString("en-ZA", {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-  });
-  const time = start
-    .toLocaleTimeString("en-ZA", { hour: "numeric", minute: "2-digit", hour12: true })
-    .toUpperCase();
+  const date = formatStudioDateLong(args.startsAtIso);
+  const time = formatStudioTime12Upper(args.startsAtIso);
   return {
     class_name: args.className,
     date,

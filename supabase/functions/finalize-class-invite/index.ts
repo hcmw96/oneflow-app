@@ -1,5 +1,9 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  formatStudioDateShort,
+  formatStudioTime12Upper,
+} from "../_shared/studioFormat.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -166,15 +170,7 @@ serve(async (req) => {
     const className = c?.name ?? "Class";
     const starts = c?.starts_at ? new Date(c.starts_at) : null;
     const whenLine = starts
-      ? `${starts.toLocaleDateString("en-ZA", {
-        weekday: "short",
-        day: "numeric",
-        month: "short",
-      })} · ${starts.toLocaleTimeString("en-ZA", {
-        hour: "numeric",
-        minute: "2-digit",
-        hour12: true,
-      }).toUpperCase()}`
+      ? `${formatStudioDateShort(starts)} · ${formatStudioTime12Upper(starts)}`
       : "";
 
     // Resolve recipient email + (if in-app) push an in-app notification.

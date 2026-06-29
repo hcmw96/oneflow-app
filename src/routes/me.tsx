@@ -22,6 +22,7 @@ import { AppShell } from "@/components/AppShell";
 import { FriendsPanel } from "@/components/FriendsPanel";
 import { MessageStudioButton } from "@/components/MessageStudioSheet";
 import { formatRand } from "@/lib/format";
+import { formatStudioDateShort } from "@/lib/timezone";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -532,14 +533,7 @@ function BillingPanel() {
           String(raw.product_name ?? "").trim() || prod?.name?.trim() || "Pass / credits";
         const amountZar = Number(prod?.price_zar ?? 0) || 0;
         const dt = typeof raw.created_at === "string" ? raw.created_at : "";
-        const dateLabel = dt
-          ? new Date(dt).toLocaleDateString("en-ZA", {
-              weekday: "short",
-              day: "numeric",
-              month: "short",
-              year: "numeric",
-            })
-          : "—";
+        const dateLabel = dt ? formatStudioDateShort(dt, { year: true }) : "—";
         const yoco = raw.yoco_payment_id;
         const source = yoco ? "Card (Yoco)" : "Studio / staff";
         return {
@@ -615,11 +609,7 @@ function HistoryPanel({ rows }: { rows: { id: string; label: string; date: Date 
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold">{p.label}</p>
                 <p className="text-xs text-muted-foreground">
-                  {p.date.toLocaleDateString("en-ZA", {
-                    weekday: "short",
-                    day: "numeric",
-                    month: "short",
-                  })}
+                  {formatStudioDateShort(p.date)}
                 </p>
               </div>
               <span className="shrink-0 rounded-full bg-primary-soft px-2.5 py-0.5 text-[11px] font-semibold text-foreground">

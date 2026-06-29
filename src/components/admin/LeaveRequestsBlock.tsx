@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
+import { formatStudioDateTime } from "@/lib/timezone";
 import { cn } from "@/lib/utils";
 
 export const LEAVE_TYPES = [
@@ -567,7 +568,7 @@ export function AdminLeaveRequestsTab({
                       </p>
                     ) : null}
                     <p className="text-xs text-muted-foreground">
-                      Submitted {new Date(r.created_at).toLocaleString("en-ZA")}
+                      Submitted {formatStudioDateTime(r.created_at)}
                     </p>
                     {r.sick_note_url ? (
                       <Button
@@ -585,7 +586,7 @@ export function AdminLeaveRequestsTab({
                       <p className="text-xs">
                         <span className="font-semibold capitalize">{r.status}</span>
                         {r.reviewed_at
-                          ? ` · ${new Date(r.reviewed_at).toLocaleString("en-ZA")} by ${fullName(rev)}`
+                          ? ` · ${formatStudioDateTime(r.reviewed_at)} by ${fullName(rev)}`
                           : ""}
                         {r.review_note ? ` — ${r.review_note}` : ""}
                       </p>

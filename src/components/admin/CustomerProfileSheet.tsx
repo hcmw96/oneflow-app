@@ -63,6 +63,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import {
+  formatStudioDateNumeric,
+  formatStudioDateOnly,
+  formatStudioDateTime,
+  formatStudioTime12Upper,
+} from "@/lib/timezone";
+import {
   BUNDLE_COMPONENT_OPTIONS,
   buildBundleComponentCreditRow,
   type BundleComponentKind,
@@ -714,7 +720,7 @@ export function CustomerProfileSheet({
               </span>
             )}
             {c.expires_at
-              ? ` · Exp ${new Date(c.expires_at).toLocaleDateString("en-ZA")}`
+              ? ` · Exp ${formatStudioDateOnly(c.expires_at)}`
               : " · No expiry"}
           </p>
           <div className="mt-1 flex flex-wrap gap-1">
@@ -988,7 +994,7 @@ export function CustomerProfileSheet({
                         </dt>
                         <dd>
                           {profile.date_of_birth
-                            ? new Date(profile.date_of_birth).toLocaleDateString("en-ZA")
+                            ? formatStudioDateOnly(profile.date_of_birth)
                             : "—"}
                         </dd>
                       </div>
@@ -998,11 +1004,7 @@ export function CustomerProfileSheet({
                         </dt>
                         <dd>
                           {profile.created_at
-                            ? new Date(profile.created_at).toLocaleDateString("en-ZA", {
-                                day: "numeric",
-                                month: "short",
-                                year: "numeric",
-                              })
+                            ? formatStudioDateNumeric(profile.created_at)
                             : "—"}
                         </dd>
                       </div>
@@ -1012,7 +1014,7 @@ export function CustomerProfileSheet({
                         </dt>
                         <dd>
                           {profile.waiver_accepted_at
-                            ? `Signed ${new Date(profile.waiver_accepted_at).toLocaleDateString("en-ZA")}`
+                            ? `Signed ${formatStudioDateOnly(profile.waiver_accepted_at)}`
                             : "Not signed"}
                         </dd>
                       </div>
@@ -1141,15 +1143,7 @@ export function CustomerProfileSheet({
                                 ? `${pay.slice(0, 12)}…${pay.slice(-6)}`
                                 : pay;
                           const assigned =
-                            tx.created_at != null
-                              ? new Date(tx.created_at).toLocaleString("en-ZA", {
-                                  day: "numeric",
-                                  month: "short",
-                                  year: "numeric",
-                                  hour: "numeric",
-                                  minute: "2-digit",
-                                })
-                              : "—";
+                            tx.created_at != null ? formatStudioDateTime(tx.created_at) : "—";
                           return (
                             <tr key={tx.id} className="border-t border-border">
                               <td className="px-3 py-2 font-medium">{tx.product_name ?? "—"}</td>
@@ -1202,22 +1196,8 @@ export function CustomerProfileSheet({
                         {filteredBookings.map((b) => {
                           const cls = oneClass(b.classes);
                           const starts = cls?.starts_at ? new Date(cls.starts_at) : null;
-                          const dateStr = starts
-                            ? starts.toLocaleDateString("en-ZA", {
-                                day: "numeric",
-                                month: "short",
-                                year: "numeric",
-                              })
-                            : "—";
-                          const timeStr = starts
-                            ? starts
-                                .toLocaleTimeString("en-ZA", {
-                                  hour: "numeric",
-                                  minute: "2-digit",
-                                  hour12: true,
-                                })
-                                .toUpperCase()
-                            : "—";
+                          const dateStr = starts ? formatStudioDateNumeric(starts) : "—";
+                          const timeStr = starts ? formatStudioTime12Upper(starts) : "—";
                           return (
                             <tr key={b.id} className="border-t border-border">
                               <td className="px-3 py-2 font-medium">{cls?.name ?? "—"}</td>

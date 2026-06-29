@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { formatEmailDateTime } from "../_shared/studioFormat.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -61,20 +62,6 @@ function reminderTemplateForClassType(
   const s = String(classType ?? "").toLowerCase();
   if (s.includes("sauna") || s.includes("wellzone")) return "class_reminder_sauna";
   return "class_reminder";
-}
-
-function formatEmailDateTime(startsAtIso: string): { date: string; time: string } {
-  const start = new Date(startsAtIso);
-  return {
-    date: start.toLocaleDateString("en-ZA", {
-      weekday: "long",
-      month: "long",
-      day: "numeric",
-    }),
-    time: start
-      .toLocaleTimeString("en-ZA", { hour: "numeric", minute: "2-digit", hour12: true })
-      .toUpperCase(),
-  };
 }
 
 async function sendReminderEmail(

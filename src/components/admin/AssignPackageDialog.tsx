@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
+import { formatStudioDateOnly } from "@/lib/timezone";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import {
   allowedClassTypeCheckboxOptions,
@@ -220,9 +221,7 @@ function formatAssignedCreditSummary(row: AssignedCreditRow): string {
   const credits = row.is_unlimited
     ? "Unlimited"
     : `${row.credits_remaining ?? 0} / ${row.credits_total ?? 0} credits`;
-  const exp = row.expires_at
-    ? ` · expires ${new Date(row.expires_at).toLocaleDateString("en-ZA")}`
-    : "";
+  const exp = row.expires_at ? ` · expires ${formatStudioDateOnly(row.expires_at)}` : "";
   return `${name}: ${credits}${exp}`;
 }
 

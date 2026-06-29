@@ -1,11 +1,23 @@
+import { STUDIO_TIMEZONE } from "./timezone";
+
 export const formatRand = (cents: number) =>
   `R${(cents / 100).toLocaleString("en-ZA", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 
 export const formatTime = (d: Date) =>
-  d.toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit", hour12: false });
+  d.toLocaleTimeString("en-ZA", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: STUDIO_TIMEZONE,
+  });
 
 export const formatDayLabel = (d: Date) =>
-  d.toLocaleDateString("en-ZA", { weekday: "short", day: "numeric", month: "short" });
+  d.toLocaleDateString("en-ZA", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    timeZone: STUDIO_TIMEZONE,
+  });
 
 export const startOfDay = (d: Date) => {
   const x = new Date(d);

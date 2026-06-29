@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { formatStudioEmailDate, formatStudioTime12Upper } from "@/lib/timezone";
 import { promoteNextWaitlistEntry, sendWaitlistPromotionEmail } from "@/lib/waitlist";
 
 type CancelBookingParams = {
@@ -160,15 +161,8 @@ export async function cancelBookingWithPolicy({
   const profile = one(booking.profiles);
   const toEmail = profile?.email?.trim() || "";
   if (toEmail) {
-    const dt = new Date(cls.starts_at);
-    const date = dt.toLocaleDateString("en-ZA", {
-      weekday: "short",
-      day: "numeric",
-      month: "long",
-    });
-    const time = dt
-      .toLocaleTimeString("en-ZA", { hour: "numeric", minute: "2-digit", hour12: true })
-      .toUpperCase();
+    const date = formatStudioEmailDate(cls.starts_at);
+    const time = formatStudioTime12Upper(cls.starts_at);
 
     await supabase.functions.invoke("send-email", {
       body: {

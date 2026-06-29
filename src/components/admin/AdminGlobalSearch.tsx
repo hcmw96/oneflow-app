@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Loader2, Search, User, Calendar, BookOpen } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { formatStudioDateTime } from "@/lib/timezone";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -120,10 +121,7 @@ export function AdminGlobalSearch({ className }: { className?: string }) {
         id: String(r.id),
         label: String(r.name ?? "Class"),
         sub: r.starts_at
-          ? new Date(String(r.starts_at)).toLocaleString("en-ZA", {
-              dateStyle: "medium",
-              timeStyle: "short",
-            })
+          ? formatStudioDateTime(String(r.starts_at), { dateStyle: "medium", timeStyle: "short" })
           : "—",
       }));
 

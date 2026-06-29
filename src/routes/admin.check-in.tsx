@@ -20,6 +20,7 @@ import {
   type BookingRow,
   type RosterRow,
   formatCheckInMemberName,
+  formatClassTime,
   normalizeBooking,
   oneClass,
   oneProfile,
@@ -499,10 +500,4 @@ function CheckInPage() {
       )}
     </div>
   );
-}
-
-function formatClassTime(iso: string) {
-  return new Date(iso)
-    .toLocaleTimeString("en-ZA", { hour: "numeric", minute: "2-digit", hour12: true })
-    .toUpperCase();
 }

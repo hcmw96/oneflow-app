@@ -46,6 +46,11 @@ import {
   pickPerClassHireAddons,
   type BookingHireAddon,
 } from "@/lib/bookingAddons";
+import {
+  formatStudioDateLong,
+  formatStudioDateOnly,
+  formatStudioTime12Upper,
+} from "@/lib/timezone";
 
 interface ClassRow {
   id: string;
@@ -312,14 +317,8 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
 
   const classIsPast = isPastScheduleClass(session.starts_at);
   const spots = Math.max(0, session.capacity - session.booked_count);
-  const dateLine = new Date(session.starts_at).toLocaleDateString("en-ZA", {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-  });
-  const timeLine = new Date(session.starts_at)
-    .toLocaleTimeString("en-ZA", { hour: "numeric", minute: "2-digit", hour12: true })
-    .toUpperCase();
+  const dateLine = formatStudioDateLong(session.starts_at);
+  const timeLine = formatStudioTime12Upper(session.starts_at);
   const durationMin = Math.round(
     (new Date(session.ends_at).getTime() - new Date(session.starts_at).getTime()) / 60000,
   );
@@ -937,7 +936,7 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
                         <p className="text-xs text-muted-foreground">
                           {c.is_unlimited ? "Unlimited" : `${c.credits_remaining} remaining`}
                           {c.expires_at &&
-                            ` · Expires ${new Date(c.expires_at).toLocaleDateString("en-ZA")}`}
+                            ` · Expires ${formatStudioDateOnly(c.expires_at)}`}
                         </p>
                       </div>
                     </button>

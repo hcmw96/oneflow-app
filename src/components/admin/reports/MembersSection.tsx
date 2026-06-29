@@ -21,6 +21,7 @@ import { BOOKABLE_MEMBER_OR_FILTER } from "@/lib/bookableMembers";
 import { supabase } from "@/lib/supabase";
 import { downloadReportCsv } from "@/lib/reportsCsv";
 import type { PeriodBounds } from "@/lib/reportsPeriod";
+import { formatStudioDateNumeric } from "@/lib/timezone";
 import { cn } from "@/lib/utils";
 
 const SAGE = "#a3b693";
@@ -110,11 +111,7 @@ function formatRand(n: number): string {
 }
 
 function shortDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-ZA", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
+  return formatStudioDateNumeric(iso);
 }
 
 export function MembersSection({ bounds }: { bounds: PeriodBounds }) {

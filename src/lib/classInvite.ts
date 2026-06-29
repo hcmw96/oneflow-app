@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { formatStudioDateShort, formatStudioTime12Upper } from "@/lib/timezone";
 
 export type ClassInvitePublicPayload = {
   ok: boolean;
@@ -60,15 +61,7 @@ export async function respondClassInvite(
 export function formatInviteWhenLine(startsAtIso: string): string {
   const starts = new Date(startsAtIso);
   if (Number.isNaN(starts.getTime())) return "";
-  const date = starts.toLocaleDateString("en-ZA", {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-  });
-  const time = starts
-    .toLocaleTimeString("en-ZA", { hour: "numeric", minute: "2-digit", hour12: true })
-    .toUpperCase();
-  return `${date} · ${time}`;
+  return `${formatStudioDateShort(starts)} · ${formatStudioTime12Upper(starts)}`;
 }
 
 export const PENDING_CLASS_INVITE_KEY = "oneflow_pending_class_invite_id";

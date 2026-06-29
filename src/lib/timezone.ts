@@ -192,6 +192,89 @@ export function timezoneAbbreviation(timeZone: string, at: Date = new Date()): s
   return parts.find((p) => p.type === "timeZoneName")?.value ?? timeZone;
 }
 
+/** 12-hour studio time, uppercased (e.g. email subjects). */
+export function formatStudioTime12Upper(iso: string | Date): string {
+  const d = typeof iso === "string" ? new Date(iso) : iso;
+  return d
+    .toLocaleTimeString("en-ZA", {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+      timeZone: STUDIO_TIMEZONE,
+    })
+    .toUpperCase();
+}
+
+/** Studio calendar date without time (locale default shape). */
+export function formatStudioDateOnly(iso: string | Date): string {
+  const d = typeof iso === "string" ? new Date(iso) : iso;
+  return d.toLocaleDateString("en-ZA", { timeZone: STUDIO_TIMEZONE });
+}
+
+/** e.g. Mon, 22 May 2026 */
+export function formatStudioDateShort(
+  iso: string | Date,
+  options?: { weekday?: "short" | "long"; year?: boolean },
+): string {
+  const d = typeof iso === "string" ? new Date(iso) : iso;
+  return d.toLocaleDateString("en-ZA", {
+    weekday: options?.weekday ?? "short",
+    day: "numeric",
+    month: "short",
+    ...(options?.year ? { year: "numeric" } : {}),
+    timeZone: STUDIO_TIMEZONE,
+  });
+}
+
+/** e.g. 22 May 2026 */
+export function formatStudioDateNumeric(iso: string | Date): string {
+  const d = typeof iso === "string" ? new Date(iso) : iso;
+  return d.toLocaleDateString("en-ZA", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: STUDIO_TIMEZONE,
+  });
+}
+
+/** e.g. Monday, 22 May */
+export function formatStudioDateLong(iso: string | Date): string {
+  const d = typeof iso === "string" ? new Date(iso) : iso;
+  return d.toLocaleDateString("en-ZA", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    timeZone: STUDIO_TIMEZONE,
+  });
+}
+
+/** Reminder / booking email date line. */
+export function formatStudioEmailDate(iso: string | Date): string {
+  const d = typeof iso === "string" ? new Date(iso) : iso;
+  return d.toLocaleDateString("en-ZA", {
+    weekday: "short",
+    day: "numeric",
+    month: "long",
+    timeZone: STUDIO_TIMEZONE,
+  });
+}
+
+export function formatStudioDateTime(
+  iso: string | Date,
+  options?: Intl.DateTimeFormatOptions,
+): string {
+  const d = typeof iso === "string" ? new Date(iso) : iso;
+  return d.toLocaleString("en-ZA", {
+    timeZone: STUDIO_TIMEZONE,
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    ...options,
+  });
+}
+
 /** Class wall time for the member: studio time, plus local label when they differ. */
 export function formatClassDateTime(
   iso: string,

@@ -20,6 +20,7 @@ import { addDays, isSameDay, startOfDay } from "@/lib/format";
 import {
   civilAddDaysYmd,
   dayBoundsForDateKey,
+  formatStudioTime12Upper,
   STUDIO_TIMEZONE,
   ymdInTimeZone,
 } from "@/lib/timezone";
@@ -126,9 +127,7 @@ function one<T>(v: T | T[] | null | undefined): T | null {
 }
 
 function formatClassTime(iso: string) {
-  return new Date(iso)
-    .toLocaleTimeString("en-ZA", { hour: "numeric", minute: "2-digit", hour12: true })
-    .toUpperCase();
+  return formatStudioTime12Upper(iso);
 }
 
 function shortMemberName(first: string, last: string) {
