@@ -104,7 +104,10 @@ type ClassRow = {
   description: string | null;
   is_cancelled: boolean;
   product_id: string | null;
+  recurring_group_id: string | null;
 };
+
+type RecurringScope = "single" | "future";
 
 type GuideOption = GuideSelectRow;
 
@@ -301,6 +304,12 @@ function SchedulePage() {
   // Bulk dialogs
   const [bulkCancelOpen, setBulkCancelOpen] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [editingRecurringGroupId, setEditingRecurringGroupId] = useState<string | null>(null);
+  const [editingStartsAt, setEditingStartsAt] = useState<string | null>(null);
+  const [recurringScopeOpen, setRecurringScopeOpen] = useState(false);
+  const [recurringScopeAction, setRecurringScopeAction] = useState<"edit" | "bulk-reassign" | null>(
+    null,
+  );
 
   const editGuideSelectSyncRef = useRef<string | null>(null);
 
@@ -425,7 +434,7 @@ function SchedulePage() {
     const { data, error } = await supabase
       .from("classes")
       .select(
-        "id, name, class_type, location, starts_at, ends_at, capacity, booked_count, guide_id, guide_name, description, is_cancelled, product_id",
+        "id, name, class_type, location, starts_at, ends_at, capacity, booked_count, guide_id, guide_name, description, is_cancelled, product_id, recurring_group_id",
       )
       .order("starts_at", { ascending: true })
       .limit(2000);
@@ -730,6 +739,8 @@ function SchedulePage() {
     if (!canManage) return;
     setDialogMode("create");
     setEditingId(null);
+    setEditingRecurringGroupId(null);
+    setEditingStartsAt(null);
     resetForm();
     setDialogOpen(true);
   };
@@ -745,6 +756,8 @@ function SchedulePage() {
   const openEdit = async (c: ClassRow) => {
     setDialogMode("edit");
     setEditingId(c.id);
+    setEditingRecurringGroupId(c.recurring_group_id);
+    setEditingStartsAt(c.starts_at);
     setName(c.name);
     setClassType(c.class_type || "yoga");
     setLocation(c.location || "Studio 1");
@@ -800,9 +813,8 @@ function SchedulePage() {
     return true;
   };
 
-  const saveClass = async () => {
-    if (!canManage) return;
-    if (!validateForm()) return;
+  const performEditSave = async (scope: RecurringScope) => {
+    if (!canManage || !editingId) return;
     setSaving(true);
     const start = combineDateTimeLocal(dateStr, startTime);
     const end = combineDateTimeLocal(dateStr, endTime);
@@ -825,92 +837,167 @@ function SchedulePage() {
     const wantsTicket = ticketPrice != null;
 
     try {
-      if (editingId) {
-        if (linkedProductId && wantsTicket) {
-          await updateClassTicketProduct(supabase, linkedProductId, {
-            className: name.trim(),
-            classType,
-            priceZar: ticketPrice,
-            startsAt: start,
-            description: description.trim() || null,
-          });
-        } else if (linkedProductId && !wantsTicket) {
-          await supabase.from("classes").update({ product_id: null }).eq("id", editingId);
-        } else if (!linkedProductId && wantsTicket) {
-          const productId = await createClassTicketProduct(supabase, {
-            className: name.trim(),
-            classType,
-            priceZar: ticketPrice,
-            startsAt: start,
-            description: description.trim() || null,
-          });
-          const { error } = await supabase
-            .from("classes")
-            .update({ ...base, product_id: productId })
-            .eq("id", editingId);
-          if (error) throw error;
-          toast.success("Class updated with ticket product");
-          setDialogOpen(false);
-          setEditingId(null);
-          await load();
-          return;
-        }
+      if (linkedProductId && wantsTicket) {
+        await updateClassTicketProduct(supabase, linkedProductId, {
+          className: name.trim(),
+          classType,
+          priceZar: ticketPrice,
+          startsAt: start,
+          description: description.trim() || null,
+        });
+      } else if (linkedProductId && !wantsTicket) {
+        await supabase.from("classes").update({ product_id: null }).eq("id", editingId);
+      } else if (!linkedProductId && wantsTicket) {
+        const productId = await createClassTicketProduct(supabase, {
+          className: name.trim(),
+          classType,
+          priceZar: ticketPrice,
+          startsAt: start,
+          description: description.trim() || null,
+        });
+        const { error } = await supabase
+          .from("classes")
+          .update({ ...base, product_id: productId })
+          .eq("id", editingId);
+        if (error) throw error;
+        toast.success("Class updated with ticket product");
+        setDialogOpen(false);
+        setEditingId(null);
+        setEditingRecurringGroupId(null);
+        setEditingStartsAt(null);
+        await load();
+        return;
+      }
 
+      if (scope === "future" && editingRecurringGroupId && editingStartsAt) {
+        const shared = {
+          name: base.name,
+          class_type: base.class_type,
+          location: base.location,
+          capacity: base.capacity,
+          description: base.description,
+          guide_id: base.guide_id,
+          guide_name: base.guide_name,
+        };
+        const { error: seriesErr } = await supabase
+          .from("classes")
+          .update(shared)
+          .eq("recurring_group_id", editingRecurringGroupId)
+          .gte("starts_at", editingStartsAt)
+          .eq("is_cancelled", false);
+        if (seriesErr) throw seriesErr;
+
+        const { error: timeErr } = await supabase
+          .from("classes")
+          .update({ starts_at: base.starts_at, ends_at: base.ends_at })
+          .eq("id", editingId);
+        if (timeErr) throw timeErr;
+        toast.success("This and all future classes in the series updated");
+      } else {
         const { error } = await supabase.from("classes").update(base).eq("id", editingId);
         if (error) throw error;
         toast.success("Class updated");
-      } else {
-        const attachTicket = async (
-          occStart: Date,
-          occEnd: Date,
-        ): Promise<{ product_id: string | null }> => {
-          if (!wantsTicket) return { product_id: null };
-          const productId = await createClassTicketProduct(supabase, {
-            className: name.trim(),
-            classType,
-            priceZar: ticketPrice,
-            startsAt: occStart,
-            description: description.trim() || null,
-          });
-          return { product_id: productId };
-        };
+      }
 
-        if (repeatMode === "weekly") {
-          const weeks = Math.max(1, Math.min(52, Math.floor(Number(repeatWeeks)) || 1));
-          const durationMs = end.getTime() - start.getTime();
-          const recurringGroupId = globalThis.crypto.randomUUID();
-          const inserts = [];
-          for (let i = 0; i < weeks; i++) {
-            const occStart = new Date(start);
-            occStart.setDate(occStart.getDate() + i * 7);
-            const occEnd = new Date(occStart.getTime() + durationMs);
-            const ticket = await attachTicket(occStart, occEnd);
-            inserts.push({
-              ...base,
-              starts_at: occStart.toISOString(),
-              ends_at: occEnd.toISOString(),
-              recurring_group_id: recurringGroupId,
-              booked_count: 0,
-              is_cancelled: false,
-              ...ticket,
-            });
-          }
-          const { error } = await supabase.from("classes").insert(inserts);
-          if (error) throw error;
-          toast.success(
-            weeks === 1 ? "Class created" : `${weeks} weekly classes created`,
-          );
-        } else {
-          const ticket = await attachTicket(start, end);
-          const { error } = await supabase.from("classes").insert({
+      setDialogOpen(false);
+      setEditingId(null);
+      setEditingRecurringGroupId(null);
+      setEditingStartsAt(null);
+      await load();
+    } catch (e: unknown) {
+      console.error("class save failed", e);
+      toast.error(`Save failed: ${supabaseErrorMessage(e, "Save failed — please try again")}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveClass = async () => {
+    if (!canManage) return;
+    if (!validateForm()) return;
+
+    if (editingId) {
+      if (editingRecurringGroupId) {
+        setRecurringScopeAction("edit");
+        setRecurringScopeOpen(true);
+        return;
+      }
+      await performEditSave("single");
+      return;
+    }
+
+    setSaving(true);
+    const start = combineDateTimeLocal(dateStr, startTime);
+    const end = combineDateTimeLocal(dateStr, endTime);
+    const cap = Math.round(Number(capacity));
+    const { guide_id: gid, guide_name: gName } = resolveGuideIdAndName(guideId);
+
+    const base = {
+      name: name.trim(),
+      class_type: classType,
+      location,
+      starts_at: start.toISOString(),
+      ends_at: end.toISOString(),
+      capacity: cap,
+      description: description.trim() ? description.trim() : null,
+      guide_id: gid,
+      guide_name: gName,
+    };
+
+    const ticketPrice = parseTicketPriceZar(ticketPriceZar);
+    const wantsTicket = ticketPrice != null;
+
+    try {
+      const attachTicket = async (
+        occStart: Date,
+        occEnd: Date,
+      ): Promise<{ product_id: string | null }> => {
+        if (!wantsTicket) return { product_id: null };
+        const productId = await createClassTicketProduct(supabase, {
+          className: name.trim(),
+          classType,
+          priceZar: ticketPrice,
+          startsAt: occStart,
+          description: description.trim() || null,
+        });
+        return { product_id: productId };
+      };
+
+      if (repeatMode === "weekly") {
+        const weeks = Math.max(1, Math.min(52, Math.floor(Number(repeatWeeks)) || 1));
+        const durationMs = end.getTime() - start.getTime();
+        const recurringGroupId = globalThis.crypto.randomUUID();
+        const inserts = [];
+        for (let i = 0; i < weeks; i++) {
+          const occStart = new Date(start);
+          occStart.setDate(occStart.getDate() + i * 7);
+          const occEnd = new Date(occStart.getTime() + durationMs);
+          const ticket = await attachTicket(occStart, occEnd);
+          inserts.push({
             ...base,
+            starts_at: occStart.toISOString(),
+            ends_at: occEnd.toISOString(),
+            recurring_group_id: recurringGroupId,
             booked_count: 0,
             is_cancelled: false,
             ...ticket,
           });
-          if (error) throw error;
-          toast.success(wantsTicket ? "Class and ticket product created" : "Class created");
         }
+        const { error } = await supabase.from("classes").insert(inserts);
+        if (error) throw error;
+        toast.success(
+          weeks === 1 ? "Class created" : `${weeks} weekly classes created`,
+        );
+      } else {
+        const ticket = await attachTicket(start, end);
+        const { error } = await supabase.from("classes").insert({
+          ...base,
+          booked_count: 0,
+          is_cancelled: false,
+          ...ticket,
+        });
+        if (error) throw error;
+        toast.success(wantsTicket ? "Class and ticket product created" : "Class created");
       }
       setDialogOpen(false);
       setEditingId(null);
@@ -1032,27 +1119,76 @@ function SchedulePage() {
     await load();
   };
 
-  const applyBulkReassign = async () => {
+  const executeBulkReassign = async (scope: RecurringScope) => {
     if (!canManage || selected.size === 0) return;
     const { guide_id: gid, guide_name: gName } = resolveGuideIdAndName(guideId);
     setBulkBusy(true);
-    const ids = [...selected];
-    const { error } = await supabase
-      .from("classes")
-      .update({ guide_id: gid, guide_name: gName })
-      .in("id", ids);
-    setBulkBusy(false);
-    if (error) {
+    const selectedRows = rows.filter((r) => selected.has(r.id));
+    try {
+      if (scope === "single") {
+        const ids = [...selected];
+        const { error } = await supabase
+          .from("classes")
+          .update({ guide_id: gid, guide_name: gName })
+          .in("id", ids);
+        if (error) throw error;
+        toast.success(`Reassigned ${ids.length} class${ids.length === 1 ? "" : "es"}`);
+      } else {
+        for (const row of selectedRows) {
+          if (row.recurring_group_id) {
+            const { error } = await supabase
+              .from("classes")
+              .update({ guide_id: gid, guide_name: gName })
+              .eq("recurring_group_id", row.recurring_group_id)
+              .gte("starts_at", row.starts_at)
+              .eq("is_cancelled", false);
+            if (error) throw error;
+          }
+        }
+        const nonRecurringIds = selectedRows.filter((r) => !r.recurring_group_id).map((r) => r.id);
+        if (nonRecurringIds.length > 0) {
+          const { error } = await supabase
+            .from("classes")
+            .update({ guide_id: gid, guide_name: gName })
+            .in("id", nonRecurringIds);
+          if (error) throw error;
+        }
+        toast.success("Guide reassigned for this and all future classes in the series");
+      }
+      setDialogOpen(false);
+      setDialogMode("create");
+      setGuideId(GUIDE_DIALOG_NONE);
+      clearSelected();
+      await load();
+    } catch (error) {
       console.error("bulk reassign failed", error);
       toast.error(supabaseErrorMessage(error, "Could not reassign classes"));
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const applyBulkReassign = async () => {
+    if (!canManage || selected.size === 0) return;
+    const selectedRows = rows.filter((r) => selected.has(r.id));
+    const hasRecurring = selectedRows.some((r) => r.recurring_group_id);
+    if (hasRecurring) {
+      setRecurringScopeAction("bulk-reassign");
+      setRecurringScopeOpen(true);
       return;
     }
-    toast.success(`Reassigned ${ids.length} class${ids.length === 1 ? "" : "es"}`);
-    setDialogOpen(false);
-    setDialogMode("create");
-    setGuideId(GUIDE_DIALOG_NONE);
-    clearSelected();
-    await load();
+    await executeBulkReassign("single");
+  };
+
+  const handleRecurringScopeChoice = async (scope: RecurringScope) => {
+    setRecurringScopeOpen(false);
+    const action = recurringScopeAction;
+    setRecurringScopeAction(null);
+    if (action === "edit") {
+      await performEditSave(scope);
+    } else if (action === "bulk-reassign") {
+      await executeBulkReassign(scope);
+    }
   };
 
   return (
@@ -1775,6 +1911,46 @@ function SchedulePage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog
+        open={recurringScopeOpen}
+        onOpenChange={(o) => {
+          setRecurringScopeOpen(o);
+          if (!o) setRecurringScopeAction(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Apply changes to recurring series?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This class is part of a recurring series. Choose whether to update only this
+              occurrence or this class and all future classes in the series.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-col gap-2 sm:flex-row sm:justify-end">
+            <AlertDialogCancel disabled={saving || bulkBusy}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={saving || bulkBusy}
+              onClick={(e) => {
+                e.preventDefault();
+                void handleRecurringScopeChoice("single");
+              }}
+            >
+              This class only
+            </AlertDialogAction>
+            <AlertDialogAction
+              disabled={saving || bulkBusy}
+              className="bg-[#a3b693] text-white hover:bg-[#8fa67d]"
+              onClick={(e) => {
+                e.preventDefault();
+                void handleRecurringScopeChoice("future");
+              }}
+            >
+              This and all future classes in the series
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={!!deleteFromDialog} onOpenChange={(o) => !o && setDeleteFromDialog(null)}>
         <AlertDialogContent>
