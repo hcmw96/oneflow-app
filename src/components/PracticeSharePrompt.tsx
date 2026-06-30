@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Share2 } from "lucide-react";
 import { useAuth } from "@/contexts/auth";
 import { useTimezone } from "@/hooks/use-timezone";
-import { CLASS_REVIEW_FLOW_COMPLETE } from "@/lib/classReviews";
+import { CLASS_REVIEW_FLOW_COMPLETE, shouldOfferMemberPostClassPrompts } from "@/lib/classReviews";
 import type { ClassPracticeShareInput } from "@/lib/classPracticeShare";
 import {
   dismissShareForSession,
@@ -22,20 +22,21 @@ import {
 import { Button } from "@/components/ui/button";
 
 export function PracticeSharePrompt() {
-  const { user, authReady } = useAuth();
+  const { user, authReady, profile } = useAuth();
   const { timeZone, studioTimeZone } = useTimezone();
+  const memberPromptsEnabled = shouldOfferMemberPostClassPrompts(profile);
   const [pending, setPending] = useState<PendingPracticeShare | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [composerOpen, setComposerOpen] = useState(false);
   const [composerInput, setComposerInput] = useState<ClassPracticeShareInput | null>(null);
 
   const loadPending = useCallback(async () => {
-    if (!user?.id) {
+    if (!user?.id || !memberPromptsEnabled) {
       setPending(null);
       setDialogOpen(false);
       return;
     }
-    const next = await fetchPendingPracticeShare(user.id);
+    const next = await fetchPendingPracticeShare(user.id, profile);
     if (!next) {
       setPending(null);
       setDialogOpen(false);
@@ -43,12 +44,12 @@ export function PracticeSharePrompt() {
     }
     setPending(next);
     setDialogOpen(true);
-  }, [user?.id]);
+  }, [user?.id, profile, memberPromptsEnabled]);
 
   useEffect(() => {
-    if (!authReady) return;
+    if (!authReady || !memberPromptsEnabled) return;
     void loadPending();
-  }, [authReady, loadPending]);
+  }, [authReady, memberPromptsEnabled, loadPending]);
 
   useEffect(() => {
     const onReviewDone = () => {

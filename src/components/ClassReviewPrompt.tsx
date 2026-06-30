@@ -18,6 +18,7 @@ import {
   dismissClassReview,
   fetchPendingClassReview,
   reviewDismissed,
+  shouldOfferMemberPostClassPrompts,
   submitClassReview,
   type PendingClassReview,
 } from "@/lib/classReviews";
@@ -53,36 +54,22 @@ function StarRow({
 }
 
 export function ClassReviewPrompt() {
-  const { user, authReady } = useAuth();
+  const { user, authReady, profile, profileReady } = useAuth();
   const [pending, setPending] = useState<PendingClassReview | null>(null);
   const [open, setOpen] = useState(false);
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const dismissedRef = useRef<Set<string>>(new Set());
-  const pendingRef = useRef<PendingClassReview | null>(null);
   const openRef = useRef(false);
-  const checkedRef = useRef(false);
 
-  useEffect(() => {
-    pendingRef.current = pending;
-  }, [pending]);
+  const memberPromptsEnabled = shouldOfferMemberPostClassPrompts(profile);
 
   useEffect(() => {
     openRef.current = open;
   }, [open]);
 
-  useEffect(() => {
-    return () => {
-      const row = pendingRef.current;
-      if (row && openRef.current) {
-        dismissClassReview(row.bookingId);
-      }
-    };
-  }, []);
-
   const loadPending = useCallback(async () => {
-    if (!user?.id) {
+    if (!user?.id || !memberPromptsEnabled) {
       setPending(null);
       setOpen(false);
       return;
@@ -90,28 +77,26 @@ export function ClassReviewPrompt() {
     if (openRef.current) return;
 
     const next = await fetchPendingClassReview(user.id);
-    if (!next || reviewDismissed(next.bookingId) || dismissedRef.current.has(next.bookingId)) {
+    if (!next || reviewDismissed(next.bookingId)) {
       setPending(null);
       setOpen(false);
       return;
     }
-    dismissedRef.current.add(next.bookingId);
+
     setPending(next);
     setRating(0);
     setComment("");
     setOpen(true);
-  }, [user?.id]);
+  }, [user?.id, memberPromptsEnabled]);
 
   useEffect(() => {
-    if (!authReady || !user?.id || checkedRef.current) return;
-    checkedRef.current = true;
+    if (!authReady || !profileReady || !user?.id) return;
     void loadPending();
-  }, [authReady, user?.id, loadPending]);
+  }, [authReady, profileReady, user?.id, memberPromptsEnabled, loadPending]);
 
   const close = (bookingId: string | null, dismissed: boolean) => {
-    if (bookingId) {
-      dismissedRef.current.add(bookingId);
-      if (dismissed) dismissClassReview(bookingId);
+    if (bookingId && dismissed) {
+      dismissClassReview(bookingId);
     }
     openRef.current = false;
     setOpen(false);
@@ -147,7 +132,7 @@ export function ClassReviewPrompt() {
     );
   };
 
-  if (!pending) return null;
+  if (!memberPromptsEnabled || !pending) return null;
 
   return (
     <Dialog

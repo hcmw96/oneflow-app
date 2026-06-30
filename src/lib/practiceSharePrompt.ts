@@ -1,4 +1,4 @@
-import { reviewDismissed } from "@/lib/classReviews";
+import { reviewDismissed, shouldOfferMemberPostClassPrompts } from "@/lib/classReviews";
 import { supabase } from "@/lib/supabase";
 
 const SHARE_DISMISS_KEY = "oneflow:practice-share-dismissed";
@@ -52,7 +52,10 @@ export function markShareCompletedForSession(bookingId: string): void {
 /** Most recently ended attended booking eligible for a story-share prompt. */
 export async function fetchPendingPracticeShare(
   profileId: string,
+  profile?: { role: string | null; secondary_roles?: string[] | null } | null,
 ): Promise<PendingPracticeShare | null> {
+  if (profile && !shouldOfferMemberPostClassPrompts(profile)) return null;
+
   const nowMs = Date.now();
   const nowIso = new Date(nowMs).toISOString();
 

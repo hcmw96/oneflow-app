@@ -1,7 +1,11 @@
 import { supabase } from "@/lib/supabase";
+import { canEnterAdminArea, type AdminRoleProfile } from "@/lib/adminMarketingAccess";
 
 const REVIEW_DISMISS_KEY = "oneflow:class-review-dismissed";
 const REVIEW_DISMISS_SESSION_KEY = "oneflow:class-review-dismissed-session";
+
+/** Only prompt shortly after class ends (same window as practice-share). */
+export const CLASS_REVIEW_PROMPT_WINDOW_MS = 48 * 60 * 60 * 1000;
 
 function readDismissedIds(): string[] {
   const ids = new Set<string>();
@@ -51,6 +55,14 @@ export function dismissClassReview(bookingId: string): void {
 
 export const CLASS_REVIEW_FLOW_COMPLETE = "oneflow:class-review-flow-complete";
 
+/** Member-only post-class prompts — never for staff/admin roles (incl. front-desk check-in tests). */
+export function shouldOfferMemberPostClassPrompts(
+  profile: AdminRoleProfile | null | undefined,
+): boolean {
+  if (!profile) return false;
+  return !canEnterAdminArea(profile);
+}
+
 export type PendingClassReview = {
   bookingId: string;
   classId: string;
@@ -59,11 +71,12 @@ export type PendingClassReview = {
   endsAt: string;
 };
 
-/** Most recently ended attended booking without a review. */
+/** Most recently ended attended booking without a review (within prompt window). */
 export async function fetchPendingClassReview(
   profileId: string,
 ): Promise<PendingClassReview | null> {
-  const nowIso = new Date().toISOString();
+  const nowMs = Date.now();
+  const nowIso = new Date(nowMs).toISOString();
 
   const { data: bookings, error } = await supabase
     .from("bookings")
@@ -93,6 +106,8 @@ export async function fetchPendingClassReview(
     const c = cls as Record<string, unknown>;
     const endsAt = String(c.ends_at ?? "");
     if (!endsAt || endsAt > nowIso) continue;
+    const endedMs = new Date(endsAt).getTime();
+    if (Number.isNaN(endedMs) || nowMs - endedMs > CLASS_REVIEW_PROMPT_WINDOW_MS) continue;
     candidates.push({
       bookingId: String(raw.id),
       classId: String(raw.class_id),
