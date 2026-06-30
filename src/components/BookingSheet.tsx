@@ -14,10 +14,13 @@ import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { cn } from "@/lib/utils";
 import {
   classSkipsPayment,
+  customerClassCapacityLabel,
   fetchBookableProductCatalog,
   fetchConfirmedBookingIntervals,
   findOverlappingBooking,
+  isComplimentaryClassTicket,
   isPastScheduleClass,
+  isPurchasableClassTicketPrice,
   overlapBookingMessage,
 } from "@/lib/scheduleBooking";
 import {
@@ -129,6 +132,7 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
   const [waitlistEntry, setWaitlistEntry] = useState<WaitlistEntry | null>(null);
   const [waitlistBusy, setWaitlistBusy] = useState(false);
   const [isFreeClass, setIsFreeClass] = useState(false);
+  const [isComplimentaryClass, setIsComplimentaryClass] = useState(false);
   const [challengeConfig, setChallengeConfig] =
     useState<MovementChallengeConfig>(DEFAULT_MOVEMENT_CHALLENGE);
   const [classTicketProduct, setClassTicketProduct] = useState<{
@@ -162,6 +166,7 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
       setUserEmail(user.email ?? null);
 
       setIsFreeClass(false);
+      setIsComplimentaryClass(false);
       setClassTicketProduct(null);
 
       const ticketPromise = session.product_id
@@ -183,15 +188,19 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
         ticketRow && typeof ticketRow.price_zar === "number" ? ticketRow : null;
       setClassTicketProduct(ticket);
 
-      const skipPayment =
-        classSkipsPayment(session.class_type, catalog) ||
-        (ticket != null && ticket.price_zar <= 0);
+      const skipPayment = classSkipsPayment(session.class_type, catalog);
+      const complimentaryTicket = isComplimentaryClassTicket(
+        ticket?.price_zar,
+        session.class_type,
+      );
       console.info("[BookingSheet] payment check on open", {
         classId: session.id,
         classType: session.class_type,
         skipPayment,
+        complimentaryTicket,
       });
       setIsFreeClass(skipPayment);
+      setIsComplimentaryClass(complimentaryTicket);
 
       const addonPromise = supabase
         .from("products")
@@ -316,6 +325,7 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
   if (!session) return null;
 
   const classIsPast = isPastScheduleClass(session.starts_at);
+  const capacityInfo = customerClassCapacityLabel(session.booked_count, session.capacity);
   const spots = Math.max(0, session.capacity - session.booked_count);
   const dateLine = formatStudioDateLong(session.starts_at);
   const timeLine = formatStudioTime12Upper(session.starts_at);
@@ -326,7 +336,13 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
     challengeConfig.enabled &&
     ["yoga", "sauna_journey"].includes(session.class_type) &&
     isClassDateInChallenge(classDateFromStartsAtIso(session.starts_at), challengeConfig);
-  const isPaidClassTicket = Boolean(classTicketProduct && classTicketProduct.price_zar > 0);
+  const isPaidClassTicket = Boolean(
+    classTicketProduct && isPurchasableClassTicketPrice(classTicketProduct.price_zar),
+  );
+  const showHireAddons =
+    !isFreeClass &&
+    !isPaidClassTicket &&
+    !["sauna_journey", "wellzone"].includes(session.class_type.trim().toLowerCase());
   const needsTicketPurchase = isPaidClassTicket && !selectedCredit;
   const pointsValue = Math.floor(flowPoints / 100) * 10;
 
@@ -394,6 +410,10 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
 
   const confirm = async () => {
     if (!userId || !session) return;
+    if (isComplimentaryClass) {
+      toast.error("This class is complimentary and can only be assigned by the studio team.");
+      return;
+    }
     if (needsTicketPurchase) {
       await buyClassTicketAndBook();
       return;
@@ -531,6 +551,10 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
 
   const buyClassTicketAndBook = async () => {
     if (!userId || !session || !classTicketProduct) return;
+    if (!isPurchasableClassTicketPrice(classTicketProduct.price_zar)) {
+      toast.error("This class is complimentary and cannot be purchased online.");
+      return;
+    }
     if (classIsPast) {
       toast.error("This class has already passed — you can’t book it.");
       return;
@@ -573,6 +597,10 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
 
   const joinClassWaitlist = async () => {
     if (!userId || !session) return;
+    if (isComplimentaryClass) {
+      toast.error("This class is complimentary and can only be assigned by the studio team.");
+      return;
+    }
     if (classIsPast) {
       toast.error("This class has already passed.");
       return;
@@ -868,10 +896,11 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
               <li className="flex items-center gap-2.5">
                 <MapPin className="h-4 w-4" /> {session.location}
               </li>
-              <li className="flex items-center gap-2.5">
-                <Users className="h-4 w-4" />{" "}
-                {spots === 0 ? "Class is full" : `${spots} spots available`}
-              </li>
+              {capacityInfo.message ? (
+                <li className="flex items-center gap-2.5">
+                  <Users className="h-4 w-4" /> {capacityInfo.message}
+                </li>
+              ) : null}
             </ul>
 
             {countsTowardChallenge && (
@@ -887,14 +916,23 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
                   Event ticket · {formatTicketPriceLabel(classTicketProduct.price_zar)}
                 </p>
                 <p className="mt-0.5 text-muted-foreground">
-                  {classTicketProduct.price_zar > 0
-                    ? "Purchase this ticket to book — one credit per person."
-                    : "Free ticket — tap Book to reserve your spot."}
+                  {isComplimentaryClass
+                    ? "Complimentary — contact the studio to be added to this class."
+                    : classTicketProduct.price_zar > 0
+                      ? "Purchase this ticket to book — one credit per person."
+                      : "Free ticket — tap Book to reserve your spot."}
                 </p>
               </div>
             ) : null}
 
-            {!isFreeClass &&
+            {isComplimentaryClass ? (
+              <div className="mt-6 rounded-2xl border border-dashed border-border bg-card p-4 text-center text-sm text-muted-foreground">
+                This is a complimentary class. It cannot be booked online — please contact the
+                studio team.
+              </div>
+            ) : null}
+
+            {!isComplimentaryClass &&
               (credits.length === 0 && !isPaidClassTicket ? (
               <div className="mt-6 rounded-2xl border border-dashed border-border bg-card p-4 text-center text-sm text-muted-foreground">
                 No eligible credits for this class.{" "}
@@ -974,7 +1012,7 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
               </button>
             )}
 
-            {!isFreeClass && !isPaidClassTicket && (hireAddons.mat || hireAddons.towel) && (
+            {!isComplimentaryClass && !isFreeClass && !isPaidClassTicket && showHireAddons && (hireAddons.mat || hireAddons.towel) && (
               <>
                 <p className="mt-6 text-sm font-semibold">Add-ons for this class:</p>
                 <div className="mt-2 flex flex-wrap gap-2">
@@ -1058,6 +1096,16 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
                   type="button"
                   onClick={() => onOpenChange(false)}
                   className="mt-2 w-full rounded-xl py-3 text-sm font-medium text-muted-foreground"
+                >
+                  Close
+                </button>
+              </>
+            ) : isComplimentaryClass ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => onOpenChange(false)}
+                  className="mt-6 w-full rounded-xl border border-border bg-card py-3.5 text-sm font-semibold"
                 >
                   Close
                 </button>
