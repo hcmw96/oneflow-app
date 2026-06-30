@@ -173,6 +173,11 @@ export default function SchedulePage() {
   const [pendingOpenClassId, setPendingOpenClassId] = useState<string | null>(null);
   const [daySlide, setDaySlide] = useState<"from-left" | "from-right" | null>(null);
   const classesCacheRef = useRef(new Map<string, ClassRow[]>());
+  const dayMetaCacheRef = useRef(new Map<string, { total: number; visible: number }>());
+  const [dayMeta, setDayMeta] = useState({ total: 0, visible: 0 });
+  const lastStudioTodayRef = useRef(todayDateKey(studioTimeZone));
+  const selectedDateKeyRef = useRef(selectedDateKey);
+  selectedDateKeyRef.current = selectedDateKey;
 
   const goPrevDay = useCallback(() => {
     setDaySlide("from-left");
@@ -192,11 +197,38 @@ export default function SchedulePage() {
     return () => window.clearTimeout(t);
   }, [daySlide, selectedDateKey]);
 
+  useEffect(() => {
+    const syncStudioDay = () => {
+      const studioToday = todayDateKey(studioTimeZone);
+      const prevToday = lastStudioTodayRef.current;
+      if (studioToday === prevToday) return;
+      lastStudioTodayRef.current = studioToday;
+      classesCacheRef.current.clear();
+      dayMetaCacheRef.current.clear();
+      if (selectedDateKeyRef.current === prevToday) {
+        setSelectedDateKey(studioToday);
+        setDaySlide(null);
+      }
+    };
+    syncStudioDay();
+    const intervalId = window.setInterval(syncStudioDay, 60_000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") syncStudioDay();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [studioTimeZone]);
+
   const loadDayData = useCallback(
     async (dateKey: string, uid: string) => {
     const cached = classesCacheRef.current.get(dateKey);
+    const cachedMeta = dayMetaCacheRef.current.get(dateKey);
     if (cached !== undefined) {
       setClasses(cached);
+      setDayMeta(cachedMeta ?? { total: cached.length, visible: cached.length });
       setLoading(false);
       setRevalidating(true);
     } else {
@@ -240,9 +272,12 @@ export default function SchedulePage() {
       .sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime());
 
     const visible = mapped.filter((c) => !isPastScheduleClass(c.starts_at, nowT));
+    const meta = { total: mapped.length, visible: visible.length };
 
     classesCacheRef.current.set(dateKey, visible);
+    dayMetaCacheRef.current.set(dateKey, meta);
     setClasses(visible);
+    setDayMeta(meta);
     setBookedClassIds(new Set(nextIntervals.map((b) => b.class_id)));
     setBookedIntervals(nextIntervals);
     setWaitlistedClassIds(new Set(waitlistEntries.map((w) => w.classId)));
@@ -420,18 +455,27 @@ export default function SchedulePage() {
 
       <main
         className={cn(
-          "flex-1 space-y-5 px-5 pt-5 transition-opacity",
+          "flex-1 space-y-5 px-5 pt-3 transition-opacity",
           revalidating && "opacity-80",
         )}
       >
-        <h2
-          className={cn(
-            "font-display text-lg font-bold",
-            selectedDayIsPast && "text-muted-foreground",
+        <div className="sticky top-0 z-10 -mx-5 border-b border-border bg-background/95 px-5 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+          <p
+            className={cn(
+              "text-center font-display text-xl font-bold leading-tight",
+              selectedDayIsPast && "text-muted-foreground",
+            )}
+          >
+            {longDayLabel}
+          </p>
+          {selectedDateKey === todayKey ? (
+            <p className="mt-0.5 text-center text-xs font-medium text-[#4a6b3c]">Today</p>
+          ) : selectedDateKey > todayKey ? (
+            <p className="mt-0.5 text-center text-xs text-muted-foreground">Upcoming</p>
+          ) : (
+            <p className="mt-0.5 text-center text-xs text-muted-foreground">Past</p>
           )}
-        >
-          {longDayLabel}
-        </h2>
+        </div>
         <div
           key={selectedDateKey}
           className={cn(
@@ -448,7 +492,22 @@ export default function SchedulePage() {
             <ScheduleRowsSkeleton />
           ) : classes.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-border bg-card/50 p-8 text-center text-sm text-muted-foreground">
-              No classes scheduled for this day.
+              {dayMeta.total > 0 ? (
+                <>
+                  <p>All classes for this day have finished.</p>
+                  {selectedDateKey === todayKey ? (
+                    <button
+                      type="button"
+                      className="mt-3 font-semibold text-[#4a6b3c] underline underline-offset-2"
+                      onClick={goNextDay}
+                    >
+                      View {formatLongDayFromDateKey(civilAddDaysYmd(selectedDateKey, 1), studioTimeZone)}
+                    </button>
+                  ) : null}
+                </>
+              ) : (
+                <p>No classes scheduled for this day.</p>
+              )}
             </div>
           ) : (
             classes.map((c) => {
