@@ -93,6 +93,42 @@ export function overlapBookingMessage(conflict: BookedClassInterval): string {
 /** Minutes after class start before it is treated as past (no new bookings). */
 export const CLASS_BOOKING_GRACE_MS = 15 * 60 * 1000;
 
+/** Customer-facing capacity messaging (no exact counts below 80% fill). */
+export const CUSTOMER_ALMOST_FULL_RATIO = 0.8;
+
+export function customerClassCapacityLabel(
+  bookedCount: number,
+  capacity: number,
+): { full: boolean; almostFull: boolean; message: string | null } {
+  const cap = Math.max(0, capacity);
+  const booked = Math.max(0, bookedCount);
+  if (cap <= 0) {
+    return { full: false, almostFull: false, message: null };
+  }
+  const full = booked >= cap;
+  const ratio = booked / cap;
+  const almostFull = !full && ratio >= CUSTOMER_ALMOST_FULL_RATIO;
+  if (full) return { full: true, almostFull: false, message: "Class is full" };
+  if (almostFull) {
+    return { full: false, almostFull: true, message: "Almost full — secure your spot" };
+  }
+  return { full: false, almostFull: false, message: null };
+}
+
+/** True when a class ticket product is complimentary (admin-assigned, not customer-purchasable). */
+export function isComplimentaryClassTicket(
+  priceZar: number | null | undefined,
+  classType: string | null | undefined,
+): boolean {
+  const price = Number(priceZar ?? 0);
+  if (price > 0) return false;
+  return !isFreeBeginnerClass(classType);
+}
+
+export function isPurchasableClassTicketPrice(priceZar: number | null | undefined): boolean {
+  return Number(priceZar ?? 0) > 0;
+}
+
 /** Calendar day before studio “today” (YYYY-MM-DD in studio TZ). */
 export function isPastScheduleDay(dayKey: string, timeZone: string = STUDIO_TIMEZONE): boolean {
   return isPastDateKey(dayKey, timeZone);
