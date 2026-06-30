@@ -6,19 +6,35 @@ const YOCO_PLACEHOLDER_IDS = new Set([
   "manual_component",
 ]);
 
-/** Yoco checkout ID (ch_…) for cross-reference with Yoco CSV "Online Reference". */
+function normalizedYocoId(raw: string | null | undefined): string {
+  return String(raw ?? "").trim();
+}
+
+/** Yoco checkout ID (ch_…) — Yoco CSV "Online Reference". */
 export function yocoCheckoutId(raw: string | null | undefined): string | null {
-  const t = String(raw ?? "").trim();
+  const t = normalizedYocoId(raw);
+  if (!t || YOCO_PLACEHOLDER_IDS.has(t)) return null;
+  return t.startsWith("ch_") ? t : null;
+}
+
+/** Yoco payment reference — Yoco CSV "Reference" / receipt # (often paymentId, not ch_). */
+export function yocoReferenceId(raw: string | null | undefined): string | null {
+  const t = normalizedYocoId(raw);
+  if (!t || YOCO_PLACEHOLDER_IDS.has(t)) return null;
+  return t.startsWith("ch_") ? null : t;
+}
+
+/** Any stored Yoco id (checkout or reference) for search/export. */
+export function yocoStoredPaymentId(raw: string | null | undefined): string | null {
+  const t = normalizedYocoId(raw);
   if (!t || YOCO_PLACEHOLDER_IDS.has(t)) return null;
   return t;
 }
 
 export function isRecordedYocoPayment(raw: string | null | undefined): boolean {
-  const t = String(raw ?? "").trim();
-  return Boolean(t) && !YOCO_PLACEHOLDER_IDS.has(t);
+  return yocoStoredPaymentId(raw) != null;
 }
 
 export function isYocoCheckoutPlaceholder(raw: string | null | undefined): boolean {
-  const t = String(raw ?? "").trim();
-  return t === "yoco_checkout";
+  return normalizedYocoId(raw) === "yoco_checkout";
 }

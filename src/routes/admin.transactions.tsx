@@ -42,8 +42,9 @@ import {
   isRecordedYocoPayment,
   isYocoCheckoutPlaceholder,
   yocoCheckoutId,
+  yocoReferenceId,
 } from "@/lib/yocoDisplay";
-import { CopyableCheckoutId } from "@/components/admin/CopyableCheckoutId";
+import { CopyableYocoId } from "@/components/admin/CopyableCheckoutId";
 
 export const Route = createFileRoute("/admin/transactions")({
   head: () => ({ meta: [{ title: "Transactions — One Flow Admin" }] }),
@@ -200,7 +201,8 @@ function TransactionsPage() {
     const ql = q.trim().toLowerCase();
     let out = rows.filter((r) => {
       if (ql) {
-        const hay = `${r.memberName} ${r.productName} ${r.yocoPaymentId ?? ""}`.toLowerCase();
+        const hay =
+          `${r.memberName} ${r.productName} ${r.yocoPaymentId ?? ""} ${yocoCheckoutId(r.yocoPaymentId) ?? ""} ${yocoReferenceId(r.yocoPaymentId) ?? ""}`.toLowerCase();
         if (!hay.includes(ql)) return false;
       }
       if (methodFilter !== "all" && r.paymentMethod !== methodFilter) return false;
@@ -298,6 +300,7 @@ function TransactionsPage() {
       "Amount (ZAR)",
       "Payment method",
       "Yoco checkout ID (Online Reference)",
+      "Yoco reference ID",
     ];
     const body = filteredSorted.map((r) => [
       formatDate(r.date),
@@ -306,6 +309,7 @@ function TransactionsPage() {
       r.amount.toString(),
       r.paymentMethod,
       yocoCheckoutId(r.yocoPaymentId) ?? "",
+      yocoReferenceId(r.yocoPaymentId) ?? "",
     ]);
     downloadCsv(`transactions-${new Date().toISOString().slice(0, 10)}.csv`, [header, ...body]);
   };
@@ -399,14 +403,15 @@ function TransactionsPage() {
             <p className="text-sm text-muted-foreground">No transactions match your filters.</p>
           </div>
         ) : (
-          <table className="w-full min-w-[960px] text-sm">
+          <table className="w-full min-w-[1100px] text-sm">
             <thead className="bg-muted/40">
               <tr className="text-left text-xs uppercase tracking-wider text-muted-foreground">
                 <th className="px-5 py-3 font-medium">Date</th>
                 <th className="px-5 py-3 font-medium">Buyer</th>
                 <th className="px-5 py-3 font-medium">Product</th>
                 <th className="px-5 py-3 font-medium">Amount</th>
-                <th className="px-5 py-3 font-medium">Yoco checkout ID</th>
+                <th className="px-5 py-3 font-medium">Checkout ID</th>
+                <th className="px-5 py-3 font-medium">Reference ID</th>
                 <th className="px-5 py-3 font-medium">Method</th>
                 <th className="px-5 py-3 font-medium text-right">Refund</th>
               </tr>
@@ -414,7 +419,8 @@ function TransactionsPage() {
             <tbody>
               {pageRows.map((r) => {
                 const checkoutId = yocoCheckoutId(r.yocoPaymentId);
-                const yocoRecorded = isRecordedYocoPayment(r.yocoPaymentId);
+                const referenceId = yocoReferenceId(r.yocoPaymentId);
+                const hasYocoIds = isRecordedYocoPayment(r.yocoPaymentId);
                 return (
                 <tr
                   key={r.id}
@@ -434,24 +440,39 @@ function TransactionsPage() {
                   >
                     {formatRand(r.amount)}
                   </td>
-                  <td className="max-w-[220px] px-5 py-3">
+                  <td className="max-w-[200px] px-5 py-3">
                     {checkoutId ? (
+                      <CopyableYocoId
+                        id={checkoutId}
+                        label="Checkout ID"
+                        csvColumn="Online Reference"
+                      />
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </td>
+                  <td className="max-w-[200px] px-5 py-3">
+                    {referenceId ? (
                       <div className="flex flex-col gap-1">
-                        <CopyableCheckoutId id={checkoutId} />
-                        {yocoRecorded && !checkoutId.startsWith("ch_") ? (
-                          <a
-                            href={`https://portal.yoco.com/payments/${r.yocoPaymentId}`}
-                            target="_blank"
-                            rel="noreferrer noopener"
-                            className="inline-flex items-center gap-1 text-[10px] font-medium text-[#a3b693] hover:underline"
-                          >
-                            View in Yoco
-                            <ExternalLink className="h-3 w-3" />
-                          </a>
-                        ) : null}
+                        <CopyableYocoId
+                          id={referenceId}
+                          label="Reference ID"
+                          csvColumn="Reference"
+                        />
+                        <a
+                          href={`https://portal.yoco.com/payments/${referenceId}`}
+                          target="_blank"
+                          rel="noreferrer noopener"
+                          className="inline-flex items-center gap-1 text-[10px] font-medium text-[#a3b693] hover:underline"
+                        >
+                          View in Yoco
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
                       </div>
+                    ) : hasYocoIds && checkoutId ? (
+                      <span className="text-xs text-muted-foreground">After payment</span>
                     ) : r.paymentMethod === "yoco" || isYocoCheckoutPlaceholder(r.yocoPaymentId) ? (
-                      <span className="text-xs text-amber-800">ID not captured</span>
+                      <span className="text-xs text-amber-800">Not captured</span>
                     ) : (
                       <span className="text-xs text-muted-foreground">—</span>
                     )}

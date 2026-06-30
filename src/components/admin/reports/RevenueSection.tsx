@@ -12,7 +12,7 @@ import {
   YAxis,
 } from "recharts";
 import { Banknote, Coins, CreditCard, Download, TrendingUp } from "lucide-react";
-import { CopyableCheckoutId } from "@/components/admin/CopyableCheckoutId";
+import { CopyableYocoId } from "@/components/admin/CopyableCheckoutId";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatCard } from "@/components/admin/StatCard";
@@ -24,7 +24,7 @@ import {
 import { downloadReportCsv } from "@/lib/reportsCsv";
 import { jhbDateKey, type PeriodBounds } from "@/lib/reportsPeriod";
 import { formatStudioDateTime } from "@/lib/timezone";
-import { yocoCheckoutId } from "@/lib/yocoDisplay";
+import { yocoCheckoutId, yocoReferenceId } from "@/lib/yocoDisplay";
 import { cn } from "@/lib/utils";
 
 const SAGE = "#a3b693";
@@ -345,6 +345,7 @@ export function RevenueSection({ bounds }: { bounds: PeriodBounds }) {
       "Product",
       "Amount (ZAR)",
       "Yoco checkout ID (Online Reference)",
+      "Yoco reference ID",
     ];
     const body = state.onlinePurchases.map((p) => [
       formatStudioDateTime(p.purchasedAt),
@@ -352,6 +353,7 @@ export function RevenueSection({ bounds }: { bounds: PeriodBounds }) {
       p.productName,
       Math.round(p.amount),
       yocoCheckoutId(p.yocoPaymentId) ?? "",
+      yocoReferenceId(p.yocoPaymentId) ?? "",
     ]);
     downloadReportCsv(
       `online-purchases-${new Date().toISOString().slice(0, 10)}.csv`,
@@ -408,7 +410,7 @@ export function RevenueSection({ bounds }: { bounds: PeriodBounds }) {
       <p className="mt-3 text-xs text-muted-foreground">
         Total = online (Yoco / app purchases) + offline POS sales. Refunded credits are excluded.
         Outstanding liability values unused, non-expired credits at the per-credit pack price; unlimited passes are flat-fee and excluded.
-        Online purchase rows below are the studio source of truth for who bought what — use the checkout ID to match Yoco&apos;s CSV &quot;Online Reference&quot; column.
+        Online purchase rows below are the studio source of truth for who bought what. Match Yoco&apos;s CSV <strong>Online Reference</strong> to checkout ID (<code className="text-[10px]">ch_…</code>) and <strong>Reference</strong> to reference ID.
       </p>
 
       {/* Online vs offline split */}
@@ -553,19 +555,21 @@ export function RevenueSection({ bounds }: { bounds: PeriodBounds }) {
           <p className="py-8 text-center text-sm text-muted-foreground">No online sales in this period.</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px] text-sm">
+            <table className="w-full min-w-[860px] text-sm">
               <thead className="text-left text-[10px] uppercase tracking-wider text-muted-foreground">
                 <tr>
                   <th className="px-2 py-2 font-medium">Date</th>
                   <th className="px-2 py-2 font-medium">Buyer</th>
                   <th className="px-2 py-2 font-medium">Product</th>
                   <th className="px-2 py-2 font-medium">Amount</th>
-                  <th className="px-2 py-2 font-medium">Yoco checkout ID</th>
+                  <th className="px-2 py-2 font-medium">Checkout ID</th>
+                  <th className="px-2 py-2 font-medium">Reference ID</th>
                 </tr>
               </thead>
               <tbody>
                 {state.onlinePurchases.map((p) => {
                   const checkoutId = yocoCheckoutId(p.yocoPaymentId);
+                  const referenceId = yocoReferenceId(p.yocoPaymentId);
                   return (
                     <tr key={p.id} className="border-t border-[#c5d4b8]/40">
                       <td className="whitespace-nowrap px-2 py-2.5 tabular-nums text-muted-foreground">
@@ -582,9 +586,26 @@ export function RevenueSection({ bounds }: { bounds: PeriodBounds }) {
                       </td>
                       <td className="px-2 py-2.5">
                         {checkoutId ? (
-                          <CopyableCheckoutId id={checkoutId} />
+                          <CopyableYocoId
+                            id={checkoutId}
+                            label="Checkout ID"
+                            csvColumn="Online Reference"
+                          />
                         ) : (
-                          <span className="text-xs text-amber-800">ID not captured</span>
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </td>
+                      <td className="px-2 py-2.5">
+                        {referenceId ? (
+                          <CopyableYocoId
+                            id={referenceId}
+                            label="Reference ID"
+                            csvColumn="Reference"
+                          />
+                        ) : checkoutId ? (
+                          <span className="text-xs text-muted-foreground">After payment</span>
+                        ) : (
+                          <span className="text-xs text-amber-800">Not captured</span>
                         )}
                       </td>
                     </tr>
