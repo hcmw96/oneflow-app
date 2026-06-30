@@ -23,6 +23,7 @@ import {
 } from "@/lib/timezone";
 import {
   type BookedClassInterval,
+  customerClassCapacityLabel,
   fetchConfirmedBookingIntervals,
   findOverlappingBooking,
   isFreeBeginnerClass,
@@ -597,8 +598,9 @@ function ScheduleRow({
   const durationMin = Math.round(
     (new Date(session.ends_at).getTime() - new Date(session.starts_at).getTime()) / 60000,
   );
-  const full = session.booked_count >= session.capacity;
-  const almostFull = session.booked_count / session.capacity >= 0.8;
+  const capacityInfo = customerClassCapacityLabel(session.booked_count, session.capacity);
+  const full = capacityInfo.full;
+  const almostFull = capacityInfo.almostFull;
   const hasOverlap = Boolean(overlapBooking);
   const canReserve = !isPast && !alreadyBooked && !full && !hasOverlap;
   // When full + not booked + no overlap, the button opens the sheet to
@@ -623,7 +625,7 @@ function ScheduleRow({
             )}
             {almostFull && !full && !isPast && (
               <span className="inline-flex rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-semibold text-orange-700">
-                Almost Full
+                Almost full — secure your spot
               </span>
             )}
           </div>

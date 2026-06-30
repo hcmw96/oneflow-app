@@ -7,6 +7,7 @@ import { formatTime, formatRand } from "@/lib/format";
 import { formatStudioDateShort } from "@/lib/timezone";
 import { cn } from "@/lib/utils";
 import { getUser, supabase } from "@/lib/supabase";
+import { customerClassCapacityLabel } from "@/lib/scheduleBooking";
 import { displayClassType } from "@/types/studio";
 
 export const Route = createFileRoute("/class/$classId")({
@@ -106,8 +107,8 @@ function ClassDetailPage() {
   const durationMin = Math.round(
     (new Date(session.ends_at).getTime() - startsAt.getTime()) / 60000,
   );
-  const fillRatio = session.booked_count / Math.max(1, session.capacity);
-  const full = fillRatio >= 1;
+  const capacityInfo = customerClassCapacityLabel(session.booked_count, session.capacity);
+  const full = capacityInfo.full;
   const addOns = (mat ? 4000 : 0) + (towel ? 2500 : 0);
 
   const guideName = session.guide_name?.trim() || null;
@@ -155,9 +156,9 @@ function ClassDetailPage() {
               {formatTime(startsAt)} · {durationMin}m
             </Info>
             <Info icon={<MapPin className="h-3.5 w-3.5" />}>{session.location}</Info>
-            <Info icon={<Users className="h-3.5 w-3.5" />}>
-              {session.booked_count}/{session.capacity}
-            </Info>
+            {capacityInfo.message ? (
+              <Info icon={<Users className="h-3.5 w-3.5" />}>{capacityInfo.message}</Info>
+            ) : null}
           </div>
           {guideName && initials && (
             <div className="mt-4 flex items-center gap-3 rounded-2xl bg-card/70 p-3">
