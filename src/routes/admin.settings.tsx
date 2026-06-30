@@ -39,7 +39,7 @@ type SettingKey = (typeof SETTING_KEYS)[number];
 
 const DEFAULT_VALUES: Record<SettingKey, string> = {
   studio_name: "One Flow",
-  studio_phone: "+27 82 553 3033",
+  studio_phone: "+27 82 553 3032",
   studio_email: "info@oneflow.co.za",
   late_cancel_fee_zar: "100",
   booking_open_days_ahead: "14",

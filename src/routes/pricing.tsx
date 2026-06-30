@@ -13,6 +13,7 @@ import {
 import { buildProductCreditRows } from "@/lib/multiCreditProducts";
 import { defaultAllowedClassTypesForCreditCategory } from "@/lib/allowedClassTypes";
 import { cn } from "@/lib/utils";
+import { STUDIO_WHATSAPP_URL } from "@/lib/studioContact";
 
 export const Route = createFileRoute("/pricing")({
   head: () => ({
@@ -726,7 +727,7 @@ function PricingPage() {
             Questions?{" "}
             <button
               type="button"
-              onClick={() => window.open("https://wa.me/27825533032", "_blank")}
+              onClick={() => window.open(STUDIO_WHATSAPP_URL, "_blank")}
               className="font-medium text-[#a3b693] underline-offset-2 hover:underline dark:text-primary"
             >
               Contact us on WhatsApp
