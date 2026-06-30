@@ -38,6 +38,12 @@ import { supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { civilAddDaysYmd, dayBoundsForDateKey, STUDIO_TIMEZONE, todayDateKey } from "@/lib/timezone";
 import { markManualCreditRefunded, refundYocoCredit } from "@/lib/refunds";
+import {
+  isRecordedYocoPayment,
+  isYocoCheckoutPlaceholder,
+  yocoCheckoutId,
+} from "@/lib/yocoDisplay";
+import { CopyableCheckoutId } from "@/components/admin/CopyableCheckoutId";
 
 export const Route = createFileRoute("/admin/transactions")({
   head: () => ({ meta: [{ title: "Transactions — One Flow Admin" }] }),
@@ -125,7 +131,7 @@ function TransactionsPage() {
     const { data, error } = await supabase
       .from("user_credits")
       .select(
-        "id, created_at, profile_id, product_id, product_name, yoco_payment_id, refunded_at, refund_reason, profile:profile_id(first_name, last_name), product:product_id(name, price_zar)",
+        "id, created_at, purchased_at, profile_id, product_id, product_name, yoco_payment_id, refunded_at, refund_reason, profile:profile_id(first_name, last_name), product:product_id(name, price_zar)",
       )
       .order("created_at", { ascending: false })
       .limit(2000);
@@ -153,7 +159,10 @@ function TransactionsPage() {
       const yoco = (raw.yoco_payment_id as string | null) ?? null;
       return {
         id: String(raw.id),
-        date: (raw.created_at as string) ?? new Date().toISOString(),
+        date:
+          (raw.purchased_at as string | null) ??
+          (raw.created_at as string) ??
+          new Date().toISOString(),
         memberId: (raw.profile_id as string | null) ?? null,
         memberName,
         productId: (raw.product_id as string | null) ?? null,
@@ -191,7 +200,7 @@ function TransactionsPage() {
     const ql = q.trim().toLowerCase();
     let out = rows.filter((r) => {
       if (ql) {
-        const hay = `${r.memberName} ${r.productName}`.toLowerCase();
+        const hay = `${r.memberName} ${r.productName} ${r.yocoPaymentId ?? ""}`.toLowerCase();
         if (!hay.includes(ql)) return false;
       }
       if (methodFilter !== "all" && r.paymentMethod !== methodFilter) return false;
@@ -284,11 +293,11 @@ function TransactionsPage() {
   const exportCsv = () => {
     const header = [
       "Date",
-      "Member",
+      "Buyer",
       "Product",
       "Amount (ZAR)",
       "Payment method",
-      "Yoco payment ID",
+      "Yoco checkout ID (Online Reference)",
     ];
     const body = filteredSorted.map((r) => [
       formatDate(r.date),
@@ -296,7 +305,7 @@ function TransactionsPage() {
       r.productName,
       r.amount.toString(),
       r.paymentMethod,
-      r.yocoPaymentId ?? "",
+      yocoCheckoutId(r.yocoPaymentId) ?? "",
     ]);
     downloadCsv(`transactions-${new Date().toISOString().slice(0, 10)}.csv`, [header, ...body]);
   };
@@ -305,7 +314,11 @@ function TransactionsPage() {
     <div>
       <PageHeader
         title="Transactions"
-        description={loading ? "Loading…" : `${filteredSorted.length} transactions`}
+        description={
+          loading
+            ? "Loading…"
+            : `${filteredSorted.length} transactions · buyer, product, and Yoco checkout ID for every online sale`
+        }
         actions={
           <Button
             type="button"
@@ -331,7 +344,7 @@ function TransactionsPage() {
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Search by member or product…"
+            placeholder="Search buyer, product, or checkout ID…"
             className="w-full rounded-lg border border-border bg-card py-2.5 pl-9 pr-3 text-sm outline-none focus:border-primary"
           />
         </div>
@@ -386,20 +399,23 @@ function TransactionsPage() {
             <p className="text-sm text-muted-foreground">No transactions match your filters.</p>
           </div>
         ) : (
-          <table className="w-full min-w-[820px] text-sm">
+          <table className="w-full min-w-[960px] text-sm">
             <thead className="bg-muted/40">
               <tr className="text-left text-xs uppercase tracking-wider text-muted-foreground">
                 <th className="px-5 py-3 font-medium">Date</th>
-                <th className="px-5 py-3 font-medium">Member</th>
+                <th className="px-5 py-3 font-medium">Buyer</th>
                 <th className="px-5 py-3 font-medium">Product</th>
                 <th className="px-5 py-3 font-medium">Amount</th>
+                <th className="px-5 py-3 font-medium">Yoco checkout ID</th>
                 <th className="px-5 py-3 font-medium">Method</th>
-                <th className="px-5 py-3 font-medium">Yoco ID</th>
                 <th className="px-5 py-3 font-medium text-right">Refund</th>
               </tr>
             </thead>
             <tbody>
-              {pageRows.map((r) => (
+              {pageRows.map((r) => {
+                const checkoutId = yocoCheckoutId(r.yocoPaymentId);
+                const yocoRecorded = isRecordedYocoPayment(r.yocoPaymentId);
+                return (
                 <tr
                   key={r.id}
                   className={`border-t border-border ${r.refundedAt ? "bg-muted/30" : ""}`}
@@ -407,36 +423,43 @@ function TransactionsPage() {
                   <td className="whitespace-nowrap px-5 py-3 tabular-nums text-muted-foreground">
                     {formatDate(r.date)}
                   </td>
-                  <td className="max-w-[180px] truncate px-5 py-3 font-semibold">
-                    {r.memberName}
+                  <td className="max-w-[160px] px-5 py-3">
+                    <p className="truncate font-semibold text-foreground">{r.memberName}</p>
                   </td>
-                  <td className="max-w-[220px] truncate px-5 py-3 text-muted-foreground">
-                    {r.productName}
+                  <td className="max-w-[200px] px-5 py-3">
+                    <p className="truncate font-medium text-foreground">{r.productName}</p>
                   </td>
                   <td
-                    className={`whitespace-nowrap px-5 py-3 tabular-nums ${r.refundedAt ? "text-muted-foreground line-through" : ""}`}
+                    className={`whitespace-nowrap px-5 py-3 text-base font-semibold tabular-nums ${r.refundedAt ? "text-muted-foreground line-through" : ""}`}
                   >
                     {formatRand(r.amount)}
+                  </td>
+                  <td className="max-w-[220px] px-5 py-3">
+                    {checkoutId ? (
+                      <div className="flex flex-col gap-1">
+                        <CopyableCheckoutId id={checkoutId} />
+                        {yocoRecorded && !checkoutId.startsWith("ch_") ? (
+                          <a
+                            href={`https://portal.yoco.com/payments/${r.yocoPaymentId}`}
+                            target="_blank"
+                            rel="noreferrer noopener"
+                            className="inline-flex items-center gap-1 text-[10px] font-medium text-[#a3b693] hover:underline"
+                          >
+                            View in Yoco
+                            <ExternalLink className="h-3 w-3" />
+                          </a>
+                        ) : null}
+                      </div>
+                    ) : r.paymentMethod === "yoco" || isYocoCheckoutPlaceholder(r.yocoPaymentId) ? (
+                      <span className="text-xs text-amber-800">ID not captured</span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
                   </td>
                   <td className="px-5 py-3">
                     <span className="inline-flex rounded-full bg-[#e8efe3] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#3d4f36]">
                       {r.paymentMethod}
                     </span>
-                  </td>
-                  <td className="px-5 py-3">
-                    {r.yocoPaymentId ? (
-                      <a
-                        href={`https://portal.yoco.com/payments/${r.yocoPaymentId}`}
-                        target="_blank"
-                        rel="noreferrer noopener"
-                        className="inline-flex items-center gap-1 text-xs font-medium text-[#a3b693] hover:underline"
-                      >
-                        View in Yoco
-                        <ExternalLink className="h-3 w-3" />
-                      </a>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">—</span>
-                    )}
                   </td>
                   <td className="whitespace-nowrap px-5 py-3 text-right">
                     {r.refundedAt ? (
@@ -459,7 +482,8 @@ function TransactionsPage() {
                     )}
                   </td>
                 </tr>
-              ))}
+              );
+              })}
             </tbody>
           </table>
         )}

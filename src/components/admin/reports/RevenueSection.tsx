@@ -12,6 +12,7 @@ import {
   YAxis,
 } from "recharts";
 import { Banknote, Coins, CreditCard, Download, TrendingUp } from "lucide-react";
+import { CopyableCheckoutId } from "@/components/admin/CopyableCheckoutId";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatCard } from "@/components/admin/StatCard";
@@ -22,6 +23,8 @@ import {
 } from "@/lib/productCategories";
 import { downloadReportCsv } from "@/lib/reportsCsv";
 import { jhbDateKey, type PeriodBounds } from "@/lib/reportsPeriod";
+import { formatStudioDateTime } from "@/lib/timezone";
+import { yocoCheckoutId } from "@/lib/yocoDisplay";
 import { cn } from "@/lib/utils";
 
 const SAGE = "#a3b693";
@@ -46,10 +49,25 @@ type UserCreditRow = {
   credits_total: number | null;
   purchased_at: string | null;
   refunded_at: string | null;
+  product_name: string | null;
+  yoco_payment_id: string | null;
   products?:
     | { name: string | null; price_zar: number | null; category: string | null; credit_count: number | null }
     | { name: string | null; price_zar: number | null; category: string | null; credit_count: number | null }[]
     | null;
+  profile?:
+    | { first_name: string | null; last_name: string | null }
+    | { first_name: string | null; last_name: string | null }[]
+    | null;
+};
+
+type OnlinePurchaseRow = {
+  id: string;
+  purchasedAt: string;
+  buyerName: string;
+  productName: string;
+  amount: number;
+  yocoPaymentId: string | null;
 };
 
 type OfflineRow = {
@@ -81,6 +99,7 @@ type SectionState = {
   byCategory: { name: string; revenue: number }[];
   byDay: { dateKey: string; revenue: number; label: string }[];
   topProducts: { name: string; units: number; revenue: number }[];
+  onlinePurchases: OnlinePurchaseRow[];
   liabilityZar: number;
   errorMsg: string | null;
 };
@@ -96,6 +115,7 @@ const EMPTY_STATE: SectionState = {
   byCategory: PRODUCT_DISPLAY_GROUPS.map((g) => ({ name: g.label, revenue: 0 })),
   byDay: [],
   topProducts: [],
+  onlinePurchases: [],
   liabilityZar: 0,
   errorMsg: null,
 };
@@ -137,7 +157,7 @@ export function RevenueSection({ bounds }: { bounds: PeriodBounds }) {
         supabase
           .from("user_credits")
           .select(
-            "id, category, credits_total, purchased_at, refunded_at, products ( name, price_zar, category, credit_count )",
+            "id, category, credits_total, purchased_at, refunded_at, product_name, yoco_payment_id, products ( name, price_zar, category, credit_count ), profile:profile_id ( first_name, last_name )",
           )
           .gte("purchased_at", startUtcIso)
           .lte("purchased_at", endUtcIso)
@@ -180,11 +200,28 @@ export function RevenueSection({ bounds }: { bounds: PeriodBounds }) {
       for (const g of PRODUCT_DISPLAY_GROUPS) byCategoryMap.set(g.label, 0);
 
       const productAgg = new Map<string, { units: number; revenue: number }>();
+      const onlinePurchases: OnlinePurchaseRow[] = [];
 
       for (const row of purchases) {
         const prod = pickOne(row.products);
         const price = Number(prod?.price_zar ?? 0) || 0;
         onlineRevenue += price;
+
+        const profile = pickOne(row.profile);
+        const buyerName =
+          [profile?.first_name, profile?.last_name].filter(Boolean).join(" ").trim() || "—";
+        const productName =
+          (row.product_name ?? "").trim() || (prod?.name ?? "Unknown product").trim();
+        if (row.purchased_at) {
+          onlinePurchases.push({
+            id: row.id,
+            purchasedAt: row.purchased_at,
+            buyerName,
+            productName,
+            amount: price,
+            yocoPaymentId: row.yoco_payment_id,
+          });
+        }
 
         const catLabel = revenueChartLabelForCategories(row.category, prod?.category ?? null);
         byCategoryMap.set(catLabel, (byCategoryMap.get(catLabel) ?? 0) + price);
@@ -259,6 +296,8 @@ export function RevenueSection({ bounds }: { bounds: PeriodBounds }) {
         .sort((a, b) => b.units - a.units || b.revenue - a.revenue)
         .slice(0, 10);
 
+      onlinePurchases.sort((a, b) => b.purchasedAt.localeCompare(a.purchasedAt));
+
       const totalRevenue = onlineRevenue + offlineRevenue;
       const passesSold = purchases.length;
       const aov = passesSold + offlineRows.length > 0
@@ -279,6 +318,7 @@ export function RevenueSection({ bounds }: { bounds: PeriodBounds }) {
         })),
         byDay,
         topProducts,
+        onlinePurchases,
         liabilityZar,
         errorMsg: firstErr ? firstErr.message : null,
       });
@@ -294,6 +334,27 @@ export function RevenueSection({ bounds }: { bounds: PeriodBounds }) {
     const body = state.topProducts.map((p) => [p.name, p.units, Math.round(p.revenue)]);
     downloadReportCsv(
       `top-products-${new Date().toISOString().slice(0, 10)}.csv`,
+      [header, ...body],
+    );
+  };
+
+  const exportOnlinePurchasesCsv = () => {
+    const header = [
+      "Date",
+      "Buyer",
+      "Product",
+      "Amount (ZAR)",
+      "Yoco checkout ID (Online Reference)",
+    ];
+    const body = state.onlinePurchases.map((p) => [
+      formatStudioDateTime(p.purchasedAt),
+      p.buyerName,
+      p.productName,
+      Math.round(p.amount),
+      yocoCheckoutId(p.yocoPaymentId) ?? "",
+    ]);
+    downloadReportCsv(
+      `online-purchases-${new Date().toISOString().slice(0, 10)}.csv`,
       [header, ...body],
     );
   };
@@ -347,6 +408,7 @@ export function RevenueSection({ bounds }: { bounds: PeriodBounds }) {
       <p className="mt-3 text-xs text-muted-foreground">
         Total = online (Yoco / app purchases) + offline POS sales. Refunded credits are excluded.
         Outstanding liability values unused, non-expired credits at the per-credit pack price; unlimited passes are flat-fee and excluded.
+        Online purchase rows below are the studio source of truth for who bought what — use the checkout ID to match Yoco&apos;s CSV &quot;Online Reference&quot; column.
       </p>
 
       {/* Online vs offline split */}
@@ -454,6 +516,82 @@ export function RevenueSection({ bounds }: { bounds: PeriodBounds }) {
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
+          </div>
+        )}
+      </div>
+
+      {/* Online purchases — buyer / product / checkout ID */}
+      <div
+        className={cn(
+          "mt-4 rounded-2xl border bg-card p-4 shadow-sm sm:p-5",
+          SAGE_BORDER,
+          "bg-[#f4f7f0]/80",
+        )}
+      >
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Online purchases
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-7 gap-1 text-xs"
+            onClick={exportOnlinePurchasesCsv}
+            disabled={state.loading || state.onlinePurchases.length === 0}
+          >
+            <Download className="h-3 w-3" /> CSV
+          </Button>
+        </div>
+        {state.loading ? (
+          <div className="space-y-2">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} className="h-10 w-full rounded-lg" />
+            ))}
+          </div>
+        ) : state.onlinePurchases.length === 0 ? (
+          <p className="py-8 text-center text-sm text-muted-foreground">No online sales in this period.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[720px] text-sm">
+              <thead className="text-left text-[10px] uppercase tracking-wider text-muted-foreground">
+                <tr>
+                  <th className="px-2 py-2 font-medium">Date</th>
+                  <th className="px-2 py-2 font-medium">Buyer</th>
+                  <th className="px-2 py-2 font-medium">Product</th>
+                  <th className="px-2 py-2 font-medium">Amount</th>
+                  <th className="px-2 py-2 font-medium">Yoco checkout ID</th>
+                </tr>
+              </thead>
+              <tbody>
+                {state.onlinePurchases.map((p) => {
+                  const checkoutId = yocoCheckoutId(p.yocoPaymentId);
+                  return (
+                    <tr key={p.id} className="border-t border-[#c5d4b8]/40">
+                      <td className="whitespace-nowrap px-2 py-2.5 tabular-nums text-muted-foreground">
+                        {formatStudioDateTime(p.purchasedAt, { year: "numeric" })}
+                      </td>
+                      <td className="max-w-[140px] px-2 py-2.5">
+                        <p className="truncate font-semibold text-foreground">{p.buyerName}</p>
+                      </td>
+                      <td className="max-w-[180px] px-2 py-2.5">
+                        <p className="truncate font-medium">{p.productName}</p>
+                      </td>
+                      <td className="whitespace-nowrap px-2 py-2.5 font-semibold tabular-nums">
+                        {formatRand(p.amount)}
+                      </td>
+                      <td className="px-2 py-2.5">
+                        {checkoutId ? (
+                          <CopyableCheckoutId id={checkoutId} />
+                        ) : (
+                          <span className="text-xs text-amber-800">ID not captured</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
