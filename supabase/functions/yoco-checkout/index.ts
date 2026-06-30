@@ -6,6 +6,18 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+/** Yoco customer_reference: 1–100 chars shown on the payment page. */
+function yocoCustomerReference(name: string): string {
+  const trimmed = name.trim() || "Member";
+  return trimmed.length > 100 ? trimmed.slice(0, 100) : trimmed;
+}
+
+function yocoCustomerDescription(text: string): string {
+  const trimmed = text.trim();
+  if (!trimmed) return "";
+  return trimmed.length > 100 ? trimmed.slice(0, 100) : trimmed;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -37,7 +49,7 @@ serve(async (req) => {
 
     const { data: inv, error: invErr } = await supabase
       .from("class_invites")
-      .select("id, inviter_id, status, paid_by_inviter")
+      .select("id, inviter_id, status, paid_by_inviter, classes(name)")
       .eq("id", class_invite_id)
       .maybeSingle();
 
@@ -70,25 +82,46 @@ serve(async (req) => {
     const zar = Number.isFinite(amount_zar) && amount_zar > 0 ? amount_zar : defaultZar;
     const amountCents = Math.round(zar * 100);
 
+    const { data: inviterProfile } = await supabase
+      .from("profiles")
+      .select("first_name, last_name")
+      .eq("id", inviter_profile_id)
+      .maybeSingle();
+    const buyerName =
+      [inviterProfile?.first_name, inviterProfile?.last_name].filter(Boolean).join(" ") || "Member";
+    const classJoin = (inv as { classes?: { name?: string } | { name?: string }[] | null }).classes;
+    const className = Array.isArray(classJoin)
+      ? classJoin[0]?.name
+      : classJoin?.name;
+    const inviteDescription = className
+      ? `Class invite — ${className}`
+      : "One Flow — class invite (pay for friend)";
+
+    const invitePayload = {
+      amount: amountCents,
+      currency: "ZAR",
+      customer_reference: yocoCustomerReference(buyerName),
+      customer_description: yocoCustomerDescription(inviteDescription),
+      description: "One Flow — class invite (pay for friend)",
+      successUrl: success_url,
+      cancelUrl: cancel_url,
+      failureUrl: cancel_url,
+      metadata: {
+        type: "class_invite",
+        class_invite_id,
+        inviter_profile_id,
+        buyer_name: buyerName,
+      },
+    };
+    console.log("yoco class_invite request:", JSON.stringify(invitePayload));
+
     const yocoRes = await fetch("https://payments.yoco.com/api/checkouts", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${YOCO_SECRET}`,
       },
-      body: JSON.stringify({
-        amount: amountCents,
-        currency: "ZAR",
-        description: "One Flow — class invite (pay for friend)",
-        successUrl: success_url,
-        cancelUrl: cancel_url,
-        failureUrl: cancel_url,
-        metadata: {
-          type: "class_invite",
-          class_invite_id,
-          inviter_profile_id,
-        },
-      }),
+      body: JSON.stringify(invitePayload),
     });
 
     const checkout = await yocoRes.json();
@@ -299,35 +332,40 @@ serve(async (req) => {
     });
   }
 
+  const packPayload = {
+    amount: amountCents,
+    currency: "ZAR",
+    lineItems,
+    customer_reference: yocoCustomerReference(buyerName),
+    customer_description: yocoCustomerDescription(packName),
+    description: hasLateCancelFee
+      ? `${packName} — ${buyerName} + R100 late cancellation fee`
+      : `${packName} — ${buyerName}`,
+    successUrl: success_url,
+    cancelUrl: cancel_url,
+    failureUrl: cancel_url,
+    metadata: {
+      pack_id,
+      profile_id,
+      buyer_name: buyerName,
+      late_cancel_fee_applied: hasLateCancelFee,
+      description: hasLateCancelFee ? "+ R100 late cancellation fee" : "",
+      promo_code_applied: promoApplied?.code ?? null,
+      promo_discount_zar: promoDiscountCents > 0 ? Math.round(promoDiscountCents / 100) : 0,
+      flow_points_used: flowPointsUsed > 0 ? flowPointsUsed : 0,
+      flow_points_discount_zar:
+        flowDiscountCents > 0 ? Math.round((flowDiscountCents / 100) * 100) / 100 : 0,
+    },
+  };
+  console.log("yoco pack request:", JSON.stringify(packPayload));
+
   const yocoRes = await fetch("https://payments.yoco.com/api/checkouts", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${YOCO_SECRET}`,
     },
-    body: JSON.stringify({
-      amount: amountCents,
-      currency: "ZAR",
-      lineItems,
-      description: hasLateCancelFee
-        ? `${packName} — ${buyerName} + R100 late cancellation fee`
-        : `${packName} — ${buyerName}`,
-      successUrl: success_url,
-      cancelUrl: cancel_url,
-      failureUrl: cancel_url,
-      metadata: {
-        pack_id,
-        profile_id,
-        buyer_name: buyerName,
-        late_cancel_fee_applied: hasLateCancelFee,
-        description: hasLateCancelFee ? "+ R100 late cancellation fee" : "",
-        promo_code_applied: promoApplied?.code ?? null,
-        promo_discount_zar: promoDiscountCents > 0 ? Math.round(promoDiscountCents / 100) : 0,
-        flow_points_used: flowPointsUsed > 0 ? flowPointsUsed : 0,
-        flow_points_discount_zar:
-          flowDiscountCents > 0 ? Math.round((flowDiscountCents / 100) * 100) / 100 : 0,
-      },
-    }),
+    body: JSON.stringify(packPayload),
   });
 
   const checkout = await yocoRes.json();
