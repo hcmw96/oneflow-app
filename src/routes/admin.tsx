@@ -51,11 +51,7 @@ function AdminLayout() {
     if (!canEnterAdminArea(roleProfile)) return;
 
     if (!isPathAllowedForRestrictedAdmin(roleProfile, pathname)) {
-      const to = isMarketingScopedStaff(roleProfile)
-        ? "/admin"
-        : (roleProfile.role ?? "").toLowerCase() === "boh"
-          ? "/admin/leave-requests"
-          : "/admin/check-in";
+      const to = isMarketingScopedStaff(roleProfile) ? "/admin" : "/admin/check-in";
       navigate({ to, replace: true });
       return;
     }

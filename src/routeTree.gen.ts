@@ -42,7 +42,6 @@ import { Route as AdminReportsRouteImport } from './routes/admin.reports'
 import { Route as AdminPromotionsRouteImport } from './routes/admin.promotions'
 import { Route as AdminProductsRouteImport } from './routes/admin.products'
 import { Route as AdminPayoutsRouteImport } from './routes/admin.payouts'
-import { Route as AdminLeaveRequestsRouteImport } from './routes/admin.leave-requests'
 import { Route as AdminInstallAppRouteImport } from './routes/admin.install-app'
 import { Route as AdminGuidesRouteImport } from './routes/admin.guides'
 import { Route as AdminEmailRouteImport } from './routes/admin.email'
@@ -220,11 +219,6 @@ const AdminPayoutsRoute = AdminPayoutsRouteImport.update({
   path: '/payouts',
   getParentRoute: () => AdminRoute,
 } as any)
-const AdminLeaveRequestsRoute = AdminLeaveRequestsRouteImport.update({
-  id: '/leave-requests',
-  path: '/leave-requests',
-  getParentRoute: () => AdminRoute,
-} as any)
 const AdminInstallAppRoute = AdminInstallAppRouteImport.update({
   id: '/install-app',
   path: '/install-app',
@@ -309,7 +303,6 @@ export interface FileRoutesByFullPath {
   '/admin/email': typeof AdminEmailRoute
   '/admin/guides': typeof AdminGuidesRoute
   '/admin/install-app': typeof AdminInstallAppRoute
-  '/admin/leave-requests': typeof AdminLeaveRequestsRoute
   '/admin/payouts': typeof AdminPayoutsRoute
   '/admin/products': typeof AdminProductsRoute
   '/admin/promotions': typeof AdminPromotionsRoute
@@ -355,7 +348,6 @@ export interface FileRoutesByTo {
   '/admin/email': typeof AdminEmailRoute
   '/admin/guides': typeof AdminGuidesRoute
   '/admin/install-app': typeof AdminInstallAppRoute
-  '/admin/leave-requests': typeof AdminLeaveRequestsRoute
   '/admin/payouts': typeof AdminPayoutsRoute
   '/admin/products': typeof AdminProductsRoute
   '/admin/promotions': typeof AdminPromotionsRoute
@@ -403,7 +395,6 @@ export interface FileRoutesById {
   '/admin/email': typeof AdminEmailRoute
   '/admin/guides': typeof AdminGuidesRoute
   '/admin/install-app': typeof AdminInstallAppRoute
-  '/admin/leave-requests': typeof AdminLeaveRequestsRoute
   '/admin/payouts': typeof AdminPayoutsRoute
   '/admin/products': typeof AdminProductsRoute
   '/admin/promotions': typeof AdminPromotionsRoute
@@ -452,7 +443,6 @@ export interface FileRouteTypes {
     | '/admin/email'
     | '/admin/guides'
     | '/admin/install-app'
-    | '/admin/leave-requests'
     | '/admin/payouts'
     | '/admin/products'
     | '/admin/promotions'
@@ -498,7 +488,6 @@ export interface FileRouteTypes {
     | '/admin/email'
     | '/admin/guides'
     | '/admin/install-app'
-    | '/admin/leave-requests'
     | '/admin/payouts'
     | '/admin/products'
     | '/admin/promotions'
@@ -545,7 +534,6 @@ export interface FileRouteTypes {
     | '/admin/email'
     | '/admin/guides'
     | '/admin/install-app'
-    | '/admin/leave-requests'
     | '/admin/payouts'
     | '/admin/products'
     | '/admin/promotions'
@@ -821,13 +809,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminPayoutsRouteImport
       parentRoute: typeof AdminRoute
     }
-    '/admin/leave-requests': {
-      id: '/admin/leave-requests'
-      path: '/leave-requests'
-      fullPath: '/admin/leave-requests'
-      preLoaderRoute: typeof AdminLeaveRequestsRouteImport
-      parentRoute: typeof AdminRoute
-    }
     '/admin/install-app': {
       id: '/admin/install-app'
       path: '/install-app'
@@ -931,7 +912,6 @@ interface AdminRouteChildren {
   AdminEmailRoute: typeof AdminEmailRoute
   AdminGuidesRoute: typeof AdminGuidesRoute
   AdminInstallAppRoute: typeof AdminInstallAppRoute
-  AdminLeaveRequestsRoute: typeof AdminLeaveRequestsRoute
   AdminPayoutsRoute: typeof AdminPayoutsRoute
   AdminProductsRoute: typeof AdminProductsRoute
   AdminPromotionsRoute: typeof AdminPromotionsRoute
@@ -956,7 +936,6 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminEmailRoute: AdminEmailRoute,
   AdminGuidesRoute: AdminGuidesRoute,
   AdminInstallAppRoute: AdminInstallAppRoute,
-  AdminLeaveRequestsRoute: AdminLeaveRequestsRoute,
   AdminPayoutsRoute: AdminPayoutsRoute,
   AdminProductsRoute: AdminProductsRoute,
   AdminPromotionsRoute: AdminPromotionsRoute,

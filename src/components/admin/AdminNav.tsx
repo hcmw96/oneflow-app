@@ -9,7 +9,6 @@ import {
   Users,
   Package,
   UserCog,
-  Clock,
   GraduationCap,
   DollarSign,
   Receipt,
@@ -46,7 +45,6 @@ export const LIMITED_ADMIN_ROUTES = [
   "/admin/bookings",
   "/admin/schedule",
   "/admin/classes",
-  "/admin/leave-requests",
   // /admin/scheduling redirects to /admin/schedule; keep it allow-listed so
   // the redirect can complete before the limited-role guard fires.
   "/admin/scheduling",
@@ -61,17 +59,11 @@ export function isBohRole(role: string | null | undefined) {
   return (role ?? "").toLowerCase() === "boh";
 }
 
-/** Director & management: pending leave badge + full admin. */
-export function canSeePendingLeaveRequestsBadge(role: string | null | undefined) {
-  const r = (role ?? "").toLowerCase();
-  return r === "director" || r === "management";
-}
-
 export function isPathAllowedForLimitedRole(pathname: string) {
   return LIMITED_ADMIN_ROUTES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
-/** BOH is restricted to leave requests; guide/front_desk use LIMITED_ADMIN_ROUTES (+ marketing comms if allowed). */
+/** BOH is restricted to check-in; guide/front_desk use LIMITED_ADMIN_ROUTES (+ marketing comms if allowed). */
 export function isPathAllowedForRestrictedAdmin(
   profile: AdminRoleProfile,
   pathname: string,
@@ -81,7 +73,7 @@ export function isPathAllowedForRestrictedAdmin(
     return true;
   }
   if (isBohRole(role)) {
-    return pathname === "/admin/leave-requests" || pathname.startsWith("/admin/leave-requests/");
+    return pathname === "/admin/check-in" || pathname.startsWith("/admin/check-in/");
   }
   if (isLimitedAdminRole(role)) {
     return isPathAllowedForLimitedRole(pathname);
@@ -97,7 +89,7 @@ export function navItemsForRole(profile: AdminRoleProfile): AdminNavItem[] {
   const r = (profile.role ?? "").toLowerCase();
   if (r === "director" || r === "management") return adminNavItems;
   if (isBohRole(profile.role)) {
-    return adminNavItems.filter((i) => i.to === "/admin/leave-requests");
+    return adminNavItems.filter((i) => i.to === "/admin/check-in");
   }
   if (isMarketingScopedStaff(profile) && !isLimitedAdminRole(profile.role)) {
     return adminNavItems.filter((i) => !isMarketingFinancialAdminPath(i.to));
@@ -121,7 +113,6 @@ export const adminNavItems: AdminNavItem[] = [
   { to: "/admin/customers", label: "Customers", icon: Users },
   { to: "/admin/products", label: "Products", icon: Package },
   { to: "/admin/staff", label: "Staff", icon: UserCog },
-  { to: "/admin/leave-requests", label: "Leave requests", icon: Clock },
   { to: "/admin/guides", label: "Guides", icon: GraduationCap },
   { to: "/admin/payouts", label: "Payouts", icon: DollarSign },
   { to: "/admin/transactions", label: "Transactions", icon: Receipt },

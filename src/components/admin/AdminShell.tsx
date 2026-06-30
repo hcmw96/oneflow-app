@@ -1,13 +1,7 @@
-import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
-import { PanelLeftClose, PanelLeft, Menu, Inbox } from "lucide-react";
-import {
-  AdminNav,
-  AdminSidebarFooter,
-  adminNavItems,
-  canSeePendingLeaveRequestsBadge,
-  navItemsForRole,
-} from "./AdminNav";
+import { PanelLeftClose, PanelLeft, Menu } from "lucide-react";
+import { AdminNav, AdminSidebarFooter, adminNavItems, navItemsForRole } from "./AdminNav";
 import { getUser, supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -24,7 +18,6 @@ export function AdminShell({ children }: { children: ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [profile, setProfile] = useState<AdminProfile | null>(null);
-  const [pendingLeaveCount, setPendingLeaveCount] = useState(0);
 
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const isCheckInKiosk = pathname === "/admin/check-in";
@@ -63,49 +56,6 @@ export function AdminShell({ children }: { children: ReactNode }) {
       cancelled = true;
     };
   }, []);
-
-  const leaveRequestsActive = useRouterState({
-    select: (s) => {
-      if (s.location.pathname !== "/admin/leave-requests") return false;
-      return true;
-    },
-  });
-
-  const canBadge = canSeePendingLeaveRequestsBadge(profile?.role);
-
-  const refreshPendingLeaveCount = useCallback(async () => {
-    if (!canBadge) return;
-    const { count, error } = await supabase
-      .from("leave_requests")
-      .select("id", { count: "exact", head: true })
-      .eq("status", "pending");
-    if (error) {
-      console.error("leave_requests pending count", error);
-      return;
-    }
-    setPendingLeaveCount(count ?? 0);
-  }, [canBadge]);
-
-  useEffect(() => {
-    if (!canBadge) {
-      setPendingLeaveCount(0);
-      return;
-    }
-    void refreshPendingLeaveCount();
-  }, [canBadge, refreshPendingLeaveCount]);
-
-  useEffect(() => {
-    if (!canBadge) return;
-    const channel = supabase
-      .channel("admin-shell-leave-requests")
-      .on("postgres_changes", { event: "*", schema: "public", table: "leave_requests" }, () => {
-        void refreshPendingLeaveCount();
-      })
-      .subscribe();
-    return () => {
-      void supabase.removeChannel(channel);
-    };
-  }, [canBadge, refreshPendingLeaveCount]);
 
   const visibleNav = navItemsForRole({
     role: profile?.role ?? null,
@@ -167,35 +117,6 @@ export function AdminShell({ children }: { children: ReactNode }) {
 
         <AdminNav collapsed={collapsed} profile={roleProfile} />
 
-        {canBadge ? (
-          <div className={cn("border-t border-sidebar-border px-2 py-2", collapsed && "px-0")}>
-            <Link
-              to="/admin/leave-requests"
-              className={cn(
-                "relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
-                leaveRequestsActive
-                  ? "bg-sidebar-accent font-semibold text-sidebar-accent-foreground"
-                  : "text-sidebar-foreground/80 hover:bg-sidebar-accent/40",
-                collapsed && "justify-center px-2",
-              )}
-              title={collapsed ? "Requests" : undefined}
-            >
-              <Inbox className="h-4 w-4 shrink-0" strokeWidth={leaveRequestsActive ? 2.2 : 1.8} />
-              {!collapsed && <span className="truncate">Requests</span>}
-              {pendingLeaveCount > 0 ? (
-                <span
-                  className={cn(
-                    "inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold leading-none text-destructive-foreground",
-                    collapsed ? "absolute right-1 top-1" : "ml-auto",
-                  )}
-                >
-                  {pendingLeaveCount > 99 ? "99+" : pendingLeaveCount}
-                </span>
-              ) : null}
-            </Link>
-          </div>
-        ) : null}
-
         <AdminSidebarFooter
           collapsed={collapsed}
           profile={roleProfile}
@@ -235,31 +156,6 @@ export function AdminShell({ children }: { children: ReactNode }) {
                     profile={roleProfile}
                     onNavigate={() => setMobileOpen(false)}
                   />
-                  {canBadge ? (
-                    <div className="border-t border-sidebar-border px-2 py-2">
-                      <Link
-                        to="/admin/leave-requests"
-                        onClick={() => setMobileOpen(false)}
-                        className={cn(
-                          "relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
-                          leaveRequestsActive
-                            ? "bg-sidebar-accent font-semibold text-sidebar-accent-foreground"
-                            : "text-sidebar-foreground/80 hover:bg-sidebar-accent/40",
-                        )}
-                      >
-                        <Inbox
-                          className="h-4 w-4 shrink-0"
-                          strokeWidth={leaveRequestsActive ? 2.2 : 1.8}
-                        />
-                        <span className="truncate">Requests</span>
-                        {pendingLeaveCount > 0 ? (
-                          <span className="ml-auto inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold leading-none text-destructive-foreground">
-                            {pendingLeaveCount > 99 ? "99+" : pendingLeaveCount}
-                          </span>
-                        ) : null}
-                      </Link>
-                    </div>
-                  ) : null}
                 </div>
                 <AdminSidebarFooter
                   collapsed={false}
