@@ -31,6 +31,11 @@ import { orderClassesForLiveDay } from "@/lib/liveClassList";
 import { useNowMs } from "@/hooks/use-now-ms";
 import { useScrollToLiveClass } from "@/hooks/use-scroll-to-live-class";
 import { welcomeCheckInToastMessage } from "@/lib/flowPoints";
+import { useAuth } from "@/contexts/auth";
+import {
+  OctivVitalityCheckInButton,
+  canShowOctivVitalityQr,
+} from "@/components/admin/OctivVitalityQrEmbed";
 
 export const Route = createFileRoute("/admin/check-in")({
   validateSearch: (raw: Record<string, unknown>) => ({
@@ -54,6 +59,8 @@ type TodayClass = {
 
 function CheckInPage() {
   const stackLayout = useMaxWidth(600);
+  const { profile } = useAuth();
+  const showOctivVitalityQr = canShowOctivVitalityQr(profile);
   const search = Route.useSearch();
   const [todayClasses, setTodayClasses] = useState<TodayClass[]>([]);
   const [roster, setRoster] = useState<RosterRow[]>([]);
@@ -494,6 +501,7 @@ function CheckInPage() {
                 Hold the member&apos;s booking QR inside the green frame, about arm&apos;s length
                 away.
               </p>
+              {showOctivVitalityQr ? <OctivVitalityCheckInButton /> : null}
             </div>
           </div>
         </div>
