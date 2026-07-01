@@ -67,6 +67,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useNowMs } from "@/hooks/use-now-ms";
 import { useScrollToLiveClass } from "@/hooks/use-scroll-to-live-class";
 import {
@@ -87,6 +88,11 @@ const TZ = "Africa/Johannesburg";
 const GUIDE_NONE = "__none__";
 /** Edit / create class dialog: Radix forbids empty string SelectItem values. */
 const GUIDE_DIALOG_NONE = "none";
+
+function normalizeGuideSelectValue(id: string | null | undefined): string {
+  if (!id || id === GUIDE_NONE || id === GUIDE_DIALOG_NONE || id === "none") return "none";
+  return id;
+}
 
 const LOCATIONS = ["Studio 1", "Studio 2", "Wellzone", "Sauna"] as const;
 
@@ -306,6 +312,9 @@ function SchedulePage() {
   const [bulkBusy, setBulkBusy] = useState(false);
   const [editingRecurringGroupId, setEditingRecurringGroupId] = useState<string | null>(null);
   const [editingStartsAt, setEditingStartsAt] = useState<string | null>(null);
+  const [editingOriginalGuideSelectValue, setEditingOriginalGuideSelectValue] =
+    useState<string>("none");
+  const [guideChangeScope, setGuideChangeScope] = useState<RecurringScope | null>(null);
   const [recurringScopeOpen, setRecurringScopeOpen] = useState(false);
   const [recurringScopeAction, setRecurringScopeAction] = useState<"edit" | "bulk-reassign" | null>(
     null,
@@ -475,11 +484,14 @@ function SchedulePage() {
     const token = `${editingId}|${guideFkTarget}|${guides.length}`;
     if (editGuideSelectSyncRef.current === token) return;
     editGuideSelectSyncRef.current = token;
-    if (!c.guide_id) setGuideId(GUIDE_DIALOG_NONE);
-    else {
+    let synced = GUIDE_DIALOG_NONE;
+    if (c.guide_id) {
       const tid = guidesTableIdForClassGuideId(c.guide_id, guides);
-      setGuideId(tid !== GUIDE_NONE ? tid : c.guide_id);
+      synced = tid !== GUIDE_NONE ? tid : c.guide_id;
     }
+    setGuideId(synced);
+    setEditingOriginalGuideSelectValue(normalizeGuideSelectValue(synced));
+    setGuideChangeScope(null);
   }, [dialogOpen, editingId, guides, guideFkTarget, rows]);
 
   useEffect(() => {
@@ -498,6 +510,27 @@ function SchedulePage() {
     () => (editingId ? (rows.find((r) => r.id === editingId) ?? null) : null),
     [editingId, rows],
   );
+
+  const guideChangedOnRecurringEdit = useMemo(() => {
+    if (dialogMode !== "edit" || !editingRecurringGroupId) return false;
+    return (
+      normalizeGuideSelectValue(guideId) !==
+      normalizeGuideSelectValue(editingOriginalGuideSelectValue)
+    );
+  }, [dialogMode, editingRecurringGroupId, guideId, editingOriginalGuideSelectValue]);
+
+  const handleEditGuideChange = (value: string) => {
+    setGuideId(value);
+    if (!editingRecurringGroupId) return;
+    const changed =
+      normalizeGuideSelectValue(value) !==
+      normalizeGuideSelectValue(editingOriginalGuideSelectValue);
+    if (!changed) {
+      setGuideChangeScope(null);
+    } else {
+      setGuideChangeScope((prev) => prev ?? "single");
+    }
+  };
 
   /** Edit dialog only: every option value is `guides.id` (see on-screen debug). */
   const guideOptions = useMemo(
@@ -684,6 +717,8 @@ function SchedulePage() {
     setLinkedProductId(null);
     setRepeatMode("none");
     setRepeatWeeks("4");
+    setEditingOriginalGuideSelectValue("none");
+    setGuideChangeScope(null);
   };
 
   const weeklyPreview = useMemo(() => {
@@ -758,6 +793,7 @@ function SchedulePage() {
     setEditingId(c.id);
     setEditingRecurringGroupId(c.recurring_group_id);
     setEditingStartsAt(c.starts_at);
+    setGuideChangeScope(null);
     setName(c.name);
     setClassType(c.class_type || "yoga");
     setLocation(c.location || "Studio 1");
@@ -865,6 +901,7 @@ function SchedulePage() {
         setEditingId(null);
         setEditingRecurringGroupId(null);
         setEditingStartsAt(null);
+        setGuideChangeScope(null);
         await load();
         return;
       }
@@ -903,6 +940,7 @@ function SchedulePage() {
       setEditingId(null);
       setEditingRecurringGroupId(null);
       setEditingStartsAt(null);
+      setGuideChangeScope(null);
       await load();
     } catch (e: unknown) {
       console.error("class save failed", e);
@@ -917,6 +955,10 @@ function SchedulePage() {
     if (!validateForm()) return;
 
     if (editingId) {
+      if (guideChangedOnRecurringEdit) {
+        await performEditSave(guideChangeScope ?? "single");
+        return;
+      }
       if (editingRecurringGroupId) {
         setRecurringScopeAction("edit");
         setRecurringScopeOpen(true);
@@ -1549,6 +1591,7 @@ function SchedulePage() {
           setDialogOpen(open);
           if (!open) {
             setEditingId(null);
+            setGuideChangeScope(null);
             if (dialogMode === "bulk-reassign") {
               setDialogMode("create");
               setGuideId(GUIDE_DIALOG_NONE);
@@ -1665,7 +1708,7 @@ function SchedulePage() {
                     ? "none"
                     : guideId
                 }
-                onValueChange={setGuideId}
+                onValueChange={handleEditGuideChange}
                 disabled={!canManage}
               >
                 <SelectTrigger>
@@ -1691,6 +1734,29 @@ function SchedulePage() {
                     ))}
                 </SelectContent>
               </Select>
+              {guideChangedOnRecurringEdit ? (
+                <div className="mt-2 rounded-lg border border-[#c5d4b8]/70 bg-[#f4f7f0]/80 px-3 py-3">
+                  <p className="text-sm font-medium text-[#3d4f36]">Apply guide change to</p>
+                  <RadioGroup
+                    value={guideChangeScope ?? "single"}
+                    onValueChange={(v) => setGuideChangeScope(v as RecurringScope)}
+                    className="mt-2 gap-2.5"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <RadioGroupItem value="single" id="edit-guide-scope-single" />
+                      <Label htmlFor="edit-guide-scope-single" className="cursor-pointer font-normal">
+                        This class only
+                      </Label>
+                    </div>
+                    <div className="flex items-center gap-2.5">
+                      <RadioGroupItem value="future" id="edit-guide-scope-future" />
+                      <Label htmlFor="edit-guide-scope-future" className="cursor-pointer font-normal">
+                        This and all future classes
+                      </Label>
+                    </div>
+                  </RadioGroup>
+                </div>
+              ) : null}
             </div>
             <div>
               <Label htmlFor="cls-date">Date (SAST)</Label>

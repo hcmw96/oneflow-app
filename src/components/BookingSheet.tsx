@@ -18,6 +18,7 @@ import {
   fetchBookableProductCatalog,
   fetchConfirmedBookingIntervals,
   findOverlappingBooking,
+  classTicketRestrictsCreditsToProduct,
   isComplimentaryClassTicket,
   isPastScheduleClass,
   isPurchasableClassTicketPrice,
@@ -172,7 +173,7 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
       const ticketPromise = session.product_id
         ? supabase
             .from("products")
-            .select("id, name, price_zar")
+            .select("id, name, price_zar, category, is_class_ticket")
             .eq("id", session.product_id)
             .maybeSingle()
         : Promise.resolve({ data: null, error: null });
@@ -183,16 +184,15 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
         id: string;
         name: string;
         price_zar: number;
+        category?: string | null;
+        is_class_ticket?: boolean | null;
       } | null;
       const ticket =
         ticketRow && typeof ticketRow.price_zar === "number" ? ticketRow : null;
       setClassTicketProduct(ticket);
 
       const skipPayment = classSkipsPayment(session.class_type, catalog);
-      const complimentaryTicket = isComplimentaryClassTicket(
-        ticket?.price_zar,
-        session.class_type,
-      );
+      const complimentaryTicket = isComplimentaryClassTicket(ticket);
       console.info("[BookingSheet] payment check on open", {
         classId: session.id,
         classType: session.class_type,
@@ -212,7 +212,7 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
         .order("sort_order", { ascending: true })
         .order("name", { ascending: true });
 
-      const creditsPromise = skipPayment
+      const creditsPromise = complimentaryTicket
         ? Promise.resolve({ data: null, error: null })
         : supabase
             .from("user_credits")
@@ -221,7 +221,7 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
             )
             .eq("profile_id", user.id);
 
-      const pointsPromise = skipPayment
+      const pointsPromise = complimentaryTicket
         ? Promise.resolve({ data: null, error: null })
         : supabase.from("profiles").select("flow_points, role").eq("id", user.id).maybeSingle();
 
@@ -260,7 +260,7 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
         console.error("[BookingSheet] addon products query failed", addonErr);
       }
 
-      if (skipPayment) {
+      if (complimentaryTicket) {
         setCredits([]);
         setSelectedCredit(null);
         setUsePoints(false);
@@ -284,18 +284,19 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
           return true;
         });
 
-        const eligible = ticket
-          ? pool.filter(
-              (c) =>
-                String((c as { product_id?: string | null }).product_id ?? "") === ticket.id,
-            )
-          : pool.filter((c) =>
-              userCreditCoversClassType({
-                category: c.category,
-                allowed_class_types: c.allowed_class_types,
-                classType: session.class_type,
-              }),
-            );
+        const eligible =
+          ticket && classTicketRestrictsCreditsToProduct(ticket.price_zar)
+            ? pool.filter(
+                (c) =>
+                  String((c as { product_id?: string | null }).product_id ?? "") === ticket.id,
+              )
+            : pool.filter((c) =>
+                userCreditCoversClassType({
+                  category: c.category,
+                  allowed_class_types: c.allowed_class_types,
+                  classType: session.class_type,
+                }),
+              );
 
         setCredits(eligible as Credit[]);
         setSelectedCredit(eligible[0]?.id ?? null);
@@ -438,8 +439,8 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
       usePoints,
     });
 
-    if (isFreeClass) {
-      console.info("[BookingSheet] free class path — skipping credit checks");
+    if (isFreeClass && !selectedCredit && !usePoints) {
+      console.info("[BookingSheet] free class path — no credit or points selected");
       setLoading(true);
       const { data: booking, error } = await supabase
         .from("bookings")
@@ -609,7 +610,7 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
     let creditId: string | null = null;
     let flowPointsPledged = 0;
 
-    if (isFreeClass) {
+    if (isFreeClass && !selectedCredit && !usePoints) {
       paymentMethod = "free";
     } else if (selectedCredit) {
       paymentMethod = "credit";
@@ -910,7 +911,7 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
               </div>
             )}
 
-            {classTicketProduct ? (
+            {classTicketProduct && isPaidClassTicket ? (
               <div className="mt-4 rounded-xl border border-[#c5d4b8]/70 bg-[#f4f7f0]/90 px-3 py-2.5 text-xs">
                 <p className="font-semibold text-[#3d4f36]">
                   Event ticket · {formatTicketPriceLabel(classTicketProduct.price_zar)}
@@ -932,15 +933,16 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
               </div>
             ) : null}
 
-            {!isComplimentaryClass &&
-              (credits.length === 0 && !isPaidClassTicket ? (
+            {!isComplimentaryClass && credits.length === 0 && !isPaidClassTicket && !isFreeClass ? (
               <div className="mt-6 rounded-2xl border border-dashed border-border bg-card p-4 text-center text-sm text-muted-foreground">
                 No eligible credits for this class.{" "}
                 <Link to="/pricing" className="text-primary underline">
                   Buy a pass
                 </Link>
               </div>
-            ) : (
+            ) : null}
+
+            {!isComplimentaryClass && credits.length > 0 ? (
               <>
                 <p className="mt-6 text-sm font-semibold">Select credit to use:</p>
                 <div className="mt-2 space-y-2">
@@ -981,7 +983,7 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
                   ))}
                 </div>
               </>
-            ))}
+            ) : null}
 
             {!isFreeClass && !isPaidClassTicket && flowPoints >= 100 && (
               <button
@@ -1141,7 +1143,7 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
                   disabled={loading || classIsPast}
                   className={cn(
                     "mt-6 w-full rounded-xl py-3.5 text-sm font-semibold transition-opacity active:opacity-90 disabled:opacity-50",
-                    isFreeClass && !classIsPast
+                    isFreeClass && !selectedCredit && !usePoints && !classIsPast
                       ? "bg-[#a3b693] text-white"
                       : "bg-primary text-primary-foreground",
                   )}
@@ -1154,7 +1156,7 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
                         : "Confirming…"
                       : needsTicketPurchase
                         ? `Pay ${formatTicketPriceLabel(classTicketProduct!.price_zar)} & book`
-                        : isFreeClass
+                        : isFreeClass && !selectedCredit && !usePoints
                           ? "Book Free"
                           : "Confirm Booking"}
                 </button>

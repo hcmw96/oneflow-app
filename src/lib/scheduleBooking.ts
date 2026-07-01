@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isPastDateKey, STUDIO_TIMEZONE } from "@/lib/timezone";
+import { normalizeProductCategoryKey } from "@/lib/productCategories";
 
 export type BookedClassInterval = {
   class_id: string;
@@ -115,14 +116,29 @@ export function customerClassCapacityLabel(
   return { full: false, almostFull: false, message: null };
 }
 
-/** True when a class ticket product is complimentary (admin-assigned, not customer-purchasable). */
+type ClassTicketProductRef = {
+  category?: string | null;
+  is_class_ticket?: boolean | null;
+};
+
+/**
+ * True when a linked product is admin-only complimentary (not bookable online).
+ * Class-scoped ticket products are always customer-bookable (credits or free ticket),
+ * including R0 wellzone/sauna slots — only free beginner classes skip payment entirely.
+ */
 export function isComplimentaryClassTicket(
-  priceZar: number | null | undefined,
-  classType: string | null | undefined,
+  ticket: ClassTicketProductRef | null | undefined,
 ): boolean {
-  const price = Number(priceZar ?? 0);
-  if (price > 0) return false;
-  return !isFreeBeginnerClass(classType);
+  if (!ticket) return false;
+  if (ticket.is_class_ticket) return false;
+  return normalizeProductCategoryKey(ticket.category) === "complimentary";
+}
+
+/** Paid event tickets require the matching ticket credit; R0 / pass classes use normal credit rules. */
+export function classTicketRestrictsCreditsToProduct(
+  priceZar: number | null | undefined,
+): boolean {
+  return isPurchasableClassTicketPrice(priceZar);
 }
 
 export function isPurchasableClassTicketPrice(priceZar: number | null | undefined): boolean {

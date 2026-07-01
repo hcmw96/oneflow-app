@@ -10,10 +10,10 @@ export type ClassTicketProductInput = {
 };
 
 function ticketCategory(classType: string, priceZar: number): string {
-  if (priceZar <= 0) return "complimentary";
   const t = classType.trim().toLowerCase();
   if (t === "wellzone" || t === "sauna_journey") return "wellzone";
   if (t === "power") return "power";
+  if (priceZar <= 0) return "complimentary";
   return "yoga";
 }
 
