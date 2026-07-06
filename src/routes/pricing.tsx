@@ -14,16 +14,11 @@ import { buildProductCreditRows } from "@/lib/multiCreditProducts";
 import { defaultAllowedClassTypesForCreditCategory } from "@/lib/allowedClassTypes";
 import { cn } from "@/lib/utils";
 import { STUDIO_WHATSAPP_URL } from "@/lib/studioContact";
-
-export const Route = createFileRoute("/pricing")({
-  head: () => ({
-    meta: [
-      { title: "Buy A Pass — One Flow" },
-      { name: "description", content: "Class packs and passes for One Flow." },
-    ],
-  }),
-  component: PricingPage,
-});
+import { MemberCreditTypesPanel } from "@/components/MemberCreditTypesPanel";
+import {
+  summarizeMemberCreditTypes,
+  type MemberCreditRow,
+} from "@/lib/memberCreditBalance";
 
 /** Categories shown on customer pricing (excludes `staff` and `cafe` — admin only). */
 const CUSTOMER_PRICING_CATEGORY_ORDER = [
@@ -34,6 +29,23 @@ const CUSTOMER_PRICING_CATEGORY_ORDER = [
 ] as const;
 
 type CustomerPricingCategory = (typeof CUSTOMER_PRICING_CATEGORY_ORDER)[number];
+
+export const Route = createFileRoute("/pricing")({
+  head: () => ({
+    meta: [
+      { title: "Buy A Pass — One Flow" },
+      { name: "description", content: "Class packs and passes for One Flow." },
+    ],
+  }),
+  validateSearch: (raw: Record<string, unknown>) => {
+    const category = typeof raw.category === "string" ? raw.category.trim().toLowerCase() : "";
+    const allowed = new Set(["yoga", "wellzone", "all_access", "power"]);
+    return {
+      category: allowed.has(category) ? (category as CustomerPricingCategory) : undefined,
+    };
+  },
+  component: PricingPage,
+});
 
 const SECTION_TITLES: Record<CustomerPricingCategory, string> = {
   yoga: "Class Packs (Yoga, Sculpt & Pilates)",
@@ -106,6 +118,7 @@ function filterCustomerPricingProducts(rows: ProductRow[]): ProductRow[] {
 
 function PricingPage() {
   const router = useRouter();
+  const search = Route.useSearch();
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [buyingId, setBuyingId] = useState<string | null>(null);
@@ -121,6 +134,12 @@ function PricingPage() {
   const [flowPointsState, setFlowPointsState] = useState<"loading" | "guest" | number>("loading");
   const [conversionRate, setConversionRate] = useState(10);
   const [useFlowPointsFor, setUseFlowPointsFor] = useState<Record<string, boolean>>({});
+  const [memberCredits, setMemberCredits] = useState<MemberCreditRow[]>([]);
+
+  const creditTypeBalances = useMemo(
+    () => summarizeMemberCreditTypes(memberCredits),
+    [memberCredits],
+  );
 
   const itemsByCategory = useMemo(() => {
     const buckets: Record<CustomerPricingCategory, ProductRow[]> = {
@@ -153,6 +172,32 @@ function PricingPage() {
       ),
     [itemsByCategory],
   );
+
+  useEffect(() => {
+    if (!search.category) return;
+    setOpenSections((prev) => ({ ...prev, [search.category!]: true }));
+  }, [search.category]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const user = await getUser();
+      if (cancelled || !user) {
+        setMemberCredits([]);
+        return;
+      }
+      const { data } = await supabase
+        .from("user_credits")
+        .select("credits_remaining, is_unlimited, expires_at, category, mat_access, towel_access")
+        .eq("profile_id", user.id);
+      if (!cancelled) {
+        setMemberCredits((data ?? []) as MemberCreditRow[]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -369,6 +414,8 @@ function PricingPage() {
           <h1 className="font-display text-2xl font-bold tracking-tight text-[#a3b693] dark:text-foreground">
             Buy A Pass
           </h1>
+
+          <MemberCreditTypesPanel balances={creditTypeBalances} compact />
 
           {flowPointsState === "loading" ? (
             <p className="text-sm text-muted-foreground">Loading Flow Points…</p>

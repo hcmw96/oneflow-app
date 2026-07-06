@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   User as UserIcon,
@@ -20,6 +20,11 @@ import {
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { FriendsPanel } from "@/components/FriendsPanel";
+import { MemberCreditTypesPanel } from "@/components/MemberCreditTypesPanel";
+import {
+  summarizeMemberCreditTypes,
+  type MemberCreditRow,
+} from "@/lib/memberCreditBalance";
 import { MessageStudioButton } from "@/components/MessageStudioSheet";
 import { formatRand } from "@/lib/format";
 import { formatStudioDateShort } from "@/lib/timezone";
@@ -494,7 +499,13 @@ function BillingPanel() {
   const [rows, setRows] = useState<
     { id: string; name: string; date: string; amountZar: number; source: string }[]
   >([]);
+  const [creditRows, setCreditRows] = useState<MemberCreditRow[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const creditTypeBalances = useMemo(
+    () => summarizeMemberCreditTypes(creditRows),
+    [creditRows],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -504,20 +515,32 @@ function BillingPanel() {
       if (!user) {
         if (!cancelled) {
           setRows([]);
+          setCreditRows([]);
           setLoading(false);
         }
         return;
       }
 
-      const { data, error } = await supabase
-        .from("user_credits")
-        .select("id, created_at, product_name, yoco_payment_id, product:product_id ( name, price_zar )")
-        .eq("profile_id", user.id)
-        .order("created_at", { ascending: false })
-        .limit(40);
+      const [creditsRes, purchasesRes] = await Promise.all([
+        supabase
+          .from("user_credits")
+          .select("credits_remaining, is_unlimited, expires_at, category, mat_access, towel_access")
+          .eq("profile_id", user.id),
+        supabase
+          .from("user_credits")
+          .select("id, created_at, product_name, yoco_payment_id, product:product_id ( name, price_zar )")
+          .eq("profile_id", user.id)
+          .order("created_at", { ascending: false })
+          .limit(40),
+      ]);
 
       if (cancelled) return;
 
+      if (creditsRes.error) console.error(creditsRes.error);
+      setCreditRows((creditsRes.data ?? []) as MemberCreditRow[]);
+
+      const data = purchasesRes.data;
+      const error = purchasesRes.error;
       if (error) {
         console.error(error);
         setRows([]);
@@ -556,7 +579,8 @@ function BillingPanel() {
 
   return (
     <Panel title="Billing history">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+      <MemberCreditTypesPanel balances={creditTypeBalances} compact />
+      <div className="mb-4 mt-4 flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-muted-foreground">
           Passes and credit grants linked to your account (checkout and in-studio).
         </p>

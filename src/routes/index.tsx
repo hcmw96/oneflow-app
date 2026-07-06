@@ -1,6 +1,6 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Calendar, Coffee, MapPin, QrCode, Sparkles, Ticket } from "lucide-react";
+import { Calendar, Coffee, MapPin, QrCode, Sparkles } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/auth";
@@ -11,8 +11,14 @@ import {
   type MovementChallengeConfig,
 } from "@/lib/movementChallenge";
 import { HomeSpotlightCard, homeSpotlightCardVisible } from "@/components/HomeSpotlightCard";
+import { HomeEventCard } from "@/components/HomeEventCard";
+import { MemberCreditTypesPanel } from "@/components/MemberCreditTypesPanel";
+import { fetchHomeEventCardConfig, homeEventCardVisible } from "@/lib/homeEventCard";
+import {
+  summarizeMemberCreditTypes,
+  type MemberCreditRow,
+} from "@/lib/memberCreditBalance";
 import { supabase } from "@/lib/supabase";
-import { isBookableClassCredit } from "@/lib/bookingCredits";
 import {
   fetchCafeCredits,
   hasActiveCafeCredits,
@@ -82,7 +88,6 @@ type UserCreditHomeRow = {
 };
 
 function HomePage() {
-  const navigate = useNavigate();
   const { user, authReady } = useAuth();
   const { timeZone, studioTimeZone } = useTimezone();
   const [loading, setLoading] = useState(true);
@@ -98,6 +103,9 @@ function HomePage() {
   const [challengeStamped, setChallengeStamped] = useState(0);
   const [challengeConfig, setChallengeConfig] = useState<MovementChallengeConfig | null>(null);
   const [upcomingBookings, setUpcomingBookings] = useState<HomeUpcomingBooking[]>([]);
+  const [homeEventCard, setHomeEventCard] = useState<Awaited<
+    ReturnType<typeof fetchHomeEventCardConfig>
+  > | null>(null);
   const challengeTotalDays = challengeConfig
     ? movementChallengeTotalDays(challengeConfig)
     : 31;
@@ -110,28 +118,10 @@ function HomePage() {
   const matAccessLabels = activeMatAccessLabels(matTowelRows);
   const towelAccessLabels = activeTowelAccessLabels(matTowelRows);
 
-  const { hasUnlimited, totalCredits } = useMemo(() => {
-    const credits = creditRows;
-    const now = new Date();
-    /** Matches "active" credits: null expiry never expires. */
-    const notExpired = (expires_at: string | null) =>
-      expires_at == null || new Date(expires_at) > now;
-
-    const hasUnlimited = (credits ?? []).some(
-      (c) => Boolean(c.is_unlimited) && notExpired(c.expires_at),
-    );
-    const classCredits = (credits ?? []).filter((c) => isBookableClassCredit(c));
-    const hasUnlimitedClass = classCredits.some(
-      (c) => Boolean(c.is_unlimited) && notExpired(c.expires_at),
-    );
-    const totalCredits = classCredits
-      .filter((c) => !c.is_unlimited && notExpired(c.expires_at))
-      .reduce((sum, c) => {
-        const n = Number(c.credits_remaining);
-        return sum + (Number.isFinite(n) ? n : 0);
-      }, 0);
-    return { hasUnlimited: hasUnlimitedClass, totalCredits };
-  }, [creditRows]);
+  const creditTypeBalances = useMemo(
+    () => summarizeMemberCreditTypes(creditRows as MemberCreditRow[]),
+    [creditRows],
+  );
 
   const loadHome = useCallback(async () => {
     if (!authReady) return;
@@ -171,6 +161,7 @@ function HomePage() {
       { count: weeklyAttended, error: weeklyErr },
       upcoming,
       movementChallenge,
+      eventCardConfig,
     ] = await Promise.all([
       supabase
         .from("profiles")
@@ -200,6 +191,7 @@ function HomePage() {
         .lt("checked_in_at", weekEndIso),
       fetchUpcomingHomeBookings(supabase, uid),
       fetchMovementChallengeConfig(),
+      fetchHomeEventCardConfig(),
     ]);
 
     if (attendedErr) console.error(attendedErr);
@@ -228,6 +220,7 @@ function HomePage() {
       : 0;
     setChallengeStamped(stampedDays);
     setUpcomingBookings(upcoming);
+    setHomeEventCard(eventCardConfig);
     setLoading(false);
   }, [authReady, user]);
 
@@ -351,14 +344,6 @@ function HomePage() {
         >
           Book a Class
         </Link>
-
-        {challengeConfig && homeSpotlightCardVisible(challengeConfig) ? (
-          <HomeSpotlightCard
-            config={challengeConfig}
-            challengeStamped={challengeStamped}
-            challengeTotalDays={challengeTotalDays}
-          />
-        ) : null}
 
         <section className="grid grid-cols-2 gap-3">
           <div className="flex flex-col items-center justify-between rounded-2xl border border-border bg-card p-5 text-center">
@@ -488,60 +473,7 @@ function HomePage() {
           </section>
         ) : null}
 
-        <div className="rounded-2xl border border-border bg-card px-5 py-5">
-          <div className="mb-3 flex items-center gap-2">
-            <Ticket className="h-4 w-4 text-[#a3b693]" />
-            <span className="text-sm font-semibold tracking-wide text-muted-foreground uppercase">
-              Class credits
-            </span>
-          </div>
-
-          <div className="flex items-end justify-between">
-            <div>
-              {hasUnlimited ? (
-                <>
-                  <p className="font-display text-5xl font-extrabold leading-none tracking-tight text-foreground">
-                    ∞
-                  </p>
-                  <p className="mt-1.5 text-sm text-muted-foreground">unlimited credits</p>
-                </>
-              ) : (
-                <>
-                  <p className="font-display text-5xl font-extrabold leading-none tracking-tight text-foreground">
-                    {totalCredits}
-                  </p>
-                  <p className="mt-1.5 text-sm text-muted-foreground">
-                    {totalCredits === 1 ? "credit remaining" : "credits remaining"}
-                  </p>
-                </>
-              )}
-            </div>
-
-            {!hasUnlimited && totalCredits === 0 && (
-              <span className="rounded-full bg-orange-100 px-3 py-1 text-xs font-semibold text-orange-700">
-                Out of credits
-              </span>
-            )}
-          </div>
-
-          <div className="mt-5 flex gap-3">
-            <button
-              type="button"
-              onClick={() => void navigate({ to: "/pricing" })}
-              className="flex-1 rounded-xl border border-[#a3b693] py-2.5 text-sm font-semibold text-[#a3b693] transition-opacity active:opacity-70"
-            >
-              Top up
-            </button>
-            <button
-              type="button"
-              onClick={() => void navigate({ to: "/schedule" })}
-              className="flex-1 rounded-xl py-2.5 text-sm font-semibold text-white transition-opacity active:opacity-70"
-              style={{ backgroundColor: "#a3b693" }}
-            >
-              Book a class →
-            </button>
-          </div>
-        </div>
+        <MemberCreditTypesPanel balances={creditTypeBalances} />
 
         <section className="rounded-2xl border border-border bg-card p-5">
           <h2 className="font-display text-2xl font-bold">Your Weekly Goal</h2>
@@ -564,6 +496,25 @@ function HomePage() {
             View Goals & Streaks
           </Link>
         </section>
+
+        {(challengeConfig && homeSpotlightCardVisible(challengeConfig)) ||
+        (homeEventCard && homeEventCardVisible(homeEventCard)) ? (
+          <section className="space-y-4 border-t border-border pt-2">
+            <p className="text-center text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              From the studio
+            </p>
+            {challengeConfig && homeSpotlightCardVisible(challengeConfig) ? (
+              <HomeSpotlightCard
+                config={challengeConfig}
+                challengeStamped={challengeStamped}
+                challengeTotalDays={challengeTotalDays}
+              />
+            ) : null}
+            {homeEventCard && homeEventCardVisible(homeEventCard) ? (
+              <HomeEventCard config={homeEventCard} />
+            ) : null}
+          </section>
+        ) : null}
       </main>
     </AppShell>
   );
