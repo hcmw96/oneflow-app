@@ -5,6 +5,16 @@ import { Clock, MapPin, Share2, X } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { TypeBadge } from "@/components/TypeBadge";
 import { cancelBookingWithPolicy } from "@/lib/bookingCancellation";
 import { useTimezone } from "@/hooks/use-timezone";
@@ -93,6 +103,8 @@ function BookingsPage() {
   const [waitlist, setWaitlist] = useState<WaitlistEntryWithClass[]>([]);
   const [shareComposerOpen, setShareComposerOpen] = useState(false);
   const [shareComposerInput, setShareComposerInput] = useState<ClassPracticeShareInput | null>(null);
+  const [cancelTargetId, setCancelTargetId] = useState<string | null>(null);
+  const [cancelling, setCancelling] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -207,13 +219,7 @@ function BookingsPage() {
   };
 
   const cancelBooking = async (bookingId: string) => {
-    const confirmText = `Please read carefully:
-- Cancellations more than 2 hours before class: your credit will be returned.
-- Late cancellations (within 2 hours): your credit will be returned, but a R100 fee applies on your next transaction.
-Are you sure you want to cancel?`;
-
-    if (!window.confirm(confirmText)) return;
-
+    setCancelling(true);
     try {
       const result = await cancelBookingWithPolicy({
         bookingId,
@@ -224,9 +230,12 @@ Are you sure you want to cancel?`;
           ? "Booking cancelled. Late cancellation fee will apply on next transaction."
           : "Booking cancelled. Credit returned.",
       );
+      setCancelTargetId(null);
       await load();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not cancel booking");
+    } finally {
+      setCancelling(false);
     }
   };
 
@@ -356,7 +365,8 @@ Are you sure you want to cancel?`;
                     </div>
                   )}
                   <button
-                    onClick={() => void cancelBooking(b.id)}
+                    type="button"
+                    onClick={() => setCancelTargetId(b.id)}
                     className="mt-3 inline-flex items-center gap-1 rounded-full border border-border px-3 py-1 text-xs font-medium text-muted-foreground"
                   >
                     <X className="h-3 w-3 shrink-0" aria-hidden /> Cancel booking
@@ -407,6 +417,40 @@ Are you sure you want to cancel?`;
         }}
         input={shareComposerInput}
       />
+
+      <AlertDialog
+        open={cancelTargetId !== null}
+        onOpenChange={(open) => {
+          if (!open && !cancelling) setCancelTargetId(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cancel this booking?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-left text-sm text-muted-foreground">
+                <p>Cancellations more than 2 hours before class: your credit will be returned.</p>
+                <p>
+                  Late cancellations (within 2 hours): your credit will be returned, but a R100
+                  fee applies on your next transaction.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={cancelling}>Keep booking</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={cancelling || !cancelTargetId}
+              onClick={(event) => {
+                event.preventDefault();
+                if (cancelTargetId) void cancelBooking(cancelTargetId);
+              }}
+            >
+              {cancelling ? "Cancelling…" : "Cancel booking"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppShell>
   );
 }

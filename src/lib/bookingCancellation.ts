@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabase";
+import { supabase, getUser } from "@/lib/supabase";
 import { formatStudioEmailDate, formatStudioTime12Upper } from "@/lib/timezone";
 import { promoteNextWaitlistEntry, sendWaitlistPromotionEmail } from "@/lib/waitlist";
 
@@ -63,6 +63,12 @@ export async function cancelBookingWithPolicy({
   cancellationReason,
   waiveLateFee = false,
 }: CancelBookingParams): Promise<CancellationResult> {
+  const user =
+    cancellationReason === "customer_cancelled" ? await getUser() : null;
+  if (cancellationReason === "customer_cancelled" && !user) {
+    throw new Error("Sign in to cancel this booking");
+  }
+
   const { data, error } = await supabase
     .from("bookings")
     .select(
@@ -89,6 +95,9 @@ export async function cancelBookingWithPolicy({
   const booking = data as unknown as BookingCancelRow;
   if (booking.status === "cancelled") {
     throw new Error("Booking already cancelled");
+  }
+  if (cancellationReason === "customer_cancelled" && booking.profile_id !== user?.id) {
+    throw new Error("You can only cancel your own bookings");
   }
 
   const cls = one(booking.classes);
