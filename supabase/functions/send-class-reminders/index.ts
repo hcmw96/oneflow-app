@@ -26,17 +26,14 @@ type BookingRow = {
   profile_id: string;
   mat_addon: boolean | null;
   towel_addon: boolean | null;
-  classes: ClassRow | ClassRow[] | null;
-  profiles:
-    | { email: string | null; notification_preferences: unknown }
-    | { email: string | null; notification_preferences: unknown }[]
-    | null;
 };
 
-function pickOne<T>(value: T | T[] | null | undefined): T | null {
-  if (value == null) return null;
-  return Array.isArray(value) ? (value[0] ?? null) : value;
-}
+type ProfileRow = {
+  id: string;
+  email: string | null;
+  notification_preferences: unknown;
+  role: string | null;
+};
 
 function resolveAdminApiKey(): string {
   const service = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -143,19 +140,10 @@ serve(async (req) => {
       classById.set(row.id, row);
     }
 
+    // Reminders: every confirmed booking gets a reminder — no role filter (staff, directors, etc.).
     const { data: bookings, error: bookingErr } = await admin
       .from("bookings")
-      .select(
-        `
-        id,
-        class_id,
-        profile_id,
-        mat_addon,
-        towel_addon,
-        classes ( id, name, class_type, location, starts_at, guide_name, is_cancelled ),
-        profiles ( email, notification_preferences )
-      `,
-      )
+      .select("id, class_id, profile_id, mat_addon, towel_addon")
       .in("class_id", classIds)
       .eq("status", "confirmed")
       .is("reminder_email_sent_at", null);
@@ -167,17 +155,44 @@ serve(async (req) => {
       });
     }
 
+    const bookingRows = (bookings ?? []) as BookingRow[];
+    const profileIds = [...new Set(bookingRows.map((b) => b.profile_id).filter(Boolean))];
+
+    const profileById = new Map<string, ProfileRow>();
+    if (profileIds.length > 0) {
+      const { data: profiles, error: profErr } = await admin
+        .from("profiles")
+        .select("id, email, notification_preferences, role")
+        .in("id", profileIds);
+
+      if (profErr) {
+        return new Response(JSON.stringify({ error: profErr.message }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      for (const raw of profiles ?? []) {
+        const p = raw as ProfileRow;
+        profileById.set(p.id, p);
+      }
+    }
+
     let sent = 0;
     let skipped = 0;
     const failures: { booking_id: string; error: string }[] = [];
 
-    for (const raw of bookings ?? []) {
-      const row = raw as BookingRow;
-      const cls =
-        pickOne(row.classes) ??
-        (row.class_id ? classById.get(String(row.class_id)) ?? null : null);
-      const profile = pickOne(row.profiles);
-      const email = (profile?.email ?? "").trim().toLowerCase();
+    for (const row of bookingRows) {
+      const cls = row.class_id ? classById.get(String(row.class_id)) ?? null : null;
+      const profile = profileById.get(row.profile_id) ?? null;
+
+      let email = (profile?.email ?? "").trim().toLowerCase();
+      if (!email) {
+        const { data: authUser, error: authErr } = await admin.auth.admin.getUserById(row.profile_id);
+        if (!authErr && authUser?.user?.email) {
+          email = authUser.user.email.trim().toLowerCase();
+        }
+      }
 
       if (!cls || cls.is_cancelled) {
         skipped += 1;
