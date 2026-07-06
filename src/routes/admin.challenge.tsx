@@ -27,17 +27,24 @@ import {
 } from "@/lib/movementChallenge";
 import { getUser } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
-import { uploadChallengeImage } from "@/lib/uploadChallengeImage";
+import {
+  DEFAULT_HOME_EVENT_CARD,
+  fetchHomeEventCardConfig,
+  saveHomeEventCardConfig,
+  type HomeEventCardConfig,
+} from "@/lib/homeEventCard";
+import { HomeEventCard } from "@/components/HomeEventCard";
 
 export const Route = createFileRoute("/admin/challenge")({
   head: () => ({ meta: [{ title: "Home Spotlight — One Flow Admin" }] }),
   component: AdminChallengePage,
 });
 
-type ImageTarget = "challenge" | "promo";
+type ImageTarget = "challenge" | "promo" | "event";
 
 function AdminChallengePage() {
   const [config, setConfig] = useState<MovementChallengeConfig>(DEFAULT_MOVEMENT_CHALLENGE);
+  const [eventCard, setEventCard] = useState<HomeEventCardConfig>(DEFAULT_HOME_EVENT_CARD);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -48,6 +55,7 @@ function AdminChallengePage() {
     setLoading(true);
     try {
       setConfig(await fetchMovementChallengeConfig({ bypassCache: true }));
+      setEventCard(await fetchHomeEventCardConfig({ bypassCache: true }));
     } catch (e) {
       console.error(e);
       toast.error("Could not load spotlight settings");
@@ -65,6 +73,13 @@ function AdminChallengePage() {
     value: MovementChallengeConfig[K],
   ) => {
     setConfig((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const updateEventCard = <K extends keyof HomeEventCardConfig>(
+    key: K,
+    value: HomeEventCardConfig[K],
+  ) => {
+    setEventCard((prev) => ({ ...prev, [key]: value }));
   };
 
   const isPromoMode = config.home_card_mode === "event" || config.home_card_mode === "offer";
@@ -113,6 +128,16 @@ function AdminChallengePage() {
         },
         user?.id ?? null,
       );
+      await saveHomeEventCardConfig({
+        ...eventCard,
+        image_url: eventCard.image_url.trim(),
+        event_date: eventCard.event_date.trim(),
+        price_label: eventCard.price_label.trim(),
+        title: eventCard.title.trim(),
+        body_text: eventCard.body_text.trim(),
+        link_url: eventCard.link_url.trim() || "/schedule",
+        link_label: eventCard.link_label.trim() || "Learn more",
+      });
       toast.success("Saved");
     } catch (e) {
       console.error(e);
@@ -127,7 +152,13 @@ function AdminChallengePage() {
     setUploading(true);
     try {
       const url = await uploadChallengeImage(file);
-      update(imageTarget === "promo" ? "promo_image_url" : "image_url", url);
+      if (imageTarget === "event") {
+        updateEventCard("image_url", url);
+      } else if (imageTarget === "promo") {
+        update("promo_image_url", url);
+      } else {
+        update("image_url", url);
+      }
       toast.success("Image uploaded");
     } catch (e) {
       console.error(e);
@@ -146,8 +177,8 @@ function AdminChallengePage() {
   return (
     <div>
       <PageHeader
-        title="Home spotlight"
-        description="The hero card on the member home screen — movement challenge, events, or special offers."
+        title="Home spotlight & event card"
+        description="Spotlight and event cards appear at the bottom of the member home page — below bookings and schedule actions."
         actions={
           <Button
             type="button"
@@ -398,6 +429,114 @@ function AdminChallengePage() {
               </Button>
             </div>
           </section>
+
+          <section className="rounded-2xl border border-border bg-card p-5">
+            <h3 className="mb-1 font-display text-lg font-semibold">Event card (bottom of home)</h3>
+            <p className="mb-4 text-sm text-muted-foreground">
+              Separate promo card with image, date, price, and copy. Shown below core home content,
+              alongside the spotlight card.
+            </p>
+            <div className="grid gap-4">
+              <label className="flex items-center gap-2 text-sm">
+                <Checkbox
+                  checked={eventCard.enabled}
+                  onCheckedChange={(v) => updateEventCard("enabled", v === true)}
+                  disabled={loading}
+                />
+                Show event card on home
+              </label>
+              <div className="grid gap-1.5">
+                <Label htmlFor="event-title">Title</Label>
+                <Input
+                  id="event-title"
+                  value={eventCard.title}
+                  onChange={(e) => updateEventCard("title", e.target.value)}
+                  disabled={loading}
+                  placeholder="Summer solstice workshop"
+                />
+              </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="grid gap-1.5">
+                  <Label htmlFor="event-date">Date (display text)</Label>
+                  <Input
+                    id="event-date"
+                    value={eventCard.event_date}
+                    onChange={(e) => updateEventCard("event_date", e.target.value)}
+                    disabled={loading}
+                    placeholder="Saturday 12 July"
+                  />
+                </div>
+                <div className="grid gap-1.5">
+                  <Label htmlFor="event-price">Price (display text)</Label>
+                  <Input
+                    id="event-price"
+                    value={eventCard.price_label}
+                    onChange={(e) => updateEventCard("price_label", e.target.value)}
+                    disabled={loading}
+                    placeholder="R450"
+                  />
+                </div>
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="event-body">Description</Label>
+                <Textarea
+                  id="event-body"
+                  value={eventCard.body_text}
+                  onChange={(e) => updateEventCard("body_text", e.target.value)}
+                  disabled={loading}
+                  rows={3}
+                  placeholder="What members should know about this event…"
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="event-link">Link</Label>
+                <Input
+                  id="event-link"
+                  value={eventCard.link_url}
+                  onChange={(e) => updateEventCard("link_url", e.target.value)}
+                  disabled={loading}
+                  placeholder="/schedule or https://…"
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="event-cta">Call to action</Label>
+                <Input
+                  id="event-cta"
+                  value={eventCard.link_label}
+                  onChange={(e) => updateEventCard("link_label", e.target.value)}
+                  disabled={loading}
+                  placeholder="Book your spot"
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="event-image-url">Image URL</Label>
+                <Input
+                  id="event-image-url"
+                  value={eventCard.image_url}
+                  onChange={(e) => updateEventCard("image_url", e.target.value)}
+                  disabled={loading}
+                  placeholder="Optional hero image"
+                />
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                className="gap-2"
+                disabled={loading || uploading}
+                onClick={() => {
+                  setImageTarget("event");
+                  imageInputRef.current?.click();
+                }}
+              >
+                {uploading && imageTarget === "event" ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <ImageIcon className="h-4 w-4" />
+                )}
+                Upload event image
+              </Button>
+            </div>
+          </section>
         </div>
 
         <aside className="space-y-3">
@@ -421,6 +560,16 @@ function AdminChallengePage() {
             <p className="text-xs text-muted-foreground">
               Image: {homeSpotlightImageUrl(config) ? "custom" : "default"}
             </p>
+          ) : null}
+          {eventCard.enabled && eventCard.title.trim() ? (
+            <>
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Event card preview
+              </p>
+              <div className="pointer-events-none">
+                <HomeEventCard config={eventCard} />
+              </div>
+            </>
           ) : null}
         </aside>
       </div>
