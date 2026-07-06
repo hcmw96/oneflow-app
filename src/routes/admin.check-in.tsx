@@ -27,7 +27,12 @@ import {
 } from "@/lib/checkInRoster";
 import { parseQrCheckInToken } from "@/lib/qrCheckIn";
 import { pickNextUpcomingClassId } from "@/lib/checkInUpcoming";
-import { orderClassesForLiveDay } from "@/lib/liveClassList";
+import {
+  classVisibleOnCheckInRoster,
+  DEFAULT_CHECKIN_OPEN_MINUTES_BEFORE,
+  checkInWindowAt,
+  parseCheckinOpenMinutesBefore,
+} from "@/lib/checkInWindow";
 import { useNowMs } from "@/hooks/use-now-ms";
 import { useScrollToLiveClass } from "@/hooks/use-scroll-to-live-class";
 import { welcomeCheckInToastMessage } from "@/lib/flowPoints";
@@ -66,7 +71,7 @@ function CheckInPage() {
   const [roster, setRoster] = useState<RosterRow[]>([]);
   const [expandedClassIds, setExpandedClassIds] = useState<Set<string>>(() => new Set());
   const [loading, setLoading] = useState(true);
-  const [walkInOpen, setWalkInOpen] = useState(false);
+  const [checkinOpenMinutes, setCheckinOpenMinutes] = useState(DEFAULT_CHECKIN_OPEN_MINUTES_BEFORE);
   const qrDedupeRef = useRef<string | null>(null);
   const qrDedupeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const qrInvalidToastRef = useRef<string | null>(null);
@@ -116,18 +121,29 @@ function CheckInPage() {
   const loadData = useCallback(async () => {
     setLoading(true);
     const { startUtcIso, endUtcIso } = jhbDayBounds();
-    const oneHourAgoIso = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const now = Date.now();
 
-    const { data: classesData, error: classesError } = await supabase
-      .from("classes")
-      .select(
-        "id, name, class_type, starts_at, ends_at, capacity, booked_count, location, guide_name, guide_id",
-      )
-      .gte("starts_at", startUtcIso)
-      .lte("starts_at", endUtcIso)
-      .gte("starts_at", oneHourAgoIso)
-      .eq("is_cancelled", false)
-      .order("starts_at");
+    const [{ data: classesData, error: classesError }, settingsRes] = await Promise.all([
+      supabase
+        .from("classes")
+        .select(
+          "id, name, class_type, starts_at, ends_at, capacity, booked_count, location, guide_name, guide_id",
+        )
+        .gte("starts_at", startUtcIso)
+        .lte("starts_at", endUtcIso)
+        .eq("is_cancelled", false)
+        .order("starts_at"),
+      supabase
+        .from("studio_settings")
+        .select("value")
+        .eq("key", "checkin_open_minutes_before")
+        .maybeSingle(),
+    ]);
+
+    const openMinutes = parseCheckinOpenMinutesBefore(
+      (settingsRes.data as { value?: string } | null)?.value,
+    );
+    setCheckinOpenMinutes(openMinutes);
 
     if (classesError) {
       console.error("check-in: classes load failed", classesError);
@@ -139,18 +155,20 @@ function CheckInPage() {
     }
 
     const rawClasses = (classesData ?? []) as unknown as Record<string, unknown>[];
-    const classes: TodayClass[] = rawClasses.map((row) => ({
-      id: String(row.id),
-      name: String(row.name ?? ""),
-      class_type: String(row.class_type ?? ""),
-      starts_at: String(row.starts_at ?? ""),
-      ends_at: String(row.ends_at ?? ""),
-      capacity: Number(row.capacity ?? 0),
-      booked_count: Number(row.booked_count ?? 0),
-      location: (row.location as string | null) ?? null,
-      guide_name: (row.guide_name as string | null) ?? null,
-      guide_id: (row.guide_id as string | null) ?? null,
-    }));
+    const classes: TodayClass[] = rawClasses
+      .map((row) => ({
+        id: String(row.id),
+        name: String(row.name ?? ""),
+        class_type: String(row.class_type ?? ""),
+        starts_at: String(row.starts_at ?? ""),
+        ends_at: String(row.ends_at ?? ""),
+        capacity: Number(row.capacity ?? 0),
+        booked_count: Number(row.booked_count ?? 0),
+        location: (row.location as string | null) ?? null,
+        guide_name: (row.guide_name as string | null) ?? null,
+        guide_id: (row.guide_id as string | null) ?? null,
+      }))
+      .filter((c) => classVisibleOnCheckInRoster(c.starts_at, c.class_type, openMinutes, now));
     setTodayClasses(classes);
 
     const classIds = classes.map((c) => c.id);
@@ -175,7 +193,7 @@ function CheckInPage() {
         mat_addon,
         towel_addon,
         profiles ( first_name, last_name, avatar_url, role ),
-        classes ( id, name, starts_at, guide_name )
+        classes ( id, name, starts_at, guide_name, class_type )
       `,
         )
         .in("class_id", classIds),
@@ -340,7 +358,7 @@ function CheckInPage() {
         status,
         checked_in,
         qr_used,
-        classes ( starts_at ),
+        classes ( starts_at, class_type ),
         profiles ( first_name, last_name, role )
       `,
       )
@@ -382,6 +400,17 @@ function CheckInPage() {
       return;
     }
 
+    const cls = oneClass(booking.classes as BookingRow["classes"]);
+    const window = checkInWindowAt(
+      cls?.starts_at ?? "",
+      cls?.class_type,
+      checkinOpenMinutes,
+    );
+    if (!window.allowed) {
+      toastQrIssue(`window:${token}`, window.reason ?? "Check-in is not available right now.");
+      return;
+    }
+
     const prof = oneProfile(booking.profiles as BookingRow["profiles"]);
     const memberName = formatCheckInMemberName(prof?.first_name, prof?.last_name);
     const checkedAt = new Date().toISOString();
@@ -401,7 +430,6 @@ function CheckInPage() {
       return;
     }
 
-    const cls = oneClass(booking.classes as BookingRow["classes"]);
     await finishQrCheckIn({
       bookingId: booking.id as string,
       profileId: booking.profile_id as string,
@@ -470,6 +498,7 @@ function CheckInPage() {
                     onExpandedChange={(open) => toggleClassExpanded(s.key, open)}
                     loading={loading}
                     onUpdated={loadData}
+                    openMinutesBefore={checkinOpenMinutes}
                   />
                   </div>
                 ))

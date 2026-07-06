@@ -1,5 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { awardClassesAttendedBadges } from "@/lib/badges";
+import {
+  checkInWindowAt,
+  DEFAULT_CHECKIN_OPEN_MINUTES_BEFORE,
+} from "@/lib/checkInWindow";
 import { deleteMayChallengeCheckInForBooking } from "@/lib/mayChallengeCheckIn";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { formatStudioEmailDate, formatStudioTime12Upper } from "@/lib/timezone";
@@ -26,8 +30,20 @@ export type BookingRow = {
   towel_addon?: boolean | null;
   profiles: ProfileJoinRow | ProfileJoinRow[] | null;
   classes:
-    | { id: string; name: string; starts_at: string; guide_name: string | null }
-    | { id: string; name: string; starts_at: string; guide_name: string | null }[]
+    | {
+        id: string;
+        name: string;
+        starts_at: string;
+        guide_name: string | null;
+        class_type?: string | null;
+      }
+    | {
+        id: string;
+        name: string;
+        starts_at: string;
+        guide_name: string | null;
+        class_type?: string | null;
+      }[]
     | null;
 };
 
@@ -41,6 +57,7 @@ export type RosterRow = {
   class_id: string;
   className: string;
   classStartsAt: string;
+  classType: string | null;
   startsAtLabel: string;
   creditLabel: string;
   matAddon: boolean;
@@ -128,6 +145,7 @@ export function normalizeBooking(raw: BookingRow, addonAccess: RosterAddonAccess
     class_id: raw.class_id,
     className: cls.name,
     classStartsAt: cls.starts_at,
+    classType: cls.class_type ?? null,
     startsAtLabel: `Today · ${formatClassTime(cls.starts_at)}`,
     creditLabel: raw.payment_method?.replace(/_/g, " ") ?? "—",
     matAddon,
@@ -143,10 +161,28 @@ export async function patchBookingAttendance(
   args: {
     bookingId: string;
     status: "attended" | "confirmed";
-    context: { profileId: string; classStartsAt: string } | null;
+    context: {
+      profileId: string;
+      classStartsAt: string;
+      classType?: string | null;
+    } | null;
+    openMinutesBefore?: number;
   },
 ): Promise<{ error: string | null }> {
-  const { bookingId, status, context } = args;
+  const { bookingId, status, context, openMinutesBefore = DEFAULT_CHECKIN_OPEN_MINUTES_BEFORE } =
+    args;
+
+  if (status === "attended" && context?.classStartsAt) {
+    const window = checkInWindowAt(
+      context.classStartsAt,
+      context.classType,
+      openMinutesBefore,
+    );
+    if (!window.allowed) {
+      return { error: window.reason ?? "Check-in is not available for this class right now." };
+    }
+  }
+
   const patch =
     status === "attended"
       ? {

@@ -20,6 +20,7 @@ export function CheckInClassAccordion({
   onExpandedChange,
   loading,
   onUpdated,
+  openMinutesBefore,
 }: {
   session: CheckInClassSession;
   roster: RosterRow[];
@@ -27,6 +28,7 @@ export function CheckInClassAccordion({
   onExpandedChange: (open: boolean) => void;
   loading?: boolean;
   onUpdated: () => void | Promise<void>;
+  openMinutesBefore?: number;
 }) {
   return (
     <Collapsible open={expanded} onOpenChange={onExpandedChange}>
@@ -62,6 +64,7 @@ export function CheckInClassAccordion({
             compact
             checkInStyle="checkbox"
             onUpdated={onUpdated}
+            openMinutesBefore={openMinutesBefore}
           />
         </div>
       </CollapsibleContent>

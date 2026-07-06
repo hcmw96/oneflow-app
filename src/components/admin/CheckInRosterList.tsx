@@ -6,6 +6,7 @@ import {
   type RosterRow,
   patchBookingAttendance,
 } from "@/lib/checkInRoster";
+import { DEFAULT_CHECKIN_OPEN_MINUTES_BEFORE } from "@/lib/checkInWindow";
 import { upsertMayChallengeCheckIn } from "@/lib/mayChallengeCheckIn";
 import { awardClassesAttendedBadges } from "@/lib/badges";
 import { RosterAddonPills } from "@/components/admin/RosterAddonPills";
@@ -21,6 +22,7 @@ export function CheckInRosterList({
   onUpdated,
   compact,
   checkInStyle = "buttons",
+  openMinutesBefore = DEFAULT_CHECKIN_OPEN_MINUTES_BEFORE,
 }: {
   roster: RosterRow[];
   loading?: boolean;
@@ -28,6 +30,7 @@ export function CheckInRosterList({
   compact?: boolean;
   /** Checkbox row for kiosk class accordion; default uses Check in / Undo buttons. */
   checkInStyle?: "buttons" | "checkbox";
+  openMinutesBefore?: number;
 }) {
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -35,13 +38,18 @@ export function CheckInRosterList({
     const row = roster.find((r) => r.id === id);
     const ctx =
       row?.profileId && row.classStartsAt
-        ? { profileId: row.profileId, classStartsAt: row.classStartsAt }
+        ? {
+            profileId: row.profileId,
+            classStartsAt: row.classStartsAt,
+            classType: row.classType,
+          }
         : null;
     setBusyId(id);
     const { error } = await patchBookingAttendance(supabase, {
       bookingId: id,
       status,
       context: ctx,
+      openMinutesBefore,
     });
     setBusyId(null);
     if (error) {
