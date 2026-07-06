@@ -31,7 +31,6 @@ const CUSTOMER_PRICING_CATEGORY_ORDER = [
   "wellzone",
   "all_access",
   "power",
-  "complimentary",
 ] as const;
 
 type CustomerPricingCategory = (typeof CUSTOMER_PRICING_CATEGORY_ORDER)[number];
@@ -41,7 +40,6 @@ const SECTION_TITLES: Record<CustomerPricingCategory, string> = {
   wellzone: "Wellzone & Sauna",
   all_access: "All Access Memberships",
   power: "Power Memberships",
-  complimentary: "Complimentary",
 };
 
 const ACCORDION_SECTIONS: { category: CustomerPricingCategory; title: string }[] =
@@ -109,7 +107,6 @@ function filterCustomerPricingProducts(rows: ProductRow[]): ProductRow[] {
 function PricingPage() {
   const router = useRouter();
   const [products, setProducts] = useState<ProductRow[]>([]);
-  const [freeProducts, setFreeProducts] = useState<ProductRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [buyingId, setBuyingId] = useState<string | null>(null);
   const [checkoutSlow, setCheckoutSlow] = useState(false);
@@ -131,7 +128,6 @@ function PricingPage() {
       wellzone: [],
       all_access: [],
       power: [],
-      complimentary: [],
     };
 
     for (const p of products) {
@@ -163,34 +159,19 @@ function PricingPage() {
 
     async function fetchOnce() {
       setLoading(true);
-      const [paidRes, freeRes] = await Promise.all([
-        supabase
-          .from("products")
-          .select(
-            "id, name, price_zar, credit_count, description, is_active, is_staff_only, sort_order, category, allowed_class_types, validity_days",
-          )
-          .eq("is_active", true)
-          .eq("is_addon", false)
-          .eq("is_staff_only", false)
-          .eq("is_class_ticket", false)
-          .gt("price_zar", 0)
-          .not("category", "in", "(staff,cafe,complimentary)")
-          .order("category", { ascending: true })
-          .order("name", { ascending: true }),
-        supabase
-          .from("products")
-          .select(
-            "id, name, price_zar, credit_count, description, is_active, is_staff_only, sort_order, category, allowed_class_types, validity_days",
-          )
-          .eq("is_active", true)
-          .eq("is_addon", false)
-          .eq("is_staff_only", false)
-          .eq("is_class_ticket", false)
-          .eq("price_zar", 0)
-          .not("category", "in", "(staff,cafe)")
-          .order("sort_order", { ascending: true })
-          .order("name", { ascending: true }),
-      ]);
+      const paidRes = await supabase
+        .from("products")
+        .select(
+          "id, name, price_zar, credit_count, description, is_active, is_staff_only, sort_order, category, allowed_class_types, validity_days",
+        )
+        .eq("is_active", true)
+        .eq("is_addon", false)
+        .eq("is_staff_only", false)
+        .eq("is_class_ticket", false)
+        .gt("price_zar", 0)
+        .not("category", "in", "(staff,cafe,complimentary)")
+        .order("category", { ascending: true })
+        .order("name", { ascending: true });
 
       if (cancelled) return;
 
@@ -198,7 +179,6 @@ function PricingPage() {
         console.error(paidRes.error);
         toast.error(supabaseErrorMessage(paidRes.error, "Could not load products"));
         setProducts([]);
-        setFreeProducts([]);
         setLoading(false);
         return;
       }
@@ -207,11 +187,6 @@ function PricingPage() {
         dedupeProductsById((paidRes.data ?? []) as ProductRow[]),
       );
       setProducts(rows);
-      setFreeProducts(
-        dedupeProductsById((freeRes.data ?? []) as ProductRow[]).filter(
-          (p) => !p.is_staff_only && Number(p.price_zar ?? 0) === 0,
-        ),
-      );
       setLoading(false);
     }
 
@@ -272,8 +247,7 @@ function PricingPage() {
       return;
     }
 
-    const product =
-      products.find((x) => x.id === packId) ?? freeProducts.find((x) => x.id === packId);
+    const product = products.find((x) => x.id === packId);
     if (!product) {
       toast.error("Product not found");
       return;
@@ -686,42 +660,6 @@ function PricingPage() {
               })}
             </div>
           )}
-
-          {!loading && freeProducts.length > 0 ? (
-            <div className="rounded-2xl border border-[#a3b693]/40 bg-[#f4f7f0]/80 p-4">
-              <h2 className="font-display text-lg font-semibold text-[#4a6b3c]">Complimentary</h2>
-              <ul className="mt-3 space-y-3">
-                {freeProducts.map((p) => (
-                  <li
-                    key={p.id}
-                    className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between"
-                  >
-                    <div>
-                      <p className="font-semibold">{p.name}</p>
-                      {p.description ? (
-                        <p className="mt-1 text-sm text-muted-foreground">{p.description}</p>
-                      ) : null}
-                      <p className="mt-1 text-sm font-medium text-[#a3b693]">Free</p>
-                    </div>
-                    <button
-                      type="button"
-                      disabled={buyingId === p.id}
-                      onClick={() => void buyNow(p.id)}
-                      className="shrink-0 rounded-full bg-[#a3b693] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#8fa67d] disabled:opacity-60"
-                    >
-                      {buyingId === p.id ? (
-                        <span className="inline-flex items-center gap-2">
-                          <Loader2 className="h-4 w-4 animate-spin" /> Claiming…
-                        </span>
-                      ) : (
-                        "Claim free class"
-                      )}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
 
           <p className="text-center text-xs text-muted-foreground">
             Questions?{" "}
