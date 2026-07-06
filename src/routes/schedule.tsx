@@ -401,58 +401,77 @@ export default function SchedulePage() {
         <p className="mt-1 text-sm text-muted-foreground">and book classes!</p>
       </header>
 
-      <div ref={swipeContainerRef} className="flex min-h-0 flex-1 flex-col touch-pan-y">
-      <div className="px-5 pt-4">
-        <p className="mb-2 text-center text-sm text-muted-foreground">{monthLabel}</p>
-        <div className="rounded-2xl border border-border bg-card p-2">
-          <div className="flex items-stretch justify-between gap-0.5">
-            {daysInWeek.map((dayKey) => {
-              const selected = dayKey === selectedDateKey;
-              const isTodayCell = dayKey === todayKey;
-              const dayIsPast = isPastScheduleDay(dayKey, studioTimeZone);
-              return (
-                <button
-                  key={dayKey}
-                  type="button"
-                  onClick={() => setSelectedDateKey(dayKey)}
-                  className={cn(
-                    "flex min-h-[52px] min-w-0 flex-1 flex-col items-center justify-center rounded-xl px-0.5 py-1.5 transition-all duration-200",
-                    selected && !dayIsPast && "text-white shadow-sm",
-                    selected && dayIsPast && "bg-muted text-muted-foreground shadow-sm",
-                    !selected && isTodayCell && "ring-2 ring-[#a3b693]/80",
-                    !selected && dayIsPast && "opacity-45",
-                  )}
-                  style={
-                    selected && !dayIsPast
-                      ? { backgroundColor: SAGE, color: "#fff" }
-                      : selected && dayIsPast
-                        ? undefined
-                        : isTodayCell
-                          ? { backgroundColor: "transparent" }
-                          : undefined
-                  }
-                >
-                  <span className="font-display text-base font-bold leading-none">
-                    {dayOfMonthFromDateKey(dayKey)}
-                  </span>
-                  <span
-                    className={cn(
-                      "mt-1 text-[10px] font-semibold uppercase tracking-wide",
-                      selected && !dayIsPast && "text-white/90",
-                      (!selected || dayIsPast) && "text-muted-foreground",
-                    )}
-                  >
-                    {formatWeekdayShortFromDateKey(dayKey, studioTimeZone)}
-                  </span>
-                </button>
-              );
-            })}
+      <div ref={swipeContainerRef} className="touch-pan-y">
+        <div className="sticky top-0 z-20 -mx-5 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+          <div className="px-5 pt-4">
+            <p className="mb-2 text-center text-sm text-muted-foreground">{monthLabel}</p>
+            <div className="rounded-2xl border border-border bg-card p-2">
+              <div className="flex items-stretch justify-between gap-0.5">
+                {daysInWeek.map((dayKey) => {
+                  const selected = dayKey === selectedDateKey;
+                  const isTodayCell = dayKey === todayKey;
+                  const dayIsPast = isPastScheduleDay(dayKey, studioTimeZone);
+                  return (
+                    <button
+                      key={dayKey}
+                      type="button"
+                      onClick={() => setSelectedDateKey(dayKey)}
+                      className={cn(
+                        "flex min-h-[52px] min-w-0 flex-1 flex-col items-center justify-center rounded-xl px-0.5 py-1.5 transition-all duration-200",
+                        selected && !dayIsPast && "text-white shadow-sm",
+                        selected && dayIsPast && "bg-muted text-muted-foreground shadow-sm",
+                        !selected && isTodayCell && "ring-2 ring-[#a3b693]/80",
+                        !selected && dayIsPast && "opacity-45",
+                      )}
+                      style={
+                        selected && !dayIsPast
+                          ? { backgroundColor: SAGE, color: "#fff" }
+                          : selected && dayIsPast
+                            ? undefined
+                            : isTodayCell
+                              ? { backgroundColor: "transparent" }
+                              : undefined
+                      }
+                    >
+                      <span className="font-display text-base font-bold leading-none">
+                        {dayOfMonthFromDateKey(dayKey)}
+                      </span>
+                      <span
+                        className={cn(
+                          "mt-1 text-[10px] font-semibold uppercase tracking-wide",
+                          selected && !dayIsPast && "text-white/90",
+                          (!selected || dayIsPast) && "text-muted-foreground",
+                        )}
+                      >
+                        {formatWeekdayShortFromDateKey(dayKey, studioTimeZone)}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="mt-2 text-center text-[11px] text-muted-foreground">
+                Swipe left or right to change day
+              </p>
+            </div>
           </div>
-          <p className="mt-2 text-center text-[11px] text-muted-foreground">
-            Swipe left or right to change day
-          </p>
+          <div className="px-5 py-3">
+            <p
+              className={cn(
+                "text-center font-display text-xl font-bold leading-tight",
+                selectedDayIsPast && "text-muted-foreground",
+              )}
+            >
+              {longDayLabel}
+            </p>
+            {selectedDateKey === todayKey ? (
+              <p className="mt-0.5 text-center text-xs font-medium text-[#4a6b3c]">Today</p>
+            ) : selectedDateKey > todayKey ? (
+              <p className="mt-0.5 text-center text-xs text-muted-foreground">Upcoming</p>
+            ) : (
+              <p className="mt-0.5 text-center text-xs text-muted-foreground">Past</p>
+            )}
+          </div>
         </div>
-      </div>
 
       <main
         className={cn(
@@ -460,23 +479,6 @@ export default function SchedulePage() {
           revalidating && "opacity-80",
         )}
       >
-        <div className="sticky top-0 z-10 -mx-5 border-b border-border bg-background/95 px-5 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-          <p
-            className={cn(
-              "text-center font-display text-xl font-bold leading-tight",
-              selectedDayIsPast && "text-muted-foreground",
-            )}
-          >
-            {longDayLabel}
-          </p>
-          {selectedDateKey === todayKey ? (
-            <p className="mt-0.5 text-center text-xs font-medium text-[#4a6b3c]">Today</p>
-          ) : selectedDateKey > todayKey ? (
-            <p className="mt-0.5 text-center text-xs text-muted-foreground">Upcoming</p>
-          ) : (
-            <p className="mt-0.5 text-center text-xs text-muted-foreground">Past</p>
-          )}
-        </div>
         <div
           key={selectedDateKey}
           className={cn(
