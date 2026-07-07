@@ -34,6 +34,7 @@ import {
   type HomeEventCardConfig,
 } from "@/lib/homeEventCard";
 import { HomeEventCard } from "@/components/HomeEventCard";
+import { uploadChallengeImage } from "@/lib/uploadChallengeImage";
 
 export const Route = createFileRoute("/admin/challenge")({
   head: () => ({ meta: [{ title: "Home Spotlight — One Flow Admin" }] }),
