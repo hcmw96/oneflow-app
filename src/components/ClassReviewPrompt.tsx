@@ -14,8 +14,8 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import {
-  CLASS_REVIEW_FLOW_COMPLETE,
   dismissClassReview,
+  emitClassReviewFlowComplete,
   fetchPendingClassReview,
   reviewDismissed,
   shouldOfferMemberPostClassPrompts,
@@ -94,9 +94,18 @@ export function ClassReviewPrompt() {
     void loadPending();
   }, [authReady, profileReady, user?.id, memberPromptsEnabled, loadPending]);
 
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void loadPending();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [loadPending]);
+
   const close = (bookingId: string | null, dismissed: boolean) => {
     if (bookingId && dismissed) {
       dismissClassReview(bookingId);
+      emitClassReviewFlowComplete(bookingId);
     }
     openRef.current = false;
     setOpen(false);
@@ -127,9 +136,7 @@ export function ClassReviewPrompt() {
     openRef.current = false;
     setOpen(false);
     setPending(null);
-    window.dispatchEvent(
-      new CustomEvent(CLASS_REVIEW_FLOW_COMPLETE, { detail: { bookingId: pending.bookingId } }),
-    );
+    emitClassReviewFlowComplete(pending.bookingId);
   };
 
   if (!memberPromptsEnabled || !pending) return null;

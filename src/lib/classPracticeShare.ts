@@ -220,15 +220,7 @@ export function downloadPracticeShareBlob(blob: Blob, filename = "oneflow-practi
 }
 
 export function canSharePracticeFiles(): boolean {
-  if (typeof navigator === "undefined" || typeof navigator.share !== "function") {
-    return false;
-  }
-  try {
-    const file = new File(["x"], "oneflow-practice.png", { type: "image/png" });
-    return !navigator.canShare || navigator.canShare({ files: [file] });
-  } catch {
-    return false;
-  }
+  return typeof navigator !== "undefined" && typeof navigator.share === "function";
 }
 
 export async function sharePracticeShareBlob(
@@ -239,14 +231,20 @@ export async function sharePracticeShareBlob(
   if (typeof navigator.share !== "function") return "failed";
 
   const file = new File([blob], "oneflow-practice.png", { type: "image/png" });
-  const payload = { title, text: `${text}\n${url}`, files: [file] };
+  const shareText = `${text}\n${url}`;
+  const filePayload = { title, text: shareText, files: [file] };
+  const linkPayload = { title, text: shareText, url };
 
   try {
-    if (navigator.canShare && !navigator.canShare(payload)) {
-      await navigator.share({ title, text: `${text}\n${url}`, url });
+    if (navigator.canShare?.(filePayload)) {
+      await navigator.share(filePayload);
       return "share";
     }
-    await navigator.share(payload);
+    if (navigator.canShare?.(linkPayload)) {
+      await navigator.share(linkPayload);
+      return "share";
+    }
+    await navigator.share(linkPayload);
     return "share";
   } catch (err) {
     if (err instanceof DOMException && err.name === "AbortError") {

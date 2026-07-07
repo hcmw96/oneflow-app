@@ -1,4 +1,8 @@
-import { reviewDismissed, shouldOfferMemberPostClassPrompts } from "@/lib/classReviews";
+import {
+  fetchPendingClassReview,
+  reviewDismissed,
+  shouldOfferMemberPostClassPrompts,
+} from "@/lib/classReviews";
 import { supabase } from "@/lib/supabase";
 
 const SHARE_DISMISS_KEY = "oneflow:practice-share-dismissed";
@@ -56,6 +60,11 @@ export async function fetchPendingPracticeShare(
 ): Promise<PendingPracticeShare | null> {
   if (profile && !shouldOfferMemberPostClassPrompts(profile)) return null;
 
+  const reviewStillPending = await fetchPendingClassReview(profileId);
+  if (reviewStillPending && !reviewDismissed(reviewStillPending.bookingId)) {
+    return null;
+  }
+
   const nowMs = Date.now();
   const nowIso = new Date(nowMs).toISOString();
 
@@ -64,18 +73,21 @@ export async function fetchPendingPracticeShare(
     .select(
       `
       id,
+      checked_in_at,
       classes ( name, starts_at, ends_at, guide_name )
     `,
     )
     .eq("profile_id", profileId)
     .eq("status", "attended")
-    .order("checked_in_at", { ascending: false })
+    .order("checked_in_at", { ascending: false, nullsFirst: false })
     .limit(20);
 
   if (error) {
     console.error("fetchPendingPracticeShare bookings", error);
     return null;
   }
+
+  const candidates: PendingPracticeShare[] = [];
 
   for (const row of bookings ?? []) {
     const raw = row as Record<string, unknown>;
@@ -91,24 +103,41 @@ export async function fetchPendingPracticeShare(
     if (!endsAt || endsAt > nowIso) continue;
 
     const endedMs = new Date(endsAt).getTime();
-    if (nowMs - endedMs > PROMPT_WINDOW_MS) continue;
+    if (Number.isNaN(endedMs) || nowMs - endedMs > PROMPT_WINDOW_MS) continue;
 
-    const { data: reviewRow } = await supabase
-      .from("class_reviews")
-      .select("id")
-      .eq("booking_id", bookingId)
-      .maybeSingle();
-
-    const reviewPending = !reviewRow && !reviewDismissed(bookingId);
-    if (reviewPending) continue;
-
-    return {
+    candidates.push({
       bookingId,
       className: String(c.name ?? "Class"),
       guideName: typeof c.guide_name === "string" ? c.guide_name : null,
       startsAt,
       endsAt,
-    };
+    });
+  }
+
+  if (candidates.length === 0) return null;
+
+  candidates.sort((a, b) => new Date(b.endsAt).getTime() - new Date(a.endsAt).getTime());
+
+  const bookingIds = candidates.map((c) => c.bookingId);
+  const { data: reviews, error: revErr } = await supabase
+    .from("class_reviews")
+    .select("booking_id")
+    .in("booking_id", bookingIds);
+
+  if (revErr) {
+    console.error("fetchPendingPracticeShare reviews", revErr);
+    return null;
+  }
+
+  const reviewed = new Set(
+    (reviews ?? []).map((r) => String((r as { booking_id: string }).booking_id)),
+  );
+
+  for (const candidate of candidates) {
+    const reviewPending =
+      !reviewed.has(candidate.bookingId) && !reviewDismissed(candidate.bookingId);
+    if (reviewPending) continue;
+    return candidate;
   }
 
   return null;

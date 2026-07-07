@@ -27,6 +27,7 @@ import {
 } from "@/lib/checkInRoster";
 import { parseQrCheckInToken } from "@/lib/qrCheckIn";
 import { pickNextUpcomingClassId } from "@/lib/checkInUpcoming";
+import { orderClassesForLiveDay } from "@/lib/liveClassList";
 import {
   classVisibleOnCheckInRoster,
   DEFAULT_CHECKIN_OPEN_MINUTES_BEFORE,

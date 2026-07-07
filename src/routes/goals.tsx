@@ -4,14 +4,16 @@ import { Flame, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 import { getUser, supabase } from "@/lib/supabase";
-import { startOfWeek, addDays } from "@/lib/format";
+import {
+  clampWeeklyGoal,
+  DEFAULT_WEEKLY_GOAL,
+  fetchWeeklyGoalProgress,
+  weeklyGoalFromProfile,
+} from "@/lib/weeklyGoal";
 
 export const Route = createFileRoute("/goals")({
   component: GoalsPage,
 });
-
-const DEFAULT_WEEKLY_GOAL = 4;
-const clampGoal = (n: number) => Math.min(14, Math.max(1, Math.round(n)));
 
 function GoalsPage() {
   const navigate = useNavigate();
@@ -33,25 +35,17 @@ function GoalsPage() {
       return;
     }
 
-    const weekStart = startOfWeek(new Date());
-    const weekEnd = addDays(weekStart, 7);
-
-    const [{ data: prof, error: profErr }, { data, error }] = await Promise.all([
+    const [{ data: prof, error: profErr }, progress] = await Promise.all([
       supabase
         .from("profiles")
         .select("weekly_goal, current_streak, longest_streak")
         .eq("id", user.id)
         .maybeSingle(),
-      supabase
-        .from("bookings")
-        .select("id, classes ( starts_at )")
-        .eq("profile_id", user.id)
-        .eq("status", "attended"),
+      fetchWeeklyGoalProgress(supabase, user.id),
     ]);
 
-    if (profErr || error) {
-      if (profErr) console.error(profErr);
-      console.error(error);
+    if (profErr) {
+      console.error(profErr);
       setWeeklyGoal(DEFAULT_WEEKLY_GOAL);
       setThisWeekCount(0);
       setStreakWeeks(0);
@@ -59,9 +53,9 @@ function GoalsPage() {
       return;
     }
 
-    const wgRaw = (prof as { weekly_goal?: number | null } | null)?.weekly_goal;
-    const wg =
-      typeof wgRaw === "number" && Number.isFinite(wgRaw) ? clampGoal(wgRaw) : DEFAULT_WEEKLY_GOAL;
+    const wg = weeklyGoalFromProfile(
+      (prof as { weekly_goal?: number | null } | null)?.weekly_goal,
+    );
     const curStreak = Number(
       (prof as { current_streak?: number | null } | null)?.current_streak ?? 0,
     );
@@ -72,15 +66,7 @@ function GoalsPage() {
     setGoalInput(String(wg));
     setStreakWeeks(Number.isFinite(curStreak) ? Math.max(0, curStreak) : 0);
     setLongestStreak(Number.isFinite(maxStreak) ? Math.max(0, maxStreak) : 0);
-
-    const rows = (data ?? []) as { classes: { starts_at: string } | { starts_at: string }[] }[];
-    let weekCount = 0;
-    for (const row of rows) {
-      const cls = Array.isArray(row.classes) ? row.classes[0] : row.classes;
-      const t = cls?.starts_at ? new Date(cls.starts_at) : null;
-      if (t && t >= weekStart && t < weekEnd) weekCount += 1;
-    }
-    setThisWeekCount(weekCount);
+    setThisWeekCount(progress.weeklyDone);
   }, []);
 
   useEffect(() => {
@@ -97,7 +83,7 @@ function GoalsPage() {
       toast.error("Enter a weekly goal between 1 and 14.");
       return;
     }
-    const next = clampGoal(n);
+    const next = clampWeeklyGoal(n);
     setSavingGoal(true);
     const { error } = await supabase.from("profiles").update({ weekly_goal: next }).eq("id", user.id);
     setSavingGoal(false);

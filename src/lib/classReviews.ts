@@ -55,6 +55,12 @@ export function dismissClassReview(bookingId: string): void {
 
 export const CLASS_REVIEW_FLOW_COMPLETE = "oneflow:class-review-flow-complete";
 
+export function emitClassReviewFlowComplete(bookingId: string): void {
+  window.dispatchEvent(
+    new CustomEvent(CLASS_REVIEW_FLOW_COMPLETE, { detail: { bookingId } }),
+  );
+}
+
 /** Member-only post-class prompts — never for staff/admin roles (incl. front-desk check-in tests). */
 export function shouldOfferMemberPostClassPrompts(
   profile: AdminRoleProfile | null | undefined,

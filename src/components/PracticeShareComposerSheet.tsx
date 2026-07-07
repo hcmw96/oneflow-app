@@ -23,9 +23,11 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   input: ClassPracticeShareInput | null;
+  /** Called after a successful share or download export. */
+  onShared?: () => void;
 };
 
-export function PracticeShareComposerSheet({ open, onOpenChange, input }: Props) {
+export function PracticeShareComposerSheet({ open, onOpenChange, input, onShared }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const uploadInputRef = useRef<HTMLInputElement>(null);
@@ -109,14 +111,24 @@ export function PracticeShareComposerSheet({ open, onOpenChange, input }: Props)
         const result = await sharePracticeShareBlob(blob, input);
         if (result === "share") {
           toast.success("Shared!");
+          onShared?.();
           onOpenChange(false);
-        } else if (result === "failed") {
-          toast.error("Could not open share sheet");
+          return;
         }
-      } else {
+        if (result === "cancelled") {
+          return;
+        }
         downloadPracticeShareBlob(blob);
-        toast.success("Image downloaded");
+        toast.success("Share unavailable — image downloaded instead");
+        onShared?.();
+        onOpenChange(false);
+        return;
       }
+
+      downloadPracticeShareBlob(blob);
+      toast.success("Image downloaded");
+      onShared?.();
+      onOpenChange(false);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not share");
     } finally {

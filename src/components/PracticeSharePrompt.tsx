@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Share2 } from "lucide-react";
 import { useAuth } from "@/contexts/auth";
 import { useTimezone } from "@/hooks/use-timezone";
 import { CLASS_REVIEW_FLOW_COMPLETE, shouldOfferMemberPostClassPrompts } from "@/lib/classReviews";
 import type { ClassPracticeShareInput } from "@/lib/classPracticeShare";
+import { supabase } from "@/lib/supabase";
 import {
   dismissShareForSession,
   fetchPendingPracticeShare,
@@ -22,13 +23,23 @@ import {
 import { Button } from "@/components/ui/button";
 
 export function PracticeSharePrompt() {
-  const { user, authReady, profile } = useAuth();
+  const { user, authReady, profile, profileReady } = useAuth();
   const { timeZone, studioTimeZone } = useTimezone();
   const memberPromptsEnabled = shouldOfferMemberPostClassPrompts(profile);
   const [pending, setPending] = useState<PendingPracticeShare | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [composerOpen, setComposerOpen] = useState(false);
   const [composerInput, setComposerInput] = useState<ClassPracticeShareInput | null>(null);
+  const dialogOpenRef = useRef(false);
+  const composerOpenRef = useRef(false);
+
+  useEffect(() => {
+    dialogOpenRef.current = dialogOpen;
+  }, [dialogOpen]);
+
+  useEffect(() => {
+    composerOpenRef.current = composerOpen;
+  }, [composerOpen]);
 
   const loadPending = useCallback(async () => {
     if (!user?.id || !memberPromptsEnabled) {
@@ -36,20 +47,27 @@ export function PracticeSharePrompt() {
       setDialogOpen(false);
       return;
     }
+    if (composerOpenRef.current) return;
+
     const next = await fetchPendingPracticeShare(user.id, profile);
     if (!next) {
-      setPending(null);
-      setDialogOpen(false);
+      if (!composerOpenRef.current) {
+        setPending(null);
+        setDialogOpen(false);
+      }
       return;
     }
+
     setPending(next);
-    setDialogOpen(true);
+    if (!composerOpenRef.current) {
+      setDialogOpen(true);
+    }
   }, [user?.id, profile, memberPromptsEnabled]);
 
   useEffect(() => {
-    if (!authReady || !memberPromptsEnabled) return;
+    if (!authReady || !profileReady || !memberPromptsEnabled) return;
     void loadPending();
-  }, [authReady, memberPromptsEnabled, loadPending]);
+  }, [authReady, profileReady, memberPromptsEnabled, loadPending]);
 
   useEffect(() => {
     const onReviewDone = () => {
@@ -67,23 +85,59 @@ export function PracticeSharePrompt() {
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [loadPending]);
 
+  useEffect(() => {
+    if (!user?.id || !memberPromptsEnabled) return;
+
+    const channel = supabase
+      .channel(`practice-share-prompt-${user.id}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "bookings" }, () => {
+        void loadPending();
+      })
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [user?.id, memberPromptsEnabled, loadPending]);
+
   const closeDialog = (bookingId: string | null, dismissed: boolean) => {
     if (dismissed && bookingId) dismissShareForSession(bookingId);
+    dialogOpenRef.current = false;
     setDialogOpen(false);
     setPending(null);
   };
 
   const openComposer = () => {
     if (!pending) return;
-    const tz = timeZone ?? studioTimeZone;
     setComposerInput({
       className: pending.className,
       guideName: pending.guideName ?? "",
       startsAt: new Date(pending.startsAt),
-      timeZone: tz,
+      timeZone: timeZone ?? studioTimeZone,
     });
+    dialogOpenRef.current = false;
     setDialogOpen(false);
     setComposerOpen(true);
+  };
+
+  const onComposerClosed = () => {
+    composerOpenRef.current = false;
+    setComposerOpen(false);
+    setComposerInput(null);
+    if (pending) {
+      dialogOpenRef.current = true;
+      setDialogOpen(true);
+    }
+  };
+
+  const onShared = () => {
+    if (pending?.bookingId) markShareCompletedForSession(pending.bookingId);
+    composerOpenRef.current = false;
+    dialogOpenRef.current = false;
+    setComposerOpen(false);
+    setComposerInput(null);
+    setPending(null);
+    setDialogOpen(false);
   };
 
   if (!pending && !composerOpen) return null;
@@ -130,14 +184,10 @@ export function PracticeSharePrompt() {
       <PracticeShareComposerSheet
         open={composerOpen}
         onOpenChange={(open) => {
-          setComposerOpen(open);
-          if (!open) {
-            if (pending?.bookingId) markShareCompletedForSession(pending.bookingId);
-            setComposerInput(null);
-            setPending(null);
-          }
+          if (!open) onComposerClosed();
         }}
         input={composerInput}
+        onShared={onShared}
       />
     </>
   );

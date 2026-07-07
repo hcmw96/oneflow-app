@@ -4,19 +4,9 @@ import { QRCodeSVG } from "qrcode.react";
 import { Clock, MapPin, Share2, X } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
+import { CancelBookingButton } from "@/components/CancelBookingButton";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { TypeBadge } from "@/components/TypeBadge";
-import { cancelBookingWithPolicy } from "@/lib/bookingCancellation";
 import { useTimezone } from "@/hooks/use-timezone";
 import { formatClassDateTime, formatShortDateInZone } from "@/lib/timezone";
 import { cn } from "@/lib/utils";
@@ -103,8 +93,6 @@ function BookingsPage() {
   const [waitlist, setWaitlist] = useState<WaitlistEntryWithClass[]>([]);
   const [shareComposerOpen, setShareComposerOpen] = useState(false);
   const [shareComposerInput, setShareComposerInput] = useState<ClassPracticeShareInput | null>(null);
-  const [cancelTargetId, setCancelTargetId] = useState<string | null>(null);
-  const [cancelling, setCancelling] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -218,27 +206,6 @@ function BookingsPage() {
     setShareComposerOpen(true);
   };
 
-  const cancelBooking = async (bookingId: string) => {
-    setCancelling(true);
-    try {
-      const result = await cancelBookingWithPolicy({
-        bookingId,
-        cancellationReason: "customer_cancelled",
-      });
-      toast.success(
-        result.lateCancel
-          ? "Booking cancelled. Late cancellation fee will apply on next transaction."
-          : "Booking cancelled. Credit returned.",
-      );
-      setCancelTargetId(null);
-      await load();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not cancel booking");
-    } finally {
-      setCancelling(false);
-    }
-  };
-
   return (
     <AppShell>
       <header className="safe-top px-5 pt-3 pb-3">
@@ -347,6 +314,12 @@ function BookingsPage() {
                     </span>
                     {b.guideFirst && <span>with {b.guideFirst}</span>}
                   </div>
+                  <CancelBookingButton
+                    bookingId={b.id}
+                    variant="card"
+                    className="mt-3"
+                    onCancelled={load}
+                  />
                   {b.qrToken && (
                     <div className="mt-4 flex flex-col items-center border-t border-border pt-4">
                       <div className="flex min-h-[200px] min-w-[200px] items-center justify-center rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5">
@@ -364,13 +337,6 @@ function BookingsPage() {
                       </p>
                     </div>
                   )}
-                  <button
-                    type="button"
-                    onClick={() => setCancelTargetId(b.id)}
-                    className="mt-3 inline-flex items-center gap-1 rounded-full border border-border px-3 py-1 text-xs font-medium text-muted-foreground"
-                  >
-                    <X className="h-3 w-3 shrink-0" aria-hidden /> Cancel booking
-                  </button>
                 </article>
               ))}
 
@@ -418,39 +384,6 @@ function BookingsPage() {
         input={shareComposerInput}
       />
 
-      <AlertDialog
-        open={cancelTargetId !== null}
-        onOpenChange={(open) => {
-          if (!open && !cancelling) setCancelTargetId(null);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Cancel this booking?</AlertDialogTitle>
-            <AlertDialogDescription asChild>
-              <div className="space-y-2 text-left text-sm text-muted-foreground">
-                <p>Cancellations more than 2 hours before class: your credit will be returned.</p>
-                <p>
-                  Late cancellations (within 2 hours): your credit will be returned, but a R100
-                  fee applies on your next transaction.
-                </p>
-              </div>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={cancelling}>Keep booking</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={cancelling || !cancelTargetId}
-              onClick={(event) => {
-                event.preventDefault();
-                if (cancelTargetId) void cancelBooking(cancelTargetId);
-              }}
-            >
-              {cancelling ? "Cancelling…" : "Cancel booking"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </AppShell>
   );
 }

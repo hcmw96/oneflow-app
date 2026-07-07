@@ -10,6 +10,7 @@ import {
   movementChallengeTotalDays,
   type MovementChallengeConfig,
 } from "@/lib/movementChallenge";
+import { CancelBookingButton } from "@/components/CancelBookingButton";
 import { HomeSpotlightCard, homeSpotlightCardVisible } from "@/components/HomeSpotlightCard";
 import { HomeEventCard } from "@/components/HomeEventCard";
 import { MemberCreditTypesPanel } from "@/components/MemberCreditTypesPanel";
@@ -37,6 +38,7 @@ import {
   fetchUpcomingHomeBookings,
   type HomeUpcomingBooking,
 } from "@/lib/homeUpcomingBookings";
+import { DEFAULT_WEEKLY_GOAL, fetchWeeklyGoalProgress, weeklyGoalFromProfile } from "@/lib/weeklyGoal";
 import {
   civilAddDaysYmd,
   dayBoundsForDateKey,
@@ -98,7 +100,7 @@ function HomePage() {
   const [matTowelRows, setMatTowelRows] = useState<MatTowelAccessRow[]>([]);
   const [completed, setCompleted] = useState(0);
   const [points, setPoints] = useState(0);
-  const [weeklyGoal, setWeeklyGoal] = useState(3);
+  const [weeklyGoal, setWeeklyGoal] = useState(DEFAULT_WEEKLY_GOAL);
   const [weeklyDone, setWeeklyDone] = useState(0);
   const [challengeStamped, setChallengeStamped] = useState(0);
   const [challengeConfig, setChallengeConfig] = useState<MovementChallengeConfig | null>(null);
@@ -134,7 +136,7 @@ function HomePage() {
     setCompleted(0);
     setPoints(0);
     setFirstName(null);
-    setWeeklyGoal(3);
+    setWeeklyGoal(DEFAULT_WEEKLY_GOAL);
     setWeeklyDone(0);
     setChallengeStamped(0);
     setChallengeConfig(null);
@@ -146,11 +148,6 @@ function HomePage() {
     }
 
     const uid = user.id;
-    const todayKey = todayDateKey(STUDIO_TIMEZONE);
-    const weekSundayKey = weekSundayDateKey(todayKey, STUDIO_TIMEZONE);
-    const nextSundayKey = civilAddDaysYmd(weekSundayKey, 7);
-    const weekStartIso = dayBoundsForDateKey(weekSundayKey, STUDIO_TIMEZONE).startUtcIso;
-    const weekEndIso = dayBoundsForDateKey(nextSundayKey, STUDIO_TIMEZONE).startUtcIso;
 
     const [
       { data: profile },
@@ -158,7 +155,7 @@ function HomePage() {
       cafeCredits,
       matTowelAccess,
       { count: attendedCount, error: attendedErr },
-      { count: weeklyAttended, error: weeklyErr },
+      weeklyProgress,
       upcoming,
       movementChallenge,
       eventCardConfig,
@@ -181,21 +178,13 @@ function HomePage() {
         .select("id", { count: "exact", head: true })
         .eq("profile_id", uid)
         .eq("status", "attended"),
-      supabase
-        .from("bookings")
-        .select("id", { count: "exact", head: true })
-        .eq("profile_id", uid)
-        .eq("status", "attended")
-        .not("checked_in_at", "is", null)
-        .gte("checked_in_at", weekStartIso)
-        .lt("checked_in_at", weekEndIso),
+      fetchWeeklyGoalProgress(supabase, uid),
       fetchUpcomingHomeBookings(supabase, uid),
       fetchMovementChallengeConfig(),
       fetchHomeEventCardConfig(),
     ]);
 
     if (attendedErr) console.error(attendedErr);
-    if (weeklyErr) console.error(weeklyErr);
 
     setFirstName(profile?.first_name?.trim() || null);
     setCreditRows((fetchedUserCredits ?? []) as UserCreditHomeRow[]);
@@ -205,13 +194,12 @@ function HomePage() {
     setCafeCreditTotal(cafeActive && cafeSum > 0 ? cafeSum : 0);
     setMatTowelRows(matTowelAccess);
     setCompleted(attendedCount ?? 0);
-    const wgRaw = (profile as { weekly_goal?: number | null } | null)?.weekly_goal;
-    const wg =
-      typeof wgRaw === "number" && Number.isFinite(wgRaw)
-        ? Math.min(14, Math.max(1, Math.round(wgRaw)))
-        : 3;
-    setWeeklyGoal(wg);
-    setWeeklyDone(weeklyAttended ?? 0);
+    setWeeklyGoal(
+      weeklyGoalFromProfile(
+        (profile as { weekly_goal?: number | null } | null)?.weekly_goal,
+      ),
+    );
+    setWeeklyDone(weeklyProgress.weeklyDone);
     const fpRaw = (profile as { flow_points?: number | null } | null)?.flow_points;
     setPoints(typeof fpRaw === "number" && Number.isFinite(fpRaw) ? Math.max(0, fpRaw) : 0);
     setChallengeConfig(movementChallenge);
@@ -290,30 +278,28 @@ function HomePage() {
                 const timeLabel = timeStr.toUpperCase();
                 return (
                   <li key={b.id}>
-                    <Link
-                      to="/bookings"
-                      search={{ booking: b.id }}
-                      className="flex flex-col gap-1 rounded-xl border border-border bg-muted/20 px-3 py-3 text-left text-sm transition-colors active:bg-muted/50"
-                      aria-label={`Open check-in QR for ${b.name}`}
-                    >
-                      <span className="flex items-start justify-between gap-2">
-                        <span className="min-w-0 flex-1">
-                          <span className="font-semibold leading-snug">{b.name}</span>
+                    <div className="rounded-xl border border-border bg-muted/20 px-3 py-3 text-sm">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <p className="font-semibold leading-snug">{b.name}</p>
                           {b.guideName ? (
-                            <span className="mt-0.5 block text-xs text-muted-foreground">
+                            <p className="mt-0.5 text-xs text-muted-foreground">
                               with {b.guideName}
-                            </span>
+                            </p>
                           ) : null}
-                        </span>
-                        <span
+                        </div>
+                        <Link
+                          to="/bookings"
+                          search={{ booking: b.id }}
                           className="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[10px] font-semibold text-white"
                           style={{ backgroundColor: SAGE }}
+                          aria-label={`Open check-in QR for ${b.name}`}
                         >
                           <QrCode className="h-3.5 w-3.5" aria-hidden />
                           QR
-                        </span>
-                      </span>
-                      <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+                        </Link>
+                      </div>
+                      <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
                         <span className="inline-flex items-center gap-1">
                           <Calendar className="h-3.5 w-3.5 shrink-0" aria-hidden />
                           {dateStr} · {timeLabel}
@@ -322,8 +308,15 @@ function HomePage() {
                           <MapPin className="h-3.5 w-3.5 shrink-0" aria-hidden />
                           {b.location}
                         </span>
-                      </span>
-                    </Link>
+                      </p>
+                      <div className="mt-3">
+                        <CancelBookingButton
+                          bookingId={b.id}
+                          variant="card"
+                          onCancelled={loadHome}
+                        />
+                      </div>
+                    </div>
                   </li>
                 );
               })}
