@@ -294,6 +294,7 @@ function SchedulePage() {
   const [addTypeOpen, setAddTypeOpen] = useState(false);
   const [newTypeName, setNewTypeName] = useState("");
   const [savingNewType, setSavingNewType] = useState(false);
+  const [deleteTypeTarget, setDeleteTypeTarget] = useState<CustomClassType | null>(null);
   const [location, setLocation] = useState<string>("Studio 1");
   const [guideId, setGuideId] = useState<string>(GUIDE_DIALOG_NONE);
   const [dateStr, setDateStr] = useState(toDateInputValue(new Date()));
@@ -436,6 +437,25 @@ function SchedulePage() {
     setClassType(slug);
     setAddTypeOpen(false);
     toast.success(`Class type “${label}” added`);
+  };
+
+  const removeCustomClassType = async (target: CustomClassType) => {
+    const next = customClassTypes.filter((c) => c.slug !== target.slug);
+    setSavingNewType(true);
+    const { error } = await saveCustomClassTypes(next);
+    setSavingNewType(false);
+
+    if (error) {
+      toast.error(supabaseErrorMessage(error, "Could not remove class type"));
+      return;
+    }
+
+    setCustomClassTypes(next);
+    if (classType === target.slug) {
+      setClassType("yoga");
+    }
+    setDeleteTypeTarget(null);
+    toast.success(`Removed “${target.label}”`);
   };
 
   const load = useCallback(async () => {
@@ -1240,7 +1260,7 @@ function SchedulePage() {
         description={
           isGuide
             ? "Scheduled sessions (view only)"
-            : "Browse, edit, and cancel scheduled sessions. Class types are managed under Classes."
+            : "Browse, edit, and cancel scheduled sessions. Class types are chosen when creating or editing a class."
         }
         actions={
           canManage ? (
@@ -1941,29 +1961,62 @@ function SchedulePage() {
       <Dialog open={addTypeOpen} onOpenChange={setAddTypeOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Add class type</DialogTitle>
+            <DialogTitle>Class types</DialogTitle>
           </DialogHeader>
-          <div className="grid gap-3 py-2">
+          <div className="grid gap-4 py-2">
             <div>
-              <Label htmlFor="new-class-type-name">Type name</Label>
+              <Label htmlFor="new-class-type-name">Add custom type</Label>
               <Input
                 id="new-class-type-name"
                 value={newTypeName}
                 onChange={(e) => setNewTypeName(e.target.value)}
                 placeholder="e.g. Reformer"
                 autoFocus
+                disabled={savingNewType}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") void submitNewClassType();
                 }}
               />
               <p className="mt-1.5 text-xs text-muted-foreground">
-                Saved for your studio and available on all future classes.
+                Built-in types (Yoga, Sculpt, Wellzone, etc.) are always available. Custom types are
+                saved for your studio and appear in the type dropdown.
               </p>
             </div>
+            {customClassTypes.length > 0 ? (
+              <div>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Custom types
+                </p>
+                <ul className="max-h-40 space-y-1 overflow-y-auto rounded-lg border border-border">
+                  {customClassTypes.map((t) => (
+                    <li
+                      key={t.slug}
+                      className="flex items-center justify-between gap-2 border-b border-border px-3 py-2 last:border-b-0"
+                    >
+                      <span className="min-w-0 text-sm">
+                        <span className="font-medium">{t.label}</span>
+                        <span className="ml-2 font-mono text-xs text-muted-foreground">{t.slug}</span>
+                      </span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="shrink-0 text-destructive hover:bg-destructive/10"
+                        disabled={savingNewType}
+                        onClick={() => setDeleteTypeTarget(t)}
+                      >
+                        <Trash2 className="h-4 w-4" aria-hidden />
+                        Remove
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
           </div>
           <DialogFooter className="gap-2 sm:gap-0">
             <Button type="button" variant="outline" onClick={() => setAddTypeOpen(false)}>
-              Cancel
+              Close
             </Button>
             <Button
               type="button"
@@ -1977,6 +2030,33 @@ function SchedulePage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!deleteTypeTarget} onOpenChange={(o) => !o && setDeleteTypeTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove custom type?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteTypeTarget
+                ? `“${deleteTypeTarget.label}” (${deleteTypeTarget.slug}) will no longer appear in type lists. Existing scheduled sessions keep their stored type.`
+                : null}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={savingNewType}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={savingNewType}
+              onClick={(e) => {
+                e.preventDefault();
+                if (deleteTypeTarget) void removeCustomClassType(deleteTypeTarget);
+              }}
+            >
+              {savingNewType ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog
         open={recurringScopeOpen}

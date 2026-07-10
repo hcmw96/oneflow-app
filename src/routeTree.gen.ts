@@ -47,7 +47,6 @@ import { Route as AdminGuidesRouteImport } from './routes/admin.guides'
 import { Route as AdminEmailRouteImport } from './routes/admin.email'
 import { Route as AdminCustomersRouteImport } from './routes/admin.customers'
 import { Route as AdminClientCommsRouteImport } from './routes/admin.client-comms'
-import { Route as AdminClassesRouteImport } from './routes/admin.classes'
 import { Route as AdminCheckInRouteImport } from './routes/admin.check-in'
 import { Route as AdminChallengeRouteImport } from './routes/admin.challenge'
 import { Route as AdminBookingsRouteImport } from './routes/admin.bookings'
@@ -244,11 +243,6 @@ const AdminClientCommsRoute = AdminClientCommsRouteImport.update({
   path: '/client-comms',
   getParentRoute: () => AdminRoute,
 } as any)
-const AdminClassesRoute = AdminClassesRouteImport.update({
-  id: '/classes',
-  path: '/classes',
-  getParentRoute: () => AdminRoute,
-} as any)
 const AdminCheckInRoute = AdminCheckInRouteImport.update({
   id: '/check-in',
   path: '/check-in',
@@ -297,7 +291,6 @@ export interface FileRoutesByFullPath {
   '/admin/bookings': typeof AdminBookingsRoute
   '/admin/challenge': typeof AdminChallengeRoute
   '/admin/check-in': typeof AdminCheckInRoute
-  '/admin/classes': typeof AdminClassesRoute
   '/admin/client-comms': typeof AdminClientCommsRoute
   '/admin/customers': typeof AdminCustomersRouteWithChildren
   '/admin/email': typeof AdminEmailRoute
@@ -342,7 +335,6 @@ export interface FileRoutesByTo {
   '/admin/bookings': typeof AdminBookingsRoute
   '/admin/challenge': typeof AdminChallengeRoute
   '/admin/check-in': typeof AdminCheckInRoute
-  '/admin/classes': typeof AdminClassesRoute
   '/admin/client-comms': typeof AdminClientCommsRoute
   '/admin/customers': typeof AdminCustomersRouteWithChildren
   '/admin/email': typeof AdminEmailRoute
@@ -389,7 +381,6 @@ export interface FileRoutesById {
   '/admin/bookings': typeof AdminBookingsRoute
   '/admin/challenge': typeof AdminChallengeRoute
   '/admin/check-in': typeof AdminCheckInRoute
-  '/admin/classes': typeof AdminClassesRoute
   '/admin/client-comms': typeof AdminClientCommsRoute
   '/admin/customers': typeof AdminCustomersRouteWithChildren
   '/admin/email': typeof AdminEmailRoute
@@ -437,7 +428,6 @@ export interface FileRouteTypes {
     | '/admin/bookings'
     | '/admin/challenge'
     | '/admin/check-in'
-    | '/admin/classes'
     | '/admin/client-comms'
     | '/admin/customers'
     | '/admin/email'
@@ -482,7 +472,6 @@ export interface FileRouteTypes {
     | '/admin/bookings'
     | '/admin/challenge'
     | '/admin/check-in'
-    | '/admin/classes'
     | '/admin/client-comms'
     | '/admin/customers'
     | '/admin/email'
@@ -528,7 +517,6 @@ export interface FileRouteTypes {
     | '/admin/bookings'
     | '/admin/challenge'
     | '/admin/check-in'
-    | '/admin/classes'
     | '/admin/client-comms'
     | '/admin/customers'
     | '/admin/email'
@@ -844,13 +832,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminClientCommsRouteImport
       parentRoute: typeof AdminRoute
     }
-    '/admin/classes': {
-      id: '/admin/classes'
-      path: '/classes'
-      fullPath: '/admin/classes'
-      preLoaderRoute: typeof AdminClassesRouteImport
-      parentRoute: typeof AdminRoute
-    }
     '/admin/check-in': {
       id: '/admin/check-in'
       path: '/check-in'
@@ -906,7 +887,6 @@ interface AdminRouteChildren {
   AdminBookingsRoute: typeof AdminBookingsRoute
   AdminChallengeRoute: typeof AdminChallengeRoute
   AdminCheckInRoute: typeof AdminCheckInRoute
-  AdminClassesRoute: typeof AdminClassesRoute
   AdminClientCommsRoute: typeof AdminClientCommsRoute
   AdminCustomersRoute: typeof AdminCustomersRouteWithChildren
   AdminEmailRoute: typeof AdminEmailRoute
@@ -930,7 +910,6 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminBookingsRoute: AdminBookingsRoute,
   AdminChallengeRoute: AdminChallengeRoute,
   AdminCheckInRoute: AdminCheckInRoute,
-  AdminClassesRoute: AdminClassesRoute,
   AdminClientCommsRoute: AdminClientCommsRoute,
   AdminCustomersRoute: AdminCustomersRouteWithChildren,
   AdminEmailRoute: AdminEmailRoute,
