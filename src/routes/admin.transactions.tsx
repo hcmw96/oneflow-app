@@ -74,6 +74,17 @@ function formatRand(n: number): string {
   return `R${n.toLocaleString("en-ZA", { maximumFractionDigits: 0, minimumFractionDigits: 0 })}`;
 }
 
+/** Credits without a Yoco payment ID are studio-assigned (comped, staff packages, admin grants). */
+function paymentMethodLabel(method: string): string {
+  if (method === "yoco") return "Yoco";
+  if (method === "manual") return "Admin assigned";
+  return method;
+}
+
+function isYocoRevenue(row: TxRow): boolean {
+  return row.paymentMethod === "yoco" && !row.refundedAt;
+}
+
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleString("en-ZA", {
     timeZone: TZ,
@@ -184,7 +195,7 @@ function TransactionsPage() {
 
     const sumIn = (startIso: string, endIso: string) =>
       mapped
-        .filter((r) => r.date >= startIso && r.date <= endIso)
+        .filter((r) => isYocoRevenue(r) && r.date >= startIso && r.date <= endIso)
         .reduce((acc, r) => acc + r.amount, 0);
 
     setRevenueToday(sumIn(today.start, today.end));
@@ -307,7 +318,7 @@ function TransactionsPage() {
       r.memberName,
       r.productName,
       r.amount.toString(),
-      r.paymentMethod,
+      r.paymentMethod === "yoco" ? "Yoco" : "Admin assigned",
       yocoCheckoutId(r.yocoPaymentId) ?? "",
       yocoReferenceId(r.yocoPaymentId) ?? "",
     ]);
@@ -359,7 +370,7 @@ function TransactionsPage() {
           <SelectContent>
             <SelectItem value="all">All payment methods</SelectItem>
             <SelectItem value="yoco">Yoco</SelectItem>
-            <SelectItem value="manual">Manual</SelectItem>
+            <SelectItem value="manual">Admin assigned</SelectItem>
           </SelectContent>
         </Select>
         <Input
@@ -479,7 +490,7 @@ function TransactionsPage() {
                   </td>
                   <td className="px-5 py-3">
                     <span className="inline-flex rounded-full bg-[#e8efe3] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#3d4f36]">
-                      {r.paymentMethod}
+                      {paymentMethodLabel(r.paymentMethod)}
                     </span>
                   </td>
                   <td className="whitespace-nowrap px-5 py-3 text-right">
