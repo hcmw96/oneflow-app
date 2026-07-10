@@ -1,52 +1,33 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Calendar, Coffee, MapPin, QrCode, Sparkles } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/auth";
-import { countChallengeStampedDaysForConfig } from "@/lib/mayChallengeCheckIn";
-import {
-  fetchMovementChallengeConfig,
-  movementChallengeTotalDays,
-  type MovementChallengeConfig,
-} from "@/lib/movementChallenge";
+import { movementChallengeTotalDays } from "@/lib/movementChallenge";
 import { CancelBookingButton } from "@/components/CancelBookingButton";
 import { HomeSpotlightCard, homeSpotlightCardVisible } from "@/components/HomeSpotlightCard";
 import { HomeEventCard } from "@/components/HomeEventCard";
 import { MemberCreditTypesPanel } from "@/components/MemberCreditTypesPanel";
-import { fetchHomeEventCardConfig, homeEventCardVisible } from "@/lib/homeEventCard";
-import {
-  summarizeMemberCreditTypes,
-  type MemberCreditRow,
-} from "@/lib/memberCreditBalance";
-import { supabase } from "@/lib/supabase";
-import {
-  fetchCafeCredits,
-  hasActiveCafeCredits,
-  sumCafeCreditsRemaining,
-} from "@/lib/cafeCredits";
+import { homeEventCardVisible } from "@/lib/homeEventCard";
 import {
   activeMatAccessLabels,
   activeTowelAccessLabels,
-  fetchMatTowelAccess,
   hasActiveMatAccess,
   hasActiveTowelAccess,
-  type MatTowelAccessRow,
 } from "@/lib/matTowelAccess";
 import { useTimezone } from "@/hooks/use-timezone";
-import {
-  fetchUpcomingHomeBookings,
-  type HomeUpcomingBooking,
-} from "@/lib/homeUpcomingBookings";
-import { DEFAULT_WEEKLY_GOAL, fetchWeeklyGoalProgress, weeklyGoalFromProfile } from "@/lib/weeklyGoal";
+import { useHomePage } from "@/lib/queries/homePage";
+import { invalidateMemberBookingCaches } from "@/lib/queries/invalidate";
+import { queryKeys } from "@/lib/queries/queryKeys";
+import { supabase } from "@/lib/supabase";
 import {
   civilAddDaysYmd,
-  dayBoundsForDateKey,
   formatClassDateTime,
   formatShortDateInZone,
   STUDIO_TIMEZONE,
   todayDateKey,
-  weekSundayDateKey,
   ymdInTimeZone,
 } from "@/lib/timezone";
 
@@ -78,36 +59,25 @@ function HomeSkeleton() {
   );
 }
 
-type UserCreditHomeRow = {
-  id: string;
-  credits_remaining: number | null;
-  is_unlimited: boolean | null;
-  expires_at: string | null;
-  product_name: string | null;
-  category: string | null;
-  mat_access?: boolean | null;
-  towel_access?: boolean | null;
-};
-
 function HomePage() {
   const { user, authReady } = useAuth();
+  const queryClient = useQueryClient();
   const { timeZone, studioTimeZone } = useTimezone();
-  const [loading, setLoading] = useState(true);
-  const [firstName, setFirstName] = useState<string | null>(null);
-  const [creditRows, setCreditRows] = useState<UserCreditHomeRow[]>([]);
-  const [cafeCreditTotal, setCafeCreditTotal] = useState(0);
-  const [cafeUnlimited, setCafeUnlimited] = useState(false);
-  const [matTowelRows, setMatTowelRows] = useState<MatTowelAccessRow[]>([]);
-  const [completed, setCompleted] = useState(0);
-  const [points, setPoints] = useState(0);
-  const [weeklyGoal, setWeeklyGoal] = useState(DEFAULT_WEEKLY_GOAL);
-  const [weeklyDone, setWeeklyDone] = useState(0);
-  const [challengeStamped, setChallengeStamped] = useState(0);
-  const [challengeConfig, setChallengeConfig] = useState<MovementChallengeConfig | null>(null);
-  const [upcomingBookings, setUpcomingBookings] = useState<HomeUpcomingBooking[]>([]);
-  const [homeEventCard, setHomeEventCard] = useState<Awaited<
-    ReturnType<typeof fetchHomeEventCardConfig>
-  > | null>(null);
+  const { data: home, isLoading } = useHomePage(user?.id);
+
+  const firstName = home?.firstName ?? null;
+  const creditTypeBalances = home?.creditTypeBalances ?? [];
+  const cafeCreditTotal = home?.cafeCreditTotal ?? 0;
+  const cafeUnlimited = home?.cafeUnlimited ?? false;
+  const matTowelRows = home?.matTowelRows ?? [];
+  const completed = home?.completed ?? 0;
+  const points = home?.points ?? 0;
+  const weeklyGoal = home?.weeklyGoal ?? 3;
+  const weeklyDone = home?.weeklyDone ?? 0;
+  const challengeStamped = home?.challengeStamped ?? 0;
+  const challengeConfig = home?.challengeConfig ?? null;
+  const upcomingBookings = home?.upcomingBookings ?? [];
+  const homeEventCard = home?.homeEventCard ?? null;
   const challengeTotalDays = challengeConfig
     ? movementChallengeTotalDays(challengeConfig)
     : 31;
@@ -120,101 +90,11 @@ function HomePage() {
   const matAccessLabels = activeMatAccessLabels(matTowelRows);
   const towelAccessLabels = activeTowelAccessLabels(matTowelRows);
 
-  const creditTypeBalances = useMemo(
-    () => summarizeMemberCreditTypes(creditRows as MemberCreditRow[]),
-    [creditRows],
-  );
-
-  const loadHome = useCallback(async () => {
-    if (!authReady) return;
-
-    setLoading(true);
-    setCreditRows([]);
-    setCafeCreditTotal(0);
-    setCafeUnlimited(false);
-    setMatTowelRows([]);
-    setCompleted(0);
-    setPoints(0);
-    setFirstName(null);
-    setWeeklyGoal(DEFAULT_WEEKLY_GOAL);
-    setWeeklyDone(0);
-    setChallengeStamped(0);
-    setChallengeConfig(null);
-    setUpcomingBookings([]);
-
-    if (!user) {
-      setLoading(false);
-      return;
-    }
-
-    const uid = user.id;
-
-    const [
-      { data: profile },
-      { data: fetchedUserCredits },
-      cafeCredits,
-      matTowelAccess,
-      { count: attendedCount, error: attendedErr },
-      weeklyProgress,
-      upcoming,
-      movementChallenge,
-      eventCardConfig,
-    ] = await Promise.all([
-      supabase
-        .from("profiles")
-        .select("first_name, weekly_goal, flow_points")
-        .eq("id", uid)
-        .maybeSingle(),
-      supabase
-        .from("user_credits")
-        .select(
-          "id, credits_remaining, is_unlimited, expires_at, product_name, category, mat_access, towel_access",
-        )
-        .eq("profile_id", uid),
-      fetchCafeCredits(uid),
-      fetchMatTowelAccess(uid),
-      supabase
-        .from("bookings")
-        .select("id", { count: "exact", head: true })
-        .eq("profile_id", uid)
-        .eq("status", "attended"),
-      fetchWeeklyGoalProgress(supabase, uid),
-      fetchUpcomingHomeBookings(supabase, uid),
-      fetchMovementChallengeConfig(),
-      fetchHomeEventCardConfig(),
-    ]);
-
-    if (attendedErr) console.error(attendedErr);
-
-    setFirstName(profile?.first_name?.trim() || null);
-    setCreditRows((fetchedUserCredits ?? []) as UserCreditHomeRow[]);
-    const cafeSum = sumCafeCreditsRemaining(cafeCredits);
-    const cafeActive = hasActiveCafeCredits(cafeCredits);
-    setCafeUnlimited(cafeActive && cafeSum === -1);
-    setCafeCreditTotal(cafeActive && cafeSum > 0 ? cafeSum : 0);
-    setMatTowelRows(matTowelAccess);
-    setCompleted(attendedCount ?? 0);
-    setWeeklyGoal(
-      weeklyGoalFromProfile(
-        (profile as { weekly_goal?: number | null } | null)?.weekly_goal,
-      ),
-    );
-    setWeeklyDone(weeklyProgress.weeklyDone);
-    const fpRaw = (profile as { flow_points?: number | null } | null)?.flow_points;
-    setPoints(typeof fpRaw === "number" && Number.isFinite(fpRaw) ? Math.max(0, fpRaw) : 0);
-    setChallengeConfig(movementChallenge);
-    const stampedDays = movementChallenge.enabled
-      ? await countChallengeStampedDaysForConfig(uid, movementChallenge)
-      : 0;
-    setChallengeStamped(stampedDays);
-    setUpcomingBookings(upcoming);
-    setHomeEventCard(eventCardConfig);
-    setLoading(false);
-  }, [authReady, user]);
-
-  useEffect(() => {
-    void loadHome();
-  }, [loadHome]);
+  const refreshHome = () => {
+    if (!user?.id) return;
+    invalidateMemberBookingCaches(user.id);
+    void queryClient.invalidateQueries({ queryKey: queryKeys.homePage(user.id) });
+  };
 
   useEffect(() => {
     if (!user?.id) return;
@@ -222,24 +102,26 @@ function HomePage() {
     const channel = supabase
       .channel("home-bookings-realtime")
       .on("postgres_changes", { event: "*", schema: "public", table: "bookings" }, () => {
-        void loadHome();
+        refreshHome();
       })
       .subscribe();
 
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [user?.id, loadHome]);
+  }, [user?.id, queryClient]);
 
   useEffect(() => {
     const onVisible = () => {
-      if (document.visibilityState === "visible") void loadHome();
+      if (document.visibilityState === "visible") refreshHome();
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
-  }, [loadHome]);
+  }, [user?.id, queryClient]);
 
-  if (!authReady || loading) {
+  const showSkeleton = !authReady || (isLoading && !home);
+
+  if (showSkeleton) {
     return (
       <AppShell>
         <HomeSkeleton />
@@ -313,7 +195,7 @@ function HomePage() {
                         <CancelBookingButton
                           bookingId={b.id}
                           variant="card"
-                          onCancelled={loadHome}
+                          onCancelled={refreshHome}
                         />
                       </div>
                     </div>

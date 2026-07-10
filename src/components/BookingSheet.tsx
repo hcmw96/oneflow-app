@@ -9,17 +9,16 @@ import {
   SheetTitle,
   SheetDescription,
 } from "@/components/ui/sheet";
-import { getUser, supabase } from "@/lib/supabase";
+import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/contexts/auth";
+import { useBookingSheetData } from "@/lib/queries/bookingSheet";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { cn } from "@/lib/utils";
 import {
-  classSkipsPayment,
   customerClassCapacityLabel,
-  fetchBookableProductCatalog,
   fetchConfirmedBookingIntervals,
   findOverlappingBooking,
   classTicketRestrictsCreditsToProduct,
-  isComplimentaryClassTicket,
   isPastScheduleClass,
   isPurchasableClassTicketPrice,
   overlapBookingMessage,
@@ -40,14 +39,12 @@ import {
   type MovementChallengeConfig,
 } from "@/lib/movementChallenge";
 import {
-  fetchMyWaitlistEntryForClass,
   joinWaitlist,
   leaveWaitlist,
   type WaitlistEntry,
 } from "@/lib/waitlist";
 import {
   formatHireAddonPrice,
-  pickPerClassHireAddons,
   type BookingHireAddon,
 } from "@/lib/bookingAddons";
 import {
@@ -108,6 +105,8 @@ function friendInitials(f: FriendOption): string {
 }
 
 export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }: Props) {
+  const { user } = useAuth();
+  const { data: sheetData } = useBookingSheetData(user?.id, user?.email, session, open);
   const [credits, setCredits] = useState<Credit[]>([]);
   const [selectedCredit, setSelectedCredit] = useState<string | null>(null);
   const [flowPoints, setFlowPoints] = useState(0);
@@ -159,169 +158,58 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
   }, [open]);
 
   useEffect(() => {
-    if (!open || !session) return;
-    const load = async () => {
-      const user = await getUser();
-      if (!user) return;
-      setUserId(user.id);
-      setUserEmail(user.email ?? null);
+    if (!open || !session || !sheetData) return;
 
-      setIsFreeClass(false);
-      setIsComplimentaryClass(false);
-      setClassTicketProduct(null);
+    setUserId(sheetData.userId);
+    setUserEmail(sheetData.userEmail);
+    setWaitlistEntry(sheetData.waitlistEntry);
+    setHireAddons(sheetData.hireAddons);
+    setIsFreeClass(sheetData.isFreeClass);
+    setIsComplimentaryClass(sheetData.isComplimentaryClass);
+    setClassTicketProduct(sheetData.classTicketProduct);
+    setAcceptedFriends(sheetData.acceptedFriends);
 
-      const ticketPromise = session.product_id
-        ? supabase
-            .from("products")
-            .select("id, name, price_zar, category, is_class_ticket")
-            .eq("id", session.product_id)
-            .maybeSingle()
-        : Promise.resolve({ data: null, error: null });
+    const ticket = sheetData.classTicketProduct;
+    if (sheetData.isComplimentaryClass) {
+      setCredits([]);
+      setSelectedCredit(null);
+      setUsePoints(false);
+      setFlowPoints(0);
+      setUserRole(sheetData.userRole);
+      return;
+    }
 
-      const catalog = await fetchBookableProductCatalog(supabase);
-      const ticketRes = await ticketPromise;
-      const ticketRow = ticketRes.data as {
-        id: string;
-        name: string;
-        price_zar: number;
-        category?: string | null;
-        is_class_ticket?: boolean | null;
-      } | null;
-      const ticket =
-        ticketRow && typeof ticketRow.price_zar === "number" ? ticketRow : null;
-      setClassTicketProduct(ticket);
-
-      const skipPayment = classSkipsPayment(session.class_type, catalog);
-      const complimentaryTicket = isComplimentaryClassTicket(ticket);
-      console.info("[BookingSheet] payment check on open", {
-        classId: session.id,
-        classType: session.class_type,
-        skipPayment,
-        complimentaryTicket,
-      });
-      setIsFreeClass(skipPayment);
-      setIsComplimentaryClass(complimentaryTicket);
-
-      const addonPromise = supabase
-        .from("products")
-        .select("id, name, price_zar")
-        .eq("is_active", true)
-        .eq("is_addon", true)
-        .ilike("name", "%hire%")
-        .not("name", "ilike", "%monthly%")
-        .order("sort_order", { ascending: true })
-        .order("name", { ascending: true });
-
-      const creditsPromise = complimentaryTicket
-        ? Promise.resolve({ data: null, error: null })
-        : supabase
-            .from("user_credits")
-            .select(
-              "id, product_id, product_name, credits_remaining, is_unlimited, expires_at, allowed_class_types, category, mat_access, towel_access",
-            )
-            .eq("profile_id", user.id);
-
-      const pointsPromise = complimentaryTicket
-        ? Promise.resolve({ data: null, error: null })
-        : supabase.from("profiles").select("flow_points, role").eq("id", user.id).maybeSingle();
-
-      const [
-        { data: creditsData, error: creditsErr },
-        { data: pointsData },
-        { data: ships },
-        { data: addonData, error: addonErr },
-        waitlistMine,
-      ] = await Promise.all([
-        creditsPromise,
-        pointsPromise,
-        supabase
-          .from("friendships")
-          .select("requester_id, addressee_id")
-          .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`)
-          .eq("status", "accepted"),
-        addonPromise,
-        fetchMyWaitlistEntryForClass(session.id, user.id).catch((err) => {
-          console.error("[BookingSheet] waitlist lookup failed", err);
-          return null;
-        }),
-      ]);
-
-      setWaitlistEntry(waitlistMine);
-
-      const addons = (addonData ?? []) as { id: string; name: string; price_zar: number }[];
-      const hires = pickPerClassHireAddons(addons);
-      console.info("[BookingSheet] per-class hire addons loaded", {
-        mat: hires.mat?.name ?? null,
-        towel: hires.towel?.name ?? null,
-        error: addonErr?.message ?? null,
-      });
-      setHireAddons(hires);
-      if (addonErr) {
-        console.error("[BookingSheet] addon products query failed", addonErr);
+    const nowMs = Date.now();
+    const pool = sheetData.credits.filter((c) => {
+      if (!isBookableClassCredit(c)) return false;
+      if (c.is_unlimited) {
+        if (c.expires_at && new Date(c.expires_at).getTime() < nowMs) return false;
+        return true;
       }
+      const rem = Number(c.credits_remaining);
+      if (!Number.isFinite(rem) || rem <= 0) return false;
+      if (c.expires_at && new Date(c.expires_at).getTime() < nowMs) return false;
+      return true;
+    });
 
-      if (complimentaryTicket) {
-        setCredits([]);
-        setSelectedCredit(null);
-        setUsePoints(false);
-        setFlowPoints(0);
-      } else {
-        if (creditsErr) {
-          console.error("[BookingSheet] user_credits query failed", creditsErr);
-        }
+    const eligible =
+      ticket && classTicketRestrictsCreditsToProduct(ticket.price_zar)
+        ? pool.filter(
+            (c) => String((c as { product_id?: string | null }).product_id ?? "") === ticket.id,
+          )
+        : pool.filter((c) =>
+            userCreditCoversClassType({
+              category: c.category,
+              allowed_class_types: c.allowed_class_types,
+              classType: session.class_type,
+            }),
+          );
 
-        // Credits attach to profile_id (same as auth user id for all roles, including staff).
-        const nowMs = Date.now();
-        const pool = (creditsData ?? []).filter((c) => {
-          if (!isBookableClassCredit(c)) return false;
-          if (c.is_unlimited) {
-            if (c.expires_at && new Date(c.expires_at).getTime() < nowMs) return false;
-            return true;
-          }
-          const rem = Number(c.credits_remaining);
-          if (!Number.isFinite(rem) || rem <= 0) return false;
-          if (c.expires_at && new Date(c.expires_at).getTime() < nowMs) return false;
-          return true;
-        });
-
-        const eligible =
-          ticket && classTicketRestrictsCreditsToProduct(ticket.price_zar)
-            ? pool.filter(
-                (c) =>
-                  String((c as { product_id?: string | null }).product_id ?? "") === ticket.id,
-              )
-            : pool.filter((c) =>
-                userCreditCoversClassType({
-                  category: c.category,
-                  allowed_class_types: c.allowed_class_types,
-                  classType: session.class_type,
-                }),
-              );
-
-        setCredits(eligible as Credit[]);
-        setSelectedCredit(eligible[0]?.id ?? null);
-        const prof = pointsData as { flow_points?: number | null; role?: string | null } | null;
-        const fp = prof?.flow_points;
-        setFlowPoints(typeof fp === "number" && Number.isFinite(fp) ? Math.max(0, fp) : 0);
-        setUserRole(prof?.role ?? null);
-      }
-
-      const shipRows = (ships ?? []) as { requester_id: string; addressee_id: string }[];
-      const otherIds = shipRows.map((s) =>
-        s.requester_id === user.id ? s.addressee_id : s.requester_id,
-      );
-      if (otherIds.length === 0) {
-        setAcceptedFriends([]);
-      } else {
-        const { data: profs } = await supabase
-          .from("profiles")
-          .select("id, first_name, last_name, avatar_url")
-          .in("id", otherIds);
-        setAcceptedFriends((profs ?? []) as FriendOption[]);
-      }
-    };
-    void load();
-  }, [open, session]);
+    setCredits(eligible as Credit[]);
+    setSelectedCredit(eligible[0]?.id ?? null);
+    setFlowPoints(sheetData.flowPoints);
+    setUserRole(sheetData.userRole);
+  }, [open, session, sheetData]);
 
   if (!session) return null;
 

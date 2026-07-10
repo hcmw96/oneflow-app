@@ -17,6 +17,7 @@ import { toast } from "sonner";
 import { PageHeader } from "@/components/admin/PageHeader";
 import { StatCard } from "@/components/admin/StatCard";
 import { getUser, supabase } from "@/lib/supabase";
+import { useAuth } from "@/contexts/auth";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { cancelBookingWithPolicy } from "@/lib/bookingCancellation";
 import { fetchGuidesForClassSelect, type GuideSelectRow } from "@/lib/guidesForSelect";
@@ -259,7 +260,8 @@ const TYPE_BADGE_CLASS: Record<string, string> = {
 };
 
 function SchedulePage() {
-  const [role, setRole] = useState<string | null>(null);
+  const { profile } = useAuth();
+  const role = profile?.role ?? null;
   const [rows, setRows] = useState<ClassRow[]>([]);
   /** Loaded once; paired with `guideSelectOptions` for display. */
   const [guides, setGuides] = useState<GuideOption[]>([]);
@@ -374,13 +376,7 @@ function SchedulePage() {
 
   useEffect(() => {
     void (async () => {
-      const user = await getUser();
-      if (!user) return;
-      const [profileRes, custom] = await Promise.all([
-        supabase.from("profiles").select("role").eq("id", user.id).maybeSingle(),
-        fetchCustomClassTypes(),
-      ]);
-      setRole((profileRes.data?.role as string | null) ?? null);
+      const custom = await fetchCustomClassTypes();
       setCustomClassTypes(custom);
       await loadGuideOptions();
     })();

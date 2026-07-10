@@ -44,6 +44,7 @@ import {
 import { isBookableMember } from "@/lib/bookableMembers";
 import { fetchAllMemberProfileIds, sendInAppMessagesToMembers } from "@/lib/studioMemberMessages";
 import { getUser, supabase } from "@/lib/supabase";
+import { useAuth } from "@/contexts/auth";
 import { edgeFunctionErrorMessage, isValidEmail, supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { normalizeProductCategoryKey } from "@/lib/productCategories";
 import { cn } from "@/lib/utils";
@@ -295,6 +296,8 @@ function CustomerRowActions({
 }
 
 function CustomersPage() {
+  const { profile } = useAuth();
+  const viewerRole = profile?.role ?? null;
   const navigate = useNavigate();
   const search = Route.useSearch();
 
@@ -307,7 +310,6 @@ function CustomersPage() {
   const [roleFilter, setRoleFilter] = useState<string>("all");
   const [members, setMembers] = useState<MemberRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [viewerRole, setViewerRole] = useState<string | null>(null);
   const [assignOpen, setAssignOpen] = useState(false);
   const [assignTarget, setAssignTarget] = useState<AssignPackageTarget | null>(null);
   const [bulkAssignTargets, setBulkAssignTargets] = useState<AssignPackageTarget[] | null>(null);
@@ -343,19 +345,6 @@ function CustomersPage() {
   const canManageCustomers =
     (viewerRole ?? "").toLowerCase() === "director" ||
     (viewerRole ?? "").toLowerCase() === "management";
-
-  useEffect(() => {
-    void (async () => {
-      const user = await getUser();
-      if (!user) return;
-      const { data } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("id", user.id)
-        .maybeSingle();
-      setViewerRole((data?.role as string | null) ?? null);
-    })();
-  }, []);
 
   useEffect(() => {
     if (search.profile) {

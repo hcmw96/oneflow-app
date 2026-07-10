@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { getUser, supabase } from "@/lib/supabase";
+import { useAuth } from "@/contexts/auth";
 import { edgeFunctionErrorMessage, isValidEmail, supabaseErrorMessage } from "@/lib/supabaseErrors";
 import {
   AssignPackageDialog,
@@ -196,13 +197,14 @@ function initials(firstName: string, lastName: string, email: string): string {
 }
 
 function GuidesPage() {
+  const { user, profile } = useAuth();
+  const viewerRole = roleType(profile?.role);
   const [rows, setRows] = useState<GuideRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingGuideId, setEditingGuideId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [viewerRole, setViewerRole] = useState<RoleType>("other");
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -241,10 +243,8 @@ function GuidesPage() {
   const load = useCallback(async () => {
     setLoading(true);
 
-    const user = await getUser();
     if (!user) {
       setRows([]);
-      setViewerRole("other");
       setLoading(false);
       return;
     }
@@ -256,8 +256,7 @@ function GuidesPage() {
     const weekEnd = new Date(weekStart);
     weekEnd.setDate(weekStart.getDate() + 7);
 
-    const [viewerRoleRes, guidesRes, classesRes] = await Promise.all([
-      supabase.from("profiles").select("role").eq("id", user.id).maybeSingle(),
+    const [guidesRes, classesRes] = await Promise.all([
       supabase
         .from("guides")
         .select("id, is_active, bio, disciplines, photo_url, profile_id")
@@ -272,9 +271,6 @@ function GuidesPage() {
 
     const { data: guidesData, error: guidesError } = guidesRes;
     console.log("guides:", guidesData, guidesError);
-
-    if (viewerRoleRes.error) console.error(viewerRoleRes.error);
-    setViewerRole(roleType((viewerRoleRes.data as { role?: string | null } | null)?.role));
 
     if (guidesError) {
       console.error("guides fetch error:", guidesError);
@@ -360,7 +356,7 @@ function GuidesPage() {
 
     setRows(withPackages);
     setLoading(false);
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     void load();

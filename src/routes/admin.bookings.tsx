@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/admin/PageHeader";
+import { useAuth } from "@/contexts/auth";
 import { getUser, supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { addDays, isSameDay, startOfDay } from "@/lib/format";
@@ -251,7 +252,8 @@ function sessionMatchesClassTypeFilter(classType: string, filter: string): boole
 }
 
 function BookingsPage() {
-  const [role, setRole] = useState<string | null>(null);
+  const { profile } = useAuth();
+  const role = profile?.role ?? null;
   const [viewWeekStart, setViewWeekStart] = useState(() => startOfCalendarWeekSunday(new Date()));
   const [selectedDay, setSelectedDay] = useState(() => startOfDay(new Date()));
   const [weekClasses, setWeekClasses] = useState<WeekClassRow[]>([]);
@@ -278,19 +280,6 @@ function BookingsPage() {
     [viewWeekStart],
   );
   const isGuide = (role ?? "").toLowerCase() === "guide";
-
-  useEffect(() => {
-    void (async () => {
-      const user = await getUser();
-      if (!user) return;
-      const { data } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("id", user.id)
-        .maybeSingle();
-      setRole((data?.role as string | null) ?? null);
-    })();
-  }, []);
 
   const loadWeek = useCallback(async () => {
     setLoading(true);

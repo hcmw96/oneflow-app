@@ -1,32 +1,15 @@
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode } from "react";
 import { ClassReviewPrompt } from "./ClassReviewPrompt";
 import { PracticeSharePrompt } from "./PracticeSharePrompt";
 import { WhatsAppFab } from "./WhatsAppFab";
-import { getUser, supabase } from "@/lib/supabase";
+import { useAuth } from "@/contexts/auth";
 import logo from "@/assets/oneflow-logo.webp";
 
 export function AppShell({ children }: { children: ReactNode }) {
-  const [showAdminCta, setShowAdminCta] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      const user = await getUser();
-      if (!user || cancelled) return;
-      const { data } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("id", user.id)
-        .maybeSingle();
-      if (cancelled) return;
-      const r = (data?.role as string | undefined) ?? null;
-      const rl = (r ?? "").toLowerCase();
-      setShowAdminCta(rl === "director" || rl === "management" || rl === "guide");
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const { profile } = useAuth();
+  const role = (profile?.role ?? "").toLowerCase();
+  const showAdminCta =
+    role === "director" || role === "management" || role === "guide";
 
   return (
     <div className="flex h-[100dvh] max-h-[100dvh] flex-col overflow-hidden bg-background">

@@ -49,6 +49,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { getUser, supabase } from "@/lib/supabase";
+import { useAuth } from "@/contexts/auth";
 import { currentPlanLabels, type UserCreditPlanRow } from "@/lib/currentPlan";
 import { edgeFunctionErrorMessage, isValidEmail, supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { cn } from "@/lib/utils";
@@ -129,9 +130,10 @@ function initials(first: string, last: string, email: string): string {
 }
 
 function StaffPage() {
+  const { profile } = useAuth();
+  const viewerRole = profile?.role ?? null;
   const [rows, setRows] = useState<StaffRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [viewerRole, setViewerRole] = useState<string | null>(null);
 
   // List controls
   const [q, setQ] = useState("");
@@ -167,19 +169,6 @@ function StaffPage() {
 
   const isDirector = (viewerRole ?? "").toLowerCase() === "director";
   const canManage = isDirector || (viewerRole ?? "").toLowerCase() === "management";
-
-  useEffect(() => {
-    void (async () => {
-      const user = await getUser();
-      if (!user) return;
-      const { data } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("id", user.id)
-        .maybeSingle();
-      setViewerRole((data as { role?: string } | null)?.role ?? null);
-    })();
-  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);

@@ -2,11 +2,11 @@ import { type ReactNode, useEffect, useState } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import { PanelLeftClose, PanelLeft, Menu } from "lucide-react";
 import { AdminNav, AdminSidebarFooter, adminNavItems, navItemsForRole } from "./AdminNav";
-import { getUser, supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import logo from "@/assets/oneflow-logo.webp";
 import { AdminGlobalSearch } from "@/components/admin/AdminGlobalSearch";
+import { useAuth } from "@/contexts/auth";
 
 type AdminProfile = {
   email: string | null;
@@ -15,6 +15,7 @@ type AdminProfile = {
 };
 
 export function AdminShell({ children }: { children: ReactNode }) {
+  const { user, profile: authProfile } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [profile, setProfile] = useState<AdminProfile | null>(null);
@@ -27,35 +28,12 @@ export function AdminShell({ children }: { children: ReactNode }) {
   }, [isCheckInKiosk]);
 
   useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const user = await getUser();
-        if (!user || cancelled) return;
-        const { data, error } = await supabase
-          .from("profiles")
-          .select("email, role, secondary_roles")
-          .eq("id", user.id)
-          .maybeSingle();
-        if (error) {
-          console.error("admin shell profile load", error);
-        }
-        if (cancelled) return;
-        setProfile({
-          email: data?.email ?? user.email ?? null,
-          role: data?.role ?? null,
-          secondary_roles: (data?.secondary_roles as string[] | null) ?? null,
-        });
-      } catch (error) {
-        console.error("admin shell init failed", error);
-        if (cancelled) return;
-        setProfile((prev) => prev ?? { email: null, role: null, secondary_roles: null });
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    setProfile({
+      email: user?.email ?? null,
+      role: authProfile?.role ?? null,
+      secondary_roles: authProfile?.secondary_roles ?? null,
+    });
+  }, [user?.email, authProfile?.role, authProfile?.secondary_roles]);
 
   const visibleNav = navItemsForRole({
     role: profile?.role ?? null,

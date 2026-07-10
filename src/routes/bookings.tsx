@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { Clock, MapPin, Share2, X } from "lucide-react";
 import { toast } from "sonner";
@@ -7,16 +7,15 @@ import { AppShell } from "@/components/AppShell";
 import { CancelBookingButton } from "@/components/CancelBookingButton";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TypeBadge } from "@/components/TypeBadge";
+import { useAuth } from "@/contexts/auth";
 import { useTimezone } from "@/hooks/use-timezone";
 import { formatClassDateTime, formatShortDateInZone } from "@/lib/timezone";
 import { cn } from "@/lib/utils";
-import { getUser, supabase } from "@/lib/supabase";
+import { useMemberBookings } from "@/lib/queries/memberBookings";
+import { useMemberWaitlist } from "@/lib/queries/memberWaitlist";
+import { invalidateMemberBookingCaches } from "@/lib/queries/invalidate";
 import { displayClassType, type ClassType } from "@/types/studio";
-import {
-  fetchMyActiveWaitlistEntries,
-  leaveWaitlist,
-  type WaitlistEntryWithClass,
-} from "@/lib/waitlist";
+import { leaveWaitlist } from "@/lib/waitlist";
 import { PracticeShareComposerSheet } from "@/components/PracticeShareComposerSheet";
 import type { ClassPracticeShareInput } from "@/lib/classPracticeShare";
 
@@ -81,6 +80,7 @@ function guideFirstFromClass(cls: ClassJoin | null): string | null {
 }
 
 function BookingsPage() {
+  const { user } = useAuth();
   const { timeZone, studioTimeZone } = useTimezone();
   const search = Route.useSearch();
   const bookingHighlightId = search.booking;
@@ -88,48 +88,25 @@ function BookingsPage() {
   const didScrollToBookingRef = useRef(false);
 
   const [tab, setTab] = useState<"upcoming" | "past">("upcoming");
-  const [loading, setLoading] = useState(true);
-  const [rows, setRows] = useState<BookingListRow[]>([]);
-  const [waitlist, setWaitlist] = useState<WaitlistEntryWithClass[]>([]);
   const [shareComposerOpen, setShareComposerOpen] = useState(false);
   const [shareComposerInput, setShareComposerInput] = useState<ClassPracticeShareInput | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    const user = await getUser();
-    if (!user) {
-      setRows([]);
-      setWaitlist([]);
-      setLoading(false);
-      return;
-    }
+  const {
+    data: memberBookings = [],
+    isLoading: bookingsLoading,
+    isFetching: bookingsFetching,
+  } = useMemberBookings(user?.id);
+  const {
+    data: waitlist = [],
+    isLoading: waitlistLoading,
+    refetch: refetchWaitlist,
+  } = useMemberWaitlist(user?.id);
 
-    const [bookingsRes, waitlistRows] = await Promise.all([
-      supabase
-        .from("bookings")
-        .select(
-          `id, status, qr_token,
-           classes ( name, class_type, location, starts_at, guide_name )`,
-        )
-        .eq("profile_id", user.id)
-        .in("status", ["confirmed", "attended"])
-        .order("created_at", { ascending: false }),
-      fetchMyActiveWaitlistEntries(user.id).catch((err) => {
-        console.error("[bookings] waitlist load failed", err);
-        return [] as WaitlistEntryWithClass[];
-      }),
-    ]);
+  const loading = bookingsLoading || waitlistLoading;
 
-    if (bookingsRes.error) {
-      console.error(bookingsRes.error);
-      setRows([]);
-      setWaitlist(waitlistRows);
-      setLoading(false);
-      return;
-    }
-
-    const mapped: BookingListRow[] =
-      (bookingsRes.data as unknown as RawBooking[] | null)?.map((raw) => {
+  const rows = useMemo<BookingListRow[]>(() => {
+    return memberBookings
+      .map((raw) => {
         const cls = one(raw.classes);
         return {
           id: raw.id,
@@ -142,13 +119,9 @@ function BookingsPage() {
           guideFirst: guideFirstFromClass(cls),
           guideName: guideNameFromClass(cls),
         };
-      }) ?? [];
-
-    mapped.sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
-    setRows(mapped);
-    setWaitlist(waitlistRows);
-    setLoading(false);
-  }, []);
+      })
+      .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
+  }, [memberBookings]);
 
   const upcoming = useMemo(
     () => rows.filter((r) => r.status === "confirmed" && r.startsAt.getTime() >= Date.now()),
@@ -156,9 +129,9 @@ function BookingsPage() {
   );
   const past = useMemo(() => rows.filter((r) => r.status === "attended"), [rows]);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const refreshBookings = () => {
+    if (user?.id) invalidateMemberBookingCaches(user.id);
+  };
 
   useEffect(() => {
     didScrollToBookingRef.current = false;
@@ -189,7 +162,7 @@ function BookingsPage() {
   const leaveClassWaitlist = async (entryId: string) => {
     try {
       await leaveWaitlist(entryId);
-      setWaitlist((prev) => prev.filter((w) => w.id !== entryId));
+      await refetchWaitlist();
       toast.success("Left the waitlist");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not leave waitlist");
@@ -318,7 +291,7 @@ function BookingsPage() {
                     bookingId={b.id}
                     variant="card"
                     className="mt-3"
-                    onCancelled={load}
+                    onCancelled={refreshBookings}
                   />
                   {b.qrToken && (
                     <div className="mt-4 flex flex-col items-center border-t border-border pt-4">

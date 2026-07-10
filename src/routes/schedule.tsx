@@ -9,8 +9,14 @@ import { useAuth } from "@/contexts/auth";
 import { supabase } from "@/lib/supabase";
 import { useTimezone } from "@/hooks/use-timezone";
 import {
+  confirmedBookingIntervalsFromRows,
+  useMemberBookings,
+} from "@/lib/queries/memberBookings";
+import { useMemberWaitlist } from "@/lib/queries/memberWaitlist";
+import { invalidateMemberBookingCaches } from "@/lib/queries/invalidate";
+import { useScheduleDayClasses } from "@/lib/queries/scheduleDay";
+import {
   civilAddDaysYmd,
-  dayBoundsForDateKey,
   dayOfMonthFromDateKey,
   formatClassDateTime,
   formatLongDayFromDateKey,
@@ -24,7 +30,6 @@ import {
 import {
   type BookedClassInterval,
   customerClassCapacityLabel,
-  fetchConfirmedBookingIntervals,
   findOverlappingBooking,
   isFreeBeginnerClass,
   isPastScheduleClass,
@@ -33,7 +38,6 @@ import {
 import { cn } from "@/lib/utils";
 import { TypeBadge } from "@/components/TypeBadge";
 import { displayClassType } from "@/types/studio";
-import { fetchMyActiveWaitlistEntries } from "@/lib/waitlist";
 
 function uuidOrUndefined(v: unknown): string | undefined {
   if (typeof v !== "string") return undefined;
@@ -173,12 +177,13 @@ export default function SchedulePage() {
   const [waitlistedClassIds, setWaitlistedClassIds] = useState<Set<string>>(() => new Set());
   const [pendingOpenClassId, setPendingOpenClassId] = useState<string | null>(null);
   const [daySlide, setDaySlide] = useState<"from-left" | "from-right" | null>(null);
-  const classesCacheRef = useRef(new Map<string, ClassRow[]>());
-  const dayMetaCacheRef = useRef(new Map<string, { total: number; visible: number }>());
-  const [dayMeta, setDayMeta] = useState({ total: 0, visible: 0 });
   const lastStudioTodayRef = useRef(todayDateKey(studioTimeZone));
   const selectedDateKeyRef = useRef(selectedDateKey);
   selectedDateKeyRef.current = selectedDateKey;
+
+  const dayClassesQuery = useScheduleDayClasses(selectedDateKey, studioTimeZone);
+  const memberBookingsQuery = useMemberBookings(user?.id);
+  const waitlistQuery = useMemberWaitlist(user?.id);
 
   const goPrevDay = useCallback(() => {
     setDaySlide("from-left");
@@ -204,8 +209,6 @@ export default function SchedulePage() {
       const prevToday = lastStudioTodayRef.current;
       if (studioToday === prevToday) return;
       lastStudioTodayRef.current = studioToday;
-      classesCacheRef.current.clear();
-      dayMetaCacheRef.current.clear();
       if (selectedDateKeyRef.current === prevToday) {
         setSelectedDateKey(studioToday);
         setDaySlide(null);
@@ -223,75 +226,38 @@ export default function SchedulePage() {
     };
   }, [studioTimeZone]);
 
-  const loadDayData = useCallback(
-    async (dateKey: string, uid: string) => {
-    const cached = classesCacheRef.current.get(dateKey);
-    const cachedMeta = dayMetaCacheRef.current.get(dateKey);
-    if (cached !== undefined) {
-      setClasses(cached);
-      setDayMeta(cachedMeta ?? { total: cached.length, visible: cached.length });
-      setLoading(false);
-      setRevalidating(true);
-    } else {
-      setLoading(true);
-    }
-
-    const { startUtcIso: isoStart, endUtcIso: isoEnd } = dayBoundsForDateKey(dateKey, studioTimeZone);
-
-    const now = new Date();
-    const nowT = now.getTime();
-
-    const [{ data, error }, nextIntervals, waitlistEntries] = await Promise.all([
-      supabase
-        .from("classes")
-        .select(
-          "id, name, guide_name, class_type, location, starts_at, ends_at, capacity, booked_count, is_cancelled, description, product_id",
-        )
-        .gte("starts_at", isoStart)
-        .lte("starts_at", isoEnd)
-        .eq("is_cancelled", false)
-        .order("starts_at"),
-      fetchConfirmedBookingIntervals(supabase, uid, nowT),
-      fetchMyActiveWaitlistEntries(uid).catch((err) => {
-        console.error("[schedule] waitlist load failed", err);
-        return [];
-      }),
-    ]);
-
-    if (error) {
-      console.error(error);
-    }
-    const rows = data ?? [];
-    const mapped = rows
-      .map((c) => {
-        const raw = c as Record<string, unknown>;
-        return {
-          ...(c as ClassRow),
-          guide_name: guideNameFromRow(raw.guide_name),
-        };
-      })
-      .sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime());
-
-    const visible = mapped.filter((c) => !isPastScheduleClass(c.starts_at, nowT));
-    const meta = { total: mapped.length, visible: visible.length };
-
-    classesCacheRef.current.set(dateKey, visible);
-    dayMetaCacheRef.current.set(dateKey, meta);
-    setClasses(visible);
-    setDayMeta(meta);
-    setBookedClassIds(new Set(nextIntervals.map((b) => b.class_id)));
-    setBookedIntervals(nextIntervals);
-    setWaitlistedClassIds(new Set(waitlistEntries.map((w) => w.classId)));
-    setLoading(false);
-    setRevalidating(false);
-  },
-    [studioTimeZone],
-  );
+  const [dayMeta, setDayMeta] = useState({ total: 0, visible: 0 });
 
   useEffect(() => {
-    if (!authReady || !user?.id) return;
-    void loadDayData(selectedDateKey, user.id);
-  }, [authReady, user?.id, selectedDateKey, loadDayData]);
+    const rows = dayClassesQuery.data;
+    if (!rows) return;
+    const nowT = Date.now();
+    const mapped = rows
+      .map((c) => ({
+        ...c,
+        guide_name: guideNameFromRow(c.guide_name),
+      }))
+      .sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime());
+    const visible = mapped.filter((c) => !isPastScheduleClass(c.starts_at, nowT));
+    setClasses(visible);
+    setDayMeta({ total: mapped.length, visible: visible.length });
+    setLoading(dayClassesQuery.isLoading && !dayClassesQuery.data);
+    setRevalidating(dayClassesQuery.isFetching && !dayClassesQuery.isLoading);
+  }, [
+    dayClassesQuery.data,
+    dayClassesQuery.isLoading,
+    dayClassesQuery.isFetching,
+  ]);
+
+  useEffect(() => {
+    const intervals = confirmedBookingIntervalsFromRows(memberBookingsQuery.data ?? []);
+    setBookedClassIds(new Set(intervals.map((b) => b.class_id)));
+    setBookedIntervals(intervals);
+  }, [memberBookingsQuery.data]);
+
+  useEffect(() => {
+    setWaitlistedClassIds(new Set((waitlistQuery.data ?? []).map((w) => w.classId)));
+  }, [waitlistQuery.data]);
 
   useEffect(() => {
     const classId = search.class;
@@ -543,6 +509,7 @@ export default function SchedulePage() {
         session={bookingFor}
         open={bookingFor !== null}
         onBookingConfirmed={(classId) => {
+          if (uid) invalidateMemberBookingCaches(uid);
           setBookedClassIds((prev) => new Set(prev).add(classId));
           if (bookingFor && bookingFor.id === classId) {
             setBookedIntervals((prev) => [
@@ -559,7 +526,7 @@ export default function SchedulePage() {
         onOpenChange={(o) => {
           if (!o) {
             setBookingFor(null);
-            void loadDayData(selectedDateKey, uid);
+            if (uid) invalidateMemberBookingCaches(uid);
           }
         }}
       />

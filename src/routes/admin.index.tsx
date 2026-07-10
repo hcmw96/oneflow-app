@@ -1,14 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { CalendarDays, Percent, UserCheck, Users } from "lucide-react";
 import { PageHeader } from "@/components/admin/PageHeader";
 import { StatCard } from "@/components/admin/StatCard";
 import { ClassRosterSheet, type ClassRosterSession } from "@/components/admin/ClassRosterSheet";
 import { Skeleton } from "@/components/ui/skeleton";
-import { getUser, supabase } from "@/lib/supabase";
-import { BOOKABLE_MEMBER_OR_FILTER } from "@/lib/bookableMembers";
-import { supabaseErrorMessage } from "@/lib/supabaseErrors";
-import { jhbDayBounds } from "@/lib/jhbTime";
+import { useAuth } from "@/contexts/auth";
+import { useAdminDashboard } from "@/lib/queries/adminDashboard";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/admin/")({
@@ -49,85 +47,20 @@ function AdminDashboardSkeleton() {
 }
 
 function AdminDashboard() {
-  const [classes, setClasses] = useState<TodayClassRow[]>([]);
-  const [memberCount, setMemberCount] = useState<number | null>(null);
-  const [signInsToday, setSignInsToday] = useState<number>(0);
-  const [loading, setLoading] = useState(true);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [viewerRole, setViewerRole] = useState<string | null>(null);
+  const { profile } = useAuth();
+  const { data, isLoading, isError, error } = useAdminDashboard();
   const [rosterOpen, setRosterOpen] = useState(false);
   const [rosterSession, setRosterSession] = useState<ClassRosterSession | null>(null);
 
+  const viewerRole = profile?.role ?? null;
   const canOpenClassRoster = useMemo(() => {
     const r = (viewerRole ?? "").toLowerCase();
     return r === "director" || r === "management";
   }, [viewerRole]);
 
-  useEffect(() => {
-    void (async () => {
-      const user = await getUser();
-      if (!user) return;
-      const { data } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("id", user.id)
-        .maybeSingle();
-      setViewerRole((data?.role as string | null) ?? null);
-    })();
-  }, []);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setErrorMsg(null);
-    try {
-      const { startUtcIso, endUtcIso } = jhbDayBounds();
-
-      const [classesRes, memberRes, signInsRes] = await Promise.all([
-        supabase
-          .from("classes")
-          .select("id, name, starts_at, booked_count, capacity, guide_name")
-          .gte("starts_at", startUtcIso)
-          .lte("starts_at", endUtcIso)
-          .eq("is_cancelled", false)
-          .order("starts_at"),
-        supabase
-          .from("profiles")
-          .select("id", { count: "exact", head: true })
-          .or(BOOKABLE_MEMBER_OR_FILTER),
-        supabase
-          .from("bookings")
-          .select("id", { count: "exact", head: true })
-          .eq("checked_in", true)
-          .gte("checked_in_at", startUtcIso)
-          .lte("checked_in_at", endUtcIso),
-      ]);
-
-      if (classesRes.error) console.error("admin dashboard classes", classesRes.error);
-      if (memberRes.error) console.error("admin dashboard member count", memberRes.error);
-      if (signInsRes.error) console.error("admin dashboard sign-ins", signInsRes.error);
-
-      if (classesRes.error || memberRes.error || signInsRes.error) {
-        const firstErr = classesRes.error ?? memberRes.error ?? signInsRes.error;
-        setErrorMsg(supabaseErrorMessage(firstErr, "Could not load dashboard data."));
-      }
-
-      setClasses((classesRes.data ?? []) as TodayClassRow[]);
-      setMemberCount(memberRes.count ?? 0);
-      setSignInsToday(signInsRes.count ?? 0);
-    } catch (error) {
-      console.error("admin dashboard load failed", error);
-      setClasses([]);
-      setMemberCount(0);
-      setSignInsToday(0);
-      setErrorMsg(supabaseErrorMessage(error, "Could not load dashboard data."));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const classes = (data?.classes ?? []) as TodayClassRow[];
+  const memberCount = data?.memberCount ?? 0;
+  const signInsToday = data?.signInsToday ?? 0;
 
   const classCount = classes.length;
   const occPcts = classes
@@ -156,6 +89,12 @@ function AdminDashboard() {
     setRosterOpen(true);
   };
 
+  const errorMsg = isError
+    ? error instanceof Error
+      ? error.message
+      : "Could not load dashboard data."
+    : null;
+
   return (
     <div>
       <PageHeader title="Dashboard" description={todayLabel} />
@@ -169,7 +108,7 @@ function AdminDashboard() {
         session={rosterSession}
       />
 
-      {loading ? (
+      {isLoading ? (
         <AdminDashboardSkeleton />
       ) : (
         <>
@@ -196,7 +135,7 @@ function AdminDashboard() {
             />
             <StatCard
               label="Total Members"
-              value={(memberCount ?? 0).toLocaleString()}
+              value={memberCount.toLocaleString()}
               icon={<Users className="h-4 w-4" />}
             />
           </div>
