@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Calendar, Coffee, MapPin, QrCode, Sparkles } from "lucide-react";
+import { Calendar, Coffee, MapPin, QrCode, Sparkles, Award } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/auth";
@@ -78,6 +78,7 @@ function HomePage() {
   const challengeConfig = home?.challengeConfig ?? null;
   const upcomingBookings = home?.upcomingBookings ?? [];
   const homeEventCard = home?.homeEventCard ?? null;
+  const badges = home?.badges ?? [];
   const challengeTotalDays = challengeConfig
     ? movementChallengeTotalDays(challengeConfig)
     : 31;
@@ -221,21 +222,72 @@ function HomePage() {
         </Link>
 
         <section className="grid grid-cols-2 gap-3">
-          <div className="flex flex-col items-center justify-between rounded-2xl border border-border bg-card p-5 text-center">
-            <div>
-              <p className="font-display text-5xl font-bold leading-none">{completed}</p>
-              <p className="mt-3 text-sm font-semibold leading-tight">
-                Classes
-                <br />
-                Completed
+          <div className="flex flex-col rounded-2xl border border-border bg-card p-5">
+            <h2 className="font-display text-lg font-bold">Goals &amp; badges</h2>
+            <p className="mt-2 font-display text-4xl font-bold leading-none">{completed}</p>
+            <p className="mt-1 text-xs font-semibold text-muted-foreground">Classes completed</p>
+
+            <div className="mt-4 border-t border-border pt-4">
+              <p className="text-sm font-semibold">Weekly goal</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {weeklyDone} of {weeklyGoal} classes this week
+              </p>
+              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full rounded-full"
+                  style={{ width: `${goalPct}%`, backgroundColor: SAGE }}
+                />
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">
+                {remaining === 0
+                  ? "Goal reached this week"
+                  : `${remaining} more class${remaining === 1 ? "" : "es"} to go`}
               </p>
             </div>
-            <Link
-              to="/goals"
-              className="mt-4 text-xs text-muted-foreground underline-offset-2 hover:underline"
-            >
-              View Goals
-            </Link>
+
+            <div className="mt-4 border-t border-border pt-4">
+              <p className="flex items-center gap-1.5 text-sm font-semibold">
+                <Award className="h-4 w-4 text-primary" aria-hidden />
+                Your badges
+              </p>
+              {badges.length > 0 ? (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {badges.slice(0, 4).map((b) => (
+                    <div
+                      key={b.id}
+                      className="flex min-w-[4.5rem] flex-col items-center gap-0.5 rounded-xl border border-primary/30 bg-primary/5 px-2 py-1.5 text-center"
+                      title={b.name}
+                    >
+                      <span className="text-lg leading-none" aria-hidden>
+                        {b.icon}
+                      </span>
+                      <span className="line-clamp-2 text-[9px] font-medium leading-tight">
+                        {b.name}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Studio awards will show up here.
+                </p>
+              )}
+            </div>
+
+            <div className="mt-auto flex gap-2 pt-4">
+              <Link
+                to="/goals"
+                className="flex-1 rounded-full border border-border bg-background px-3 py-2 text-center text-xs font-medium"
+              >
+                Goals
+              </Link>
+              <Link
+                to="/rewards"
+                className="flex-1 rounded-full border border-border bg-background px-3 py-2 text-center text-xs font-medium"
+              >
+                Badges
+              </Link>
+            </div>
           </div>
 
           <div className="relative flex flex-col overflow-hidden rounded-2xl border border-border bg-card p-5">
@@ -349,28 +401,6 @@ function HomePage() {
         ) : null}
 
         <MemberCreditTypesPanel balances={creditTypeBalances} />
-
-        <section className="rounded-2xl border border-border bg-card p-5">
-          <h2 className="font-display text-2xl font-bold">Your Weekly Goal</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {weeklyDone} of {weeklyGoal} classes this week
-          </p>
-          <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-muted">
-            <div
-              className="h-full rounded-full"
-              style={{ width: `${goalPct}%`, backgroundColor: SAGE }}
-            />
-          </div>
-          <p className="mt-3 text-sm text-muted-foreground">
-            {remaining} more classes to reach your goal
-          </p>
-          <Link
-            to="/goals"
-            className="mt-4 block rounded-xl border border-border bg-background px-4 py-2.5 text-center text-sm font-medium"
-          >
-            View Goals & Streaks
-          </Link>
-        </section>
 
         {(challengeConfig && homeSpotlightCardVisible(challengeConfig)) ||
         (homeEventCard && homeEventCardVisible(homeEventCard)) ? (
