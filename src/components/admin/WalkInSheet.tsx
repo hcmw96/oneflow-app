@@ -242,7 +242,8 @@ export function WalkInSheet({ open, onOpenChange, onDone }: Props) {
         .select(
           "id, product_name, credits_remaining, is_unlimited, expires_at, allowed_class_types, category, mat_access, towel_access",
         )
-        .eq("profile_id", selectedMember.id);
+        .eq("profile_id", selectedMember.id)
+        .is("refunded_at", null);
 
       if (cancelled) return;
 

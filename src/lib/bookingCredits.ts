@@ -1,6 +1,6 @@
 import type { PostgrestError } from "@supabase/supabase-js";
 import { isCafeCredit } from "@/lib/cafeCredits";
-import { isMatTowelAccessCredit } from "@/lib/matTowelAccess";
+import { normalizeProductCategoryKey } from "@/lib/productCategories";
 
 export type ClassCreditPickSource = {
   category?: string | null;
@@ -8,9 +8,14 @@ export type ClassCreditPickSource = {
   towel_access?: boolean | null;
 };
 
-/** Credits that can pay for a class booking (not café, mat storage, or towel service). */
+/**
+ * Credits that can pay for a class booking.
+ * Excludes café and dedicated mat/towel products — not class packs that also
+ * grant mat/towel access (e.g. The Seeker / The Sage yoga rows with mat_access).
+ */
 export function isBookableClassCredit(row: ClassCreditPickSource): boolean {
-  return !isCafeCredit(row) && !isMatTowelAccessCredit(row);
+  if (isCafeCredit(row)) return false;
+  return normalizeProductCategoryKey(row.category) !== "mat_towel";
 }
 
 /** Maps DB trigger errors from `deduct_credit_on_booking_insert` to user-facing copy. */
