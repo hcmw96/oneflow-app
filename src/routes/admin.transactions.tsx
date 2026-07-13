@@ -81,8 +81,8 @@ function paymentMethodLabel(method: string): string {
   return method;
 }
 
-function isYocoRevenue(row: TxRow): boolean {
-  return row.paymentMethod === "yoco" && !row.refundedAt;
+function isRealOnlineRevenue(row: TxRow): boolean {
+  return isRecordedYocoPayment(row.yocoPaymentId) && !row.refundedAt;
 }
 
 function formatDate(iso: string): string {
@@ -140,13 +140,23 @@ function TransactionsPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from("user_credits")
-      .select(
-        "id, created_at, purchased_at, profile_id, product_id, product_name, yoco_payment_id, refunded_at, refund_reason, profile:profile_id(first_name, last_name), product:product_id(name, price_zar)",
-      )
-      .order("created_at", { ascending: false })
-      .limit(2000);
+    const monthStart = jhbDayBoundsAt(29);
+
+    const [creditsRes, offlineRes] = await Promise.all([
+      supabase
+        .from("user_credits")
+        .select(
+          "id, created_at, purchased_at, profile_id, product_id, product_name, yoco_payment_id, refunded_at, refund_reason, profile:profile_id(first_name, last_name), product:product_id(name, price_zar)",
+        )
+        .order("created_at", { ascending: false })
+        .limit(2000),
+      supabase
+        .from("offline_revenue")
+        .select("occurred_at, amount_zar")
+        .gte("occurred_at", monthStart.start),
+    ]);
+
+    const { data, error } = creditsRes;
 
     if (error) {
       console.error("transactions load failed", error);
@@ -155,6 +165,13 @@ function TransactionsPage() {
       setLoading(false);
       return;
     }
+
+    if (offlineRes.error) {
+      console.error("offline revenue load failed", offlineRes.error);
+      toast.error(supabaseErrorMessage(offlineRes.error, "Could not load offline revenue"));
+    }
+
+    const offlineRows = (offlineRes.data ?? []) as { occurred_at: string; amount_zar: number }[];
 
     const mapped: TxRow[] = (data ?? []).map((raw: Record<string, unknown>) => {
       const profile = (Array.isArray(raw.profile) ? raw.profile[0] : raw.profile) as
@@ -180,7 +197,7 @@ function TransactionsPage() {
         productId: (raw.product_id as string | null) ?? null,
         productName,
         amount,
-        paymentMethod: yoco ? "yoco" : "manual",
+        paymentMethod: isRecordedYocoPayment(yoco) ? "yoco" : "manual",
         yocoPaymentId: yoco,
         refundedAt: (raw.refunded_at as string | null) ?? null,
         refundReason: (raw.refund_reason as string | null) ?? null,
@@ -191,12 +208,16 @@ function TransactionsPage() {
 
     const today = jhbDayBoundsAt(0);
     const weekStart = jhbDayBoundsAt(6);
-    const monthStart = jhbDayBoundsAt(29);
 
-    const sumIn = (startIso: string, endIso: string) =>
-      mapped
-        .filter((r) => isYocoRevenue(r) && r.date >= startIso && r.date <= endIso)
+    const sumIn = (startIso: string, endIso: string) => {
+      const online = mapped
+        .filter((r) => isRealOnlineRevenue(r) && r.date >= startIso && r.date <= endIso)
         .reduce((acc, r) => acc + r.amount, 0);
+      const offline = offlineRows
+        .filter((r) => r.occurred_at >= startIso && r.occurred_at <= endIso)
+        .reduce((acc, r) => acc + (Number(r.amount_zar) || 0), 0);
+      return online + offline;
+    };
 
     setRevenueToday(sumIn(today.start, today.end));
     setRevenueWeek(sumIn(weekStart.start, today.end));
