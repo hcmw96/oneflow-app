@@ -72,6 +72,7 @@ function CheckInPage() {
   const [roster, setRoster] = useState<RosterRow[]>([]);
   const [expandedClassIds, setExpandedClassIds] = useState<Set<string>>(() => new Set());
   const [loading, setLoading] = useState(true);
+  const [walkInOpen, setWalkInOpen] = useState(false);
   const [checkinOpenMinutes, setCheckinOpenMinutes] = useState(DEFAULT_CHECKIN_OPEN_MINUTES_BEFORE);
   const qrDedupeRef = useRef<string | null>(null);
   const qrDedupeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
