@@ -149,16 +149,43 @@ serve(async (req) => {
     }
 
     const body = await req.json();
+    const profile_id_in = String(body?.profile_id ?? "").trim();
     const first_name = String(body?.first_name ?? "").trim();
     const last_name = String(body?.last_name ?? "").trim();
     const email = String(body?.email ?? "")
       .trim()
       .toLowerCase();
     const class_id = String(body?.class_id ?? "").trim();
+    const credit_id_raw = String(body?.credit_id ?? "").trim();
+    const credit_id = credit_id_raw.length > 0 ? credit_id_raw : null;
+    const payment_method_in = String(body?.payment_method ?? "").trim().toLowerCase();
+    const payment_method =
+      payment_method_in === "credit" && credit_id ? "credit" : "cash";
 
-    if (!first_name || !last_name || !email || !class_id) {
+    if (!class_id) {
+      return new Response(JSON.stringify({ ok: false, error: "class_id is required", debug }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (!profile_id_in && (!first_name || !last_name || !email)) {
       return new Response(
-        JSON.stringify({ ok: false, error: "first_name, last_name, email, and class_id are required", debug }),
+        JSON.stringify({
+          ok: false,
+          error: "Provide profile_id (existing member) or first_name, last_name, and email (new person)",
+          debug,
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (payment_method === "credit" && !credit_id) {
+      return new Response(
+        JSON.stringify({ ok: false, error: "credit_id is required when payment_method is credit", debug }),
         {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -169,102 +196,187 @@ serve(async (req) => {
     const admin = createAdminClient(SUPABASE_URL, adminApiKey());
     const waiverAt = new Date().toISOString();
 
-    const { data: existingProfile, error: lookupErr } = await admin
-      .from("profiles")
-      .select("id, role, waiver_accepted_at")
-      .ilike("email", email)
-      .maybeSingle();
-
-    debug.profile_lookup = { existingProfile, lookupErr };
-    console.log("[walk-in-checkin] after profile lookup by email", debug.profile_lookup);
-
-    if (lookupErr) {
-      return new Response(JSON.stringify({ ok: false, error: lookupErr.message, debug }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    let profileId = existingProfile?.id as string | undefined;
+    let profileId: string | undefined;
     let createdProfile = false;
-    const role = String(existingProfile?.role ?? "customer");
+    let role = "customer";
 
-    if (!profileId) {
-      const { data: createData, error: createUserErr } = await admin.auth.admin.createUser({
-        email,
-        email_confirm: true,
-        user_metadata: { first_name, last_name, role: "customer" },
-      });
+    if (profile_id_in) {
+      const { data: existingById, error: byIdErr } = await admin
+        .from("profiles")
+        .select("id, role, waiver_accepted_at")
+        .eq("id", profile_id_in)
+        .maybeSingle();
 
-      if (createUserErr) {
-        const msg = createUserErr.message.toLowerCase();
-        const alreadyRegistered =
-          msg.includes("already") || msg.includes("registered") || msg.includes("exists");
+      debug.profile_lookup = { mode: "by_id", existingById, byIdErr };
+      console.log("[walk-in-checkin] after profile lookup by id", debug.profile_lookup);
 
-        if (!alreadyRegistered) {
-          debug.profile_create = { createUserErr };
-          console.error("[walk-in-checkin] profile create failed", createUserErr);
-          return new Response(JSON.stringify({ ok: false, error: createUserErr.message, debug }), {
-            status: 400,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
+      if (byIdErr) {
+        return new Response(JSON.stringify({ ok: false, error: byIdErr.message, debug }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      if (!existingById?.id) {
+        return new Response(JSON.stringify({ ok: false, error: "Member profile not found", debug }), {
+          status: 404,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
 
-        const authUserId = await findAuthUserIdByEmail(admin, email);
-        if (!authUserId) {
-          debug.profile_create = { createUserErr, note: "auth user not found after duplicate email error" };
-          return new Response(JSON.stringify({ ok: false, error: createUserErr.message, debug }), {
-            status: 400,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
-        profileId = authUserId;
-      } else {
-        profileId = createData.user?.id;
-        if (!profileId) {
-          return new Response(JSON.stringify({ ok: false, error: "Auth user was not created", debug }), {
+      profileId = existingById.id as string;
+      role = String(existingById.role ?? "customer");
+
+      if (!existingById.waiver_accepted_at) {
+        const { error: waiverErr } = await admin
+          .from("profiles")
+          .update({ waiver_accepted_at: waiverAt })
+          .eq("id", profileId);
+
+        debug.waiver_update = { profileId, waiverErr };
+        console.log("[walk-in-checkin] after waiver update", debug.waiver_update);
+
+        if (waiverErr) {
+          console.error("[walk-in-checkin] waiver update failed", waiverErr);
+          return new Response(JSON.stringify({ ok: false, error: waiverErr.message, debug }), {
             status: 500,
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
       }
+    } else {
+      const { data: existingProfile, error: lookupErr } = await admin
+        .from("profiles")
+        .select("id, role, waiver_accepted_at")
+        .ilike("email", email)
+        .maybeSingle();
 
-      const { error: upsertErr } = await admin.from("profiles").upsert(
-        {
-          id: profileId,
-          email,
-          first_name,
-          last_name,
-          role: "customer",
-          waiver_accepted_at: waiverAt,
-        },
-        { onConflict: "id" },
-      );
+      debug.profile_lookup = { mode: "by_email", existingProfile, lookupErr };
+      console.log("[walk-in-checkin] after profile lookup by email", debug.profile_lookup);
 
-      debug.profile_create = { profileId, upsertErr, createdAuthUser: !createUserErr };
-      console.log("[walk-in-checkin] after profile creation", debug.profile_create);
-
-      if (upsertErr) {
-        console.error("[walk-in-checkin] profile upsert failed", upsertErr);
-        return new Response(JSON.stringify({ ok: false, error: upsertErr.message, debug }), {
+      if (lookupErr) {
+        return new Response(JSON.stringify({ ok: false, error: lookupErr.message, debug }), {
           status: 500,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      createdProfile = true;
-    } else if (!existingProfile?.waiver_accepted_at) {
-      const { error: waiverErr } = await admin
-        .from("profiles")
-        .update({ waiver_accepted_at: waiverAt })
-        .eq("id", profileId);
 
-      debug.waiver_update = { profileId, waiverErr };
-      console.log("[walk-in-checkin] after waiver update", debug.waiver_update);
+      profileId = existingProfile?.id as string | undefined;
+      role = String(existingProfile?.role ?? "customer");
 
-      if (waiverErr) {
-        console.error("[walk-in-checkin] waiver update failed", waiverErr);
-        return new Response(JSON.stringify({ ok: false, error: waiverErr.message, debug }), {
+      if (!profileId) {
+        const { data: createData, error: createUserErr } = await admin.auth.admin.createUser({
+          email,
+          email_confirm: true,
+          user_metadata: { first_name, last_name, role: "customer" },
+        });
+
+        if (createUserErr) {
+          const msg = createUserErr.message.toLowerCase();
+          const alreadyRegistered =
+            msg.includes("already") || msg.includes("registered") || msg.includes("exists");
+
+          if (!alreadyRegistered) {
+            debug.profile_create = { createUserErr };
+            console.error("[walk-in-checkin] profile create failed", createUserErr);
+            return new Response(JSON.stringify({ ok: false, error: createUserErr.message, debug }), {
+              status: 400,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
+
+          const authUserId = await findAuthUserIdByEmail(admin, email);
+          if (!authUserId) {
+            debug.profile_create = { createUserErr, note: "auth user not found after duplicate email error" };
+            return new Response(JSON.stringify({ ok: false, error: createUserErr.message, debug }), {
+              status: 400,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
+          profileId = authUserId;
+        } else {
+          profileId = createData.user?.id;
+          if (!profileId) {
+            return new Response(JSON.stringify({ ok: false, error: "Auth user was not created", debug }), {
+              status: 500,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
+        }
+
+        const { error: upsertErr } = await admin.from("profiles").upsert(
+          {
+            id: profileId,
+            email,
+            first_name,
+            last_name,
+            role: "customer",
+            waiver_accepted_at: waiverAt,
+          },
+          { onConflict: "id" },
+        );
+
+        debug.profile_create = { profileId, upsertErr, createdAuthUser: !createUserErr };
+        console.log("[walk-in-checkin] after profile creation", debug.profile_create);
+
+        if (upsertErr) {
+          console.error("[walk-in-checkin] profile upsert failed", upsertErr);
+          return new Response(JSON.stringify({ ok: false, error: upsertErr.message, debug }), {
+            status: 500,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        createdProfile = true;
+      } else if (!existingProfile?.waiver_accepted_at) {
+        const { error: waiverErr } = await admin
+          .from("profiles")
+          .update({ waiver_accepted_at: waiverAt })
+          .eq("id", profileId);
+
+        debug.waiver_update = { profileId, waiverErr };
+        console.log("[walk-in-checkin] after waiver update", debug.waiver_update);
+
+        if (waiverErr) {
+          console.error("[walk-in-checkin] waiver update failed", waiverErr);
+          return new Response(JSON.stringify({ ok: false, error: waiverErr.message, debug }), {
+            status: 500,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+      }
+    }
+
+    if (credit_id) {
+      const { data: creditRow, error: creditErr } = await admin
+        .from("user_credits")
+        .select("id, profile_id, credits_remaining, is_unlimited, expires_at")
+        .eq("id", credit_id)
+        .maybeSingle();
+
+      debug.credit_lookup = { creditRow, creditErr };
+      if (creditErr) {
+        return new Response(JSON.stringify({ ok: false, error: creditErr.message, debug }), {
           status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      if (!creditRow?.id || String(creditRow.profile_id) !== profileId) {
+        return new Response(
+          JSON.stringify({ ok: false, error: "Selected credit does not belong to this member", debug }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
+      }
+      if (creditRow.expires_at && new Date(String(creditRow.expires_at)).getTime() < Date.now()) {
+        return new Response(JSON.stringify({ ok: false, error: "Selected credit has expired", debug }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      if (!creditRow.is_unlimited && Number(creditRow.credits_remaining ?? 0) < 1) {
+        return new Response(JSON.stringify({ ok: false, error: "Selected credit has no remaining classes", debug }), {
+          status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
@@ -288,7 +400,7 @@ serve(async (req) => {
 
     const { data: existingBooking, error: existingBookErr } = await admin
       .from("bookings")
-      .select("id, status")
+      .select("id, status, credit_id")
       .eq("profile_id", profileId)
       .eq("class_id", class_id)
       .neq("status", "cancelled")
@@ -304,6 +416,7 @@ serve(async (req) => {
     let bookingId: string;
 
     if (existingBooking?.id) {
+      // Already booked — mark attended only. Do not attach a new credit (avoids double-deduct).
       const { data: updated, error: updateErr } = await admin
         .from("bookings")
         .update({
@@ -327,21 +440,26 @@ serve(async (req) => {
       }
       bookingId = updated.id as string;
     } else {
+      const insertRow: Record<string, unknown> = {
+        profile_id: profileId,
+        class_id,
+        status: "attended",
+        payment_method,
+        qr_token: qrToken,
+        checked_in: true,
+        checked_in_at: checkedAt,
+      };
+      if (payment_method === "credit" && credit_id) {
+        insertRow.credit_id = credit_id;
+      }
+
       const { data: inserted, error: bookErr } = await admin
         .from("bookings")
-        .insert({
-          profile_id: profileId,
-          class_id,
-          status: "attended",
-          payment_method: "cash",
-          qr_token: qrToken,
-          checked_in: true,
-          checked_in_at: checkedAt,
-        })
+        .insert(insertRow)
         .select("id")
         .single();
 
-      debug.booking_insert = { mode: "insert", inserted, bookErr };
+      debug.booking_insert = { mode: "insert", inserted, bookErr, payment_method, credit_id };
       console.log("[walk-in-checkin] after booking insert", debug.booking_insert);
 
       if (bookErr || !inserted?.id) {
@@ -381,6 +499,7 @@ serve(async (req) => {
         booking_id: bookingId,
         role,
         created_profile: createdProfile,
+        payment_method,
         debug,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
