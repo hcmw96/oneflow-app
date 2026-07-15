@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Calendar, Coffee, MapPin, QrCode, Sparkles, Award } from "lucide-react";
+import { Calendar, Coffee, MapPin, QrCode } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/auth";
@@ -49,10 +49,7 @@ function HomeSkeleton() {
       <Skeleton className="mx-auto h-[52px] w-64 max-w-full" />
       <Skeleton className="h-14 w-full rounded-xl" />
       <Skeleton className="h-28 w-full rounded-2xl" />
-      <div className="grid grid-cols-2 gap-3">
-        <Skeleton className="h-44 rounded-2xl" />
-        <Skeleton className="h-44 rounded-2xl" />
-      </div>
+      <Skeleton className="h-14 w-full rounded-xl" />
       <Skeleton className="h-24 w-full rounded-2xl" />
       <Skeleton className="h-52 w-full rounded-2xl" />
     </main>
@@ -70,21 +67,14 @@ function HomePage() {
   const cafeCreditTotal = home?.cafeCreditTotal ?? 0;
   const cafeUnlimited = home?.cafeUnlimited ?? false;
   const matTowelRows = home?.matTowelRows ?? [];
-  const completed = home?.completed ?? 0;
-  const points = home?.points ?? 0;
-  const weeklyGoal = home?.weeklyGoal ?? 3;
-  const weeklyDone = home?.weeklyDone ?? 0;
   const challengeStamped = home?.challengeStamped ?? 0;
   const challengeConfig = home?.challengeConfig ?? null;
   const upcomingBookings = home?.upcomingBookings ?? [];
   const homeEventCard = home?.homeEventCard ?? null;
-  const badges = home?.badges ?? [];
   const challengeTotalDays = challengeConfig
     ? movementChallengeTotalDays(challengeConfig)
     : 31;
   const SAGE = "#a3b693";
-  const goalPct = weeklyGoal > 0 ? Math.min(100, (weeklyDone / weeklyGoal) * 100) : 0;
-  const remaining = Math.max(0, weeklyGoal - weeklyDone);
   const showCafeTile = cafeUnlimited || cafeCreditTotal > 0;
   const showMatTile = hasActiveMatAccess(matTowelRows);
   const showTowelTile = hasActiveTowelAccess(matTowelRows);
@@ -220,94 +210,6 @@ function HomePage() {
         >
           Book a Class
         </Link>
-
-        <section className="grid grid-cols-2 gap-3">
-          <div className="flex flex-col rounded-2xl border border-border bg-card p-5">
-            <h2 className="font-display text-lg font-bold">Goals &amp; badges</h2>
-            <p className="mt-2 font-display text-4xl font-bold leading-none">{completed}</p>
-            <p className="mt-1 text-xs font-semibold text-muted-foreground">Classes completed</p>
-
-            <div className="mt-4 border-t border-border pt-4">
-              <p className="text-sm font-semibold">Weekly goal</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                {weeklyDone} of {weeklyGoal} classes this week
-              </p>
-              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
-                <div
-                  className="h-full rounded-full"
-                  style={{ width: `${goalPct}%`, backgroundColor: SAGE }}
-                />
-              </div>
-              <p className="mt-2 text-xs text-muted-foreground">
-                {remaining === 0
-                  ? "Goal reached this week"
-                  : `${remaining} more class${remaining === 1 ? "" : "es"} to go`}
-              </p>
-            </div>
-
-            <div className="mt-4 border-t border-border pt-4">
-              <p className="flex items-center gap-1.5 text-sm font-semibold">
-                <Award className="h-4 w-4 text-primary" aria-hidden />
-                Your badges
-              </p>
-              {badges.length > 0 ? (
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {badges.slice(0, 4).map((b) => (
-                    <div
-                      key={b.id}
-                      className="flex min-w-[4.5rem] flex-col items-center gap-0.5 rounded-xl border border-primary/30 bg-primary/5 px-2 py-1.5 text-center"
-                      title={b.name}
-                    >
-                      <span className="text-lg leading-none" aria-hidden>
-                        {b.icon}
-                      </span>
-                      <span className="line-clamp-2 text-[9px] font-medium leading-tight">
-                        {b.name}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="mt-2 text-xs text-muted-foreground">
-                  Studio awards will show up here.
-                </p>
-              )}
-            </div>
-
-            <div className="mt-auto flex gap-2 pt-4">
-              <Link
-                to="/goals"
-                className="flex-1 rounded-full border border-border bg-background px-3 py-2 text-center text-xs font-medium"
-              >
-                Goals
-              </Link>
-              <Link
-                to="/rewards"
-                className="flex-1 rounded-full border border-border bg-background px-3 py-2 text-center text-xs font-medium"
-              >
-                Badges
-              </Link>
-            </div>
-          </div>
-
-          <div className="relative flex flex-col overflow-hidden rounded-2xl border border-border bg-card p-5">
-            <div className="pointer-events-none absolute -right-6 -top-6 h-20 w-20 rounded-full bg-primary/15" />
-            <div className="relative flex items-center gap-1.5">
-              <Sparkles className="h-4 w-4 text-primary" />
-              <span className="text-sm font-semibold">Flow Points</span>
-            </div>
-            <p className="relative mt-3 font-display text-4xl font-bold leading-none">{points}</p>
-            <p className="relative mt-2 text-xs text-muted-foreground">
-              Earn more by attending classes
-            </p>
-            <Link
-              to="/rewards"
-              className="relative mt-4 block rounded-full border border-border bg-background px-4 py-2 text-center text-xs font-medium"
-            >
-              View Rewards
-            </Link>
-          </div>
-        </section>
 
         {(showMatTile || showTowelTile || showCafeTile) ? (
           <section className="space-y-3">
