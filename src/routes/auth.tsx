@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { getUser, supabase } from "@/lib/supabase";
 import { ensureProfileNamesFromOAuth } from "@/lib/oauthProfileNames";
@@ -22,7 +22,8 @@ export const Route = createFileRoute("/auth")({
   validateSearch: (raw: Record<string, unknown>) => ({
     redirect: typeof raw.redirect === "string" ? raw.redirect : undefined,
     email: typeof raw.email === "string" ? raw.email : undefined,
-    signup: raw.signup === "1" || raw.signup === true,
+    // Accept "1"/"true" only — ignore signup=false from recovery redirects.
+    signup: raw.signup === "1" || raw.signup === true || raw.signup === "true",
   }),
   head: () => ({
     meta: [
@@ -30,8 +31,17 @@ export const Route = createFileRoute("/auth")({
       { name: "description", content: "Sign in or create your One Flow account." },
     ],
   }),
-  component: AuthPage,
+  component: AuthLayout,
 });
+
+/** Child routes (/auth/reset-password, /auth/callback) render via Outlet. */
+function AuthLayout() {
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  if (pathname !== "/auth") {
+    return <Outlet />;
+  }
+  return <AuthPage />;
+}
 
 async function resolveDestination(userId: string, redirectPath?: string) {
   const safeRedirect =
@@ -58,7 +68,7 @@ async function resolveDestination(userId: string, redirectPath?: string) {
   return "/";
 }
 
-export default function AuthPage() {
+function AuthPage() {
   const navigate = useNavigate();
   const search = Route.useSearch();
 
@@ -72,6 +82,10 @@ export default function AuthPage() {
   }, [search.email, search.signup]);
 
   useEffect(() => {
+    // Only handle OAuth/magic-link codes on the sign-in page itself.
+    // Recovery PKCE codes belong to /auth/reset-password — do not steal them here.
+    if (window.location.pathname !== "/auth") return;
+
     const init = async () => {
       const params = new URLSearchParams(window.location.search);
       const code = params.get("code");
@@ -87,7 +101,7 @@ export default function AuthPage() {
       }
     };
     void init();
-  }, [navigate]);
+  }, [navigate, search.redirect]);
 
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [email, setEmail] = useState("");
