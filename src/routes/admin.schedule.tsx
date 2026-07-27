@@ -78,6 +78,7 @@ import {
   pickFocusClassId,
   type LiveClassRow,
 } from "@/lib/liveClassList";
+import { civilAddDaysYmd, dayBoundsForDateKey, todayDateKey } from "@/lib/timezone";
 
 export const Route = createFileRoute("/admin/schedule")({
   head: () => ({
@@ -457,13 +458,20 @@ function SchedulePage() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    // Do NOT load oldest-first without a date floor: with 5k+ historical rows a
+    // limit of 2000 never reaches today/upcoming. Start from "day before yesterday"
+    // (Today tab can show those days) and take the next 3000 sessions forward.
+    const fromKey = civilAddDaysYmd(todayDateKey(TZ), -2);
+    const fromIso = dayBoundsForDateKey(fromKey, TZ).startUtcIso;
+
     const { data, error } = await supabase
       .from("classes")
       .select(
         "id, name, class_type, location, starts_at, ends_at, capacity, booked_count, guide_id, guide_name, description, is_cancelled, product_id, recurring_group_id",
       )
+      .gte("starts_at", fromIso)
       .order("starts_at", { ascending: true })
-      .limit(2000);
+      .limit(3000);
 
     if (error) {
       console.error("classes load failed", error);
