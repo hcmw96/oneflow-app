@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { Clock, MapPin, Users } from "lucide-react";
 import { type ClassType } from "@/types/studio";
 import { TypeBadge } from "./TypeBadge";
+import { classTypeTheme } from "@/lib/classTypeTheme";
 import { formatTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -24,17 +25,22 @@ export function ClassCard({ session }: { session: ClassCardSession }) {
   const full = fillRatio >= 1;
   const started = session.startsAt.getTime() < Date.now() - 15 * 60 * 1000;
   if (started) return null;
+  const theme = classTypeTheme(session.type);
 
   return (
     <Link
       to="/class/$classId"
       params={{ classId: session.id }}
-      className="block rounded-2xl border border-border bg-card p-4 transition-colors active:bg-accent/30"
+      className={cn(
+        "block rounded-2xl border border-border border-l-4 bg-card p-4 transition-colors active:bg-accent/30",
+        theme.tint,
+      )}
+      style={{ borderLeftColor: theme.accent }}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="mb-1 flex min-w-0 items-center gap-2">
-            <TypeBadge type={session.type} />
+            <TypeBadge type={session.type} size="lg" />
             {almostFull && (
               <span className="inline-flex shrink-0 rounded-full bg-warning px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-warning-foreground">
                 Almost Full

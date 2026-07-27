@@ -26,6 +26,10 @@ import {
   ymdInTimeZone,
 } from "@/lib/timezone";
 import { WalkInSheet } from "@/components/admin/WalkInSheet";
+import { CurrentTimeLine, currentTimeLineInsertIndex } from "@/components/CurrentTimeLine";
+import { TypeBadge } from "@/components/TypeBadge";
+import { classTypeTheme } from "@/lib/classTypeTheme";
+import { displayClassType } from "@/types/studio";
 import {
   Sheet,
   SheetClose,
@@ -58,7 +62,7 @@ import {
 } from "@/components/admin/RosterAddonPills";
 import { useNowMs } from "@/hooks/use-now-ms";
 import { useScrollToLiveClass } from "@/hooks/use-scroll-to-live-class";
-import { isClassEnded, orderClassesForLiveDay, pickFocusClassId } from "@/lib/liveClassList";
+import { isClassEnded, pickFocusClassId } from "@/lib/liveClassList";
 
 export const Route = createFileRoute("/admin/bookings")({
   component: BookingsPage,
@@ -447,10 +451,19 @@ function BookingsPage() {
               }, rows[0]!.memberFull.toLowerCase());
         return minName(r1).localeCompare(minName(r2));
       });
+    } else {
+      // Chronological day view (past above, upcoming below) — Mindbody-style.
+      sessions = [...sessions].sort(
+        (a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime(),
+      );
     }
-    if (isLiveDay) return orderClassesForLiveDay(sessions, nowMs);
     return sessions;
-  }, [daySessionsFiltered, bookingsByClass, qNorm, bookingsSort, isLiveDay, nowMs]);
+  }, [daySessionsFiltered, bookingsByClass, qNorm, bookingsSort]);
+
+  const timeLineIndex = useMemo(
+    () => (isLiveDay ? currentTimeLineInsertIndex(visibleSessions, nowMs) : -1),
+    [isLiveDay, visibleSessions, nowMs],
+  );
 
   const focusClassId = useMemo(
     () => (isLiveDay ? pickFocusClassId(visibleSessions, nowMs) : null),
@@ -776,22 +789,31 @@ function BookingsPage() {
         </div>
       ) : (
         <ul className="space-y-3 sm:space-y-4">
-          {visibleSessions.map((session) => {
+          {visibleSessions.map((session, idx) => {
             const roster = bookingsByClass.get(session.id) ?? [];
             const filtered = qNorm
               ? roster.filter((b) => b.memberFull.toLowerCase().includes(qNorm))
               : roster;
 
             const open = isExpanded(session.id);
+            const badgeType = displayClassType(session.class_type);
+            const typeTheme = classTypeTheme(badgeType);
 
             return (
-              <li
-                key={session.id}
+              <li key={session.id}>
+                {timeLineIndex === idx ? (
+                  <div className="mb-3 sm:mb-4">
+                    <CurrentTimeLine />
+                  </div>
+                ) : null}
+              <div
                 data-live-class-id={session.id}
                 className={cn(
-                  "overflow-hidden rounded-2xl border border-border bg-card shadow-sm",
+                  "overflow-hidden rounded-2xl border border-border border-l-4 bg-card shadow-sm",
+                  typeTheme.tint,
                   isLiveDay && isClassEnded(session, nowMs) && "opacity-60",
                 )}
+                style={{ borderLeftColor: typeTheme.accent }}
               >
                 <button
                   type="button"
@@ -811,12 +833,15 @@ function BookingsPage() {
                   </div>
                   <CapacityDonut booked={session.booked_count} capacity={session.capacity} />
                   <div className="min-w-0 flex-1 pt-1">
-                    <p
-                      className="font-mono text-sm font-semibold tracking-tight"
-                      style={{ color: SAGE }}
-                    >
-                      {formatClassTime(session.starts_at)} — {formatClassTime(session.ends_at)}
-                    </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p
+                        className="font-mono text-sm font-semibold tracking-tight"
+                        style={{ color: SAGE }}
+                      >
+                        {formatClassTime(session.starts_at)} — {formatClassTime(session.ends_at)}
+                      </p>
+                      <TypeBadge type={badgeType} size="md" />
+                    </div>
                     <p className="mt-1 font-display text-base font-bold leading-snug text-foreground sm:text-lg">
                       {session.name}
                     </p>
@@ -908,6 +933,7 @@ function BookingsPage() {
                     )}
                   </div>
                 )}
+              </div>
               </li>
             );
           })}

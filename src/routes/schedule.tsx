@@ -37,7 +37,11 @@ import {
 } from "@/lib/scheduleBooking";
 import { cn } from "@/lib/utils";
 import { TypeBadge } from "@/components/TypeBadge";
+import { CurrentTimeLine, currentTimeLineInsertIndex } from "@/components/CurrentTimeLine";
+import { classTypeTheme } from "@/lib/classTypeTheme";
 import { displayClassType } from "@/types/studio";
+import { useNowMs } from "@/hooks/use-now-ms";
+import { pickFocusClassId } from "@/lib/liveClassList";
 
 function uuidOrUndefined(v: unknown): string | undefined {
   if (typeof v !== "string") return undefined;
@@ -226,21 +230,21 @@ export default function SchedulePage() {
     };
   }, [studioTimeZone]);
 
-  const [dayMeta, setDayMeta] = useState({ total: 0, visible: 0 });
+  const nowMs = useNowMs();
+  const classListRef = useRef<HTMLDivElement>(null);
+  const didScrollToNowRef = useRef<string | null>(null);
 
   useEffect(() => {
     const rows = dayClassesQuery.data;
     if (!rows) return;
-    const nowT = Date.now();
     const mapped = rows
       .map((c) => ({
         ...c,
         guide_name: guideNameFromRow(c.guide_name),
       }))
       .sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime());
-    const visible = mapped.filter((c) => !isPastScheduleClass(c.starts_at, nowT));
-    setClasses(visible);
-    setDayMeta({ total: mapped.length, visible: visible.length });
+    // Show the full day — past classes stay visible (dimmed in the row).
+    setClasses(mapped);
     setLoading(dayClassesQuery.isLoading && !dayClassesQuery.data);
     setRevalidating(dayClassesQuery.isFetching && !dayClassesQuery.isLoading);
   }, [
@@ -336,6 +340,21 @@ export default function SchedulePage() {
   const uid = user?.id;
   const todayKey = todayDateKey(studioTimeZone);
   const selectedDayIsPast = isPastScheduleDay(selectedDateKey, studioTimeZone);
+  const isToday = selectedDateKey === todayKey;
+  const timeLineIndex = isToday ? currentTimeLineInsertIndex(classes, nowMs) : -1;
+  const focusClassId = isToday ? pickFocusClassId(classes, nowMs) : null;
+
+  useEffect(() => {
+    if (!isToday || loading || classes.length === 0) return;
+    const key = `${selectedDateKey}:${focusClassId ?? "none"}`;
+    if (didScrollToNowRef.current === key) return;
+    didScrollToNowRef.current = key;
+    const el =
+      (focusClassId &&
+        classListRef.current?.querySelector(`[data-schedule-class-id="${focusClassId}"]`)) ||
+      classListRef.current?.querySelector("[data-schedule-now-line]");
+    el?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [isToday, loading, classes, focusClassId, selectedDateKey]);
 
   if (!authReady || !uid) {
     return (
@@ -461,45 +480,45 @@ export default function SchedulePage() {
             <ScheduleRowsSkeleton />
           ) : classes.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-border bg-card/50 p-8 text-center text-sm text-muted-foreground">
-              {dayMeta.total > 0 ? (
-                <>
-                  <p>All classes for this day have finished.</p>
-                  {selectedDateKey === todayKey ? (
-                    <button
-                      type="button"
-                      className="mt-3 font-semibold text-[#4a6b3c] underline underline-offset-2"
-                      onClick={goNextDay}
-                    >
-                      View {formatLongDayFromDateKey(civilAddDaysYmd(selectedDateKey, 1), studioTimeZone)}
-                    </button>
-                  ) : null}
-                </>
-              ) : (
-                <p>No classes scheduled for this day.</p>
-              )}
+              <p>No classes scheduled for this day.</p>
             </div>
           ) : (
-            classes.map((c) => {
-              const classIsPast =
-                selectedDayIsPast || isPastScheduleClass(c.starts_at);
-              const overlapBooking = findOverlappingBooking(c, bookedIntervals, c.id);
-              return (
-                <ScheduleRow
-                  key={c.id}
-                  session={c}
-                  displayTimeZone={timeZone}
-                  studioTimeZone={studioTimeZone}
-                  alreadyBooked={bookedClassIds.has(c.id)}
-                  onWaitlist={waitlistedClassIds.has(c.id)}
-                  overlapBooking={overlapBooking}
-                  isPast={classIsPast}
-                  onReserve={() => {
-                    if (classIsPast || overlapBooking) return;
-                    setBookingFor(c);
-                  }}
-                />
-              );
-            })
+            <div ref={classListRef} className="space-y-5">
+              {classes.map((c, idx) => {
+                const classIsPast =
+                  selectedDayIsPast || isPastScheduleClass(c.starts_at, nowMs);
+                const overlapBooking = findOverlappingBooking(c, bookedIntervals, c.id);
+                return (
+                  <div key={c.id}>
+                    {timeLineIndex === idx ? (
+                      <div data-schedule-now-line className="mb-5">
+                        <CurrentTimeLine />
+                      </div>
+                    ) : null}
+                    <div data-schedule-class-id={c.id}>
+                      <ScheduleRow
+                        session={c}
+                        displayTimeZone={timeZone}
+                        studioTimeZone={studioTimeZone}
+                        alreadyBooked={bookedClassIds.has(c.id)}
+                        onWaitlist={waitlistedClassIds.has(c.id)}
+                        overlapBooking={overlapBooking}
+                        isPast={classIsPast}
+                        onReserve={() => {
+                          if (classIsPast || overlapBooking) return;
+                          setBookingFor(c);
+                        }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+              {timeLineIndex === classes.length ? (
+                <div data-schedule-now-line>
+                  <CurrentTimeLine />
+                </div>
+              ) : null}
+            </div>
           )}
         </div>
       </main>
@@ -558,6 +577,7 @@ function ScheduleRow({
 
   const guideName = guideNameFromRow(session.guide_name);
   const badgeType = displayClassType(session.class_type);
+  const typeTheme = classTypeTheme(badgeType);
   const { time, zoneLabel } = formatClassDateTime(
     session.starts_at,
     displayTimeZone,
@@ -580,9 +600,11 @@ function ScheduleRow({
   return (
     <div
       className={cn(
-        "rounded-2xl border border-border bg-card px-5 py-5",
+        "rounded-2xl border border-border bg-card px-5 py-5 border-l-4",
+        typeTheme.tint,
         isPast && "opacity-55 saturate-50",
       )}
+      style={{ borderLeftColor: typeTheme.accent }}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
@@ -599,10 +621,7 @@ function ScheduleRow({
             )}
           </div>
         </div>
-        <TypeBadge
-          type={badgeType}
-          className="shrink-0 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide"
-        />
+        <TypeBadge type={badgeType} size="lg" className="shrink-0" />
       </div>
 
       <h3 className="mt-2 font-display text-lg font-bold leading-snug tracking-tight break-words text-foreground">

@@ -69,6 +69,11 @@ function isAuthPublicPath(pathname: string) {
   return pathname.startsWith("/auth") || pathname === "/faq" || pathname.startsWith("/invite");
 }
 
+/** Recovery link creates a session — must stay on this page to set a new password. */
+function isPasswordResetPath(pathname: string) {
+  return pathname === "/auth/reset-password";
+}
+
 function ReferralCapture() {
   const search = useRouterState({ select: (s) => s.location.search }) as unknown as
     | string
@@ -128,6 +133,14 @@ function ProtectedOutlet() {
     const onOnboarding = pathname === "/onboarding";
     const onAdmin = pathname.startsWith("/admin");
     const onAuth = pathname.startsWith("/auth");
+    const onResetPassword = isPasswordResetPath(pathname);
+
+    // Password recovery creates a temporary session; never redirect away until
+    // the user finishes setting a new password on /auth/reset-password.
+    if (onResetPassword) {
+      initialRouteResolved.current = true;
+      return;
+    }
 
     if (!onboardingDone) {
       if (!onOnboarding) target = "/onboarding";
@@ -168,8 +181,12 @@ function ProtectedOutlet() {
   }, [authReady, user?.id, profileReady, onboardingDone, isStaff, viewCustomerApp, navigate]);
 
   const sessionResolving = !authReady || (!!user && !profileReady);
+  const onResetPassword =
+    typeof window !== "undefined" && isPasswordResetPath(window.location.pathname);
 
-  if (sessionResolving) {
+  // Let the reset-password page mount immediately so it can catch PASSWORD_RECOVERY
+  // / hash tokens before auth profile resolution finishes.
+  if (sessionResolving && !onResetPassword) {
     return (
       <div className="flex min-h-[100dvh] flex-col items-center justify-center gap-3 bg-background">
         <Loader2 className="h-8 w-8 animate-spin text-primary" aria-hidden />

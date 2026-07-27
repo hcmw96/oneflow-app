@@ -73,6 +73,7 @@ export default function ResetPasswordPage() {
         if (!alive) return;
         if (error) {
           console.error(error);
+          toast.error(error.message || "Could not verify this reset link.");
           setGate("invalid");
           return;
         }
@@ -91,7 +92,8 @@ export default function ResetPasswordPage() {
       if (!alive) return;
 
       if (!session) {
-        navigate({ to: "/auth", replace: true });
+        setGate("invalid");
+        toast.error("This reset link is invalid or has expired. Request a new one from sign-in.");
         return;
       }
 
@@ -101,7 +103,10 @@ export default function ResetPasswordPage() {
         isRecoveryAccessToken(session.access_token);
 
       if (!recoverySession) {
-        navigate({ to: "/auth", replace: true });
+        setGate("invalid");
+        toast.error(
+          "This link is not a valid password-reset session. Open the latest reset email, or request a new link.",
+        );
         return;
       }
 
@@ -131,7 +136,7 @@ export default function ResetPasswordPage() {
     const { error } = await supabase.auth.updateUser({ password });
     setSubmitting(false);
     if (error) {
-      toast.error(error.message);
+      toast.error(error.message || "Could not update password. Try again or request a new link.");
       return;
     }
     toast.success("Password updated!");

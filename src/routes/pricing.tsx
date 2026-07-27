@@ -12,13 +12,8 @@ import {
 } from "@/lib/flowPointsRedemption";
 import { buildProductCreditRows } from "@/lib/multiCreditProducts";
 import { defaultAllowedClassTypesForCreditCategory } from "@/lib/allowedClassTypes";
-import { cn } from "@/lib/utils";
 import { STUDIO_WHATSAPP_URL } from "@/lib/studioContact";
-import { MemberCreditTypesPanel } from "@/components/MemberCreditTypesPanel";
-import {
-  summarizeMemberCreditTypes,
-  type MemberCreditRow,
-} from "@/lib/memberCreditBalance";
+import { cn } from "@/lib/utils";
 
 /** Categories shown on customer pricing (excludes `staff` and `cafe` — admin only). */
 const CUSTOMER_PRICING_CATEGORY_ORDER = [
@@ -134,12 +129,6 @@ function PricingPage() {
   const [flowPointsState, setFlowPointsState] = useState<"loading" | "guest" | number>("loading");
   const [conversionRate, setConversionRate] = useState(10);
   const [useFlowPointsFor, setUseFlowPointsFor] = useState<Record<string, boolean>>({});
-  const [memberCredits, setMemberCredits] = useState<MemberCreditRow[]>([]);
-
-  const creditTypeBalances = useMemo(
-    () => summarizeMemberCreditTypes(memberCredits),
-    [memberCredits],
-  );
 
   const itemsByCategory = useMemo(() => {
     const buckets: Record<CustomerPricingCategory, ProductRow[]> = {
@@ -177,27 +166,6 @@ function PricingPage() {
     if (!search.category) return;
     setOpenSections((prev) => ({ ...prev, [search.category!]: true }));
   }, [search.category]);
-
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      const user = await getUser();
-      if (cancelled || !user) {
-        setMemberCredits([]);
-        return;
-      }
-      const { data } = await supabase
-        .from("user_credits")
-        .select("credits_remaining, is_unlimited, expires_at, category, mat_access, towel_access")
-        .eq("profile_id", user.id);
-      if (!cancelled) {
-        setMemberCredits((data ?? []) as MemberCreditRow[]);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -415,127 +383,6 @@ function PricingPage() {
             Buy A Pass
           </h1>
 
-          <MemberCreditTypesPanel balances={creditTypeBalances} compact />
-
-          {flowPointsState === "loading" ? (
-            <p className="text-sm text-muted-foreground">Loading Flow Points…</p>
-          ) : flowPointsState === "guest" ? (
-            <div className="rounded-2xl border border-[#c5d4b8]/70 bg-[#fafbf8] px-4 py-3 text-sm dark:border-border dark:bg-card/60">
-              <span className="font-semibold text-[#3d4f36] dark:text-foreground">Flow Points</span>{" "}
-              —{" "}
-              <Link
-                to="/auth"
-                className="font-medium text-[#a3b693] underline-offset-2 hover:underline dark:text-primary"
-              >
-                Sign in
-              </Link>{" "}
-              to earn and redeem points on packs and memberships.
-            </div>
-          ) : (
-            <div className="rounded-2xl border border-[#c5d4b8]/80 bg-gradient-to-r from-[#e8efe3] to-card px-4 py-3 shadow-sm dark:border-border dark:from-card dark:to-card">
-              <p className="font-display text-lg font-bold tracking-tight text-[#3d4f36] dark:text-foreground">
-                You have {flowPointsState.toLocaleString()} Flow Points
-              </p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                100 points = R{conversionRate} off at checkout (studio rate).
-              </p>
-            </div>
-          )}
-
-          <div className="rounded-2xl border border-[#c5d4b8]/70 bg-card p-3 shadow-sm dark:border-border">
-            <label
-              htmlFor="promo-input"
-              className="block text-[11px] font-bold uppercase tracking-[0.12em] text-[#a3b693] dark:text-foreground"
-            >
-              Promo code
-            </label>
-            <div className="mt-1.5 flex items-center gap-2">
-              <input
-                id="promo-input"
-                value={promoInput}
-                onChange={(e) => {
-                  setPromoInput(e.target.value.toUpperCase());
-                  setPromoStatus({ kind: "idle" });
-                }}
-                placeholder="Enter code"
-                className="min-w-0 flex-1 rounded-lg border border-border bg-background px-3 py-2 font-mono text-sm uppercase outline-none focus:border-[#a3b693]"
-              />
-              <button
-                type="button"
-                onClick={async () => {
-                  const code = promoInput.trim().toUpperCase();
-                  if (!code) {
-                    setPromoCode("");
-                    setPromoStatus({ kind: "idle" });
-                    return;
-                  }
-                  const { data: promo } = await supabase
-                    .from("promotions")
-                    .select(
-                      "code, discount_type, discount_value, applies_to, max_uses, uses_count, valid_from, valid_until, is_active",
-                    )
-                    .eq("code", code)
-                    .maybeSingle();
-                  const p = promo as
-                    | {
-                        code: string;
-                        discount_type: string;
-                        discount_value: number;
-                        applies_to: string;
-                        max_uses: number | null;
-                        uses_count: number | null;
-                        valid_from: string | null;
-                        valid_until: string | null;
-                        is_active: boolean;
-                      }
-                    | null;
-                  if (!p || !p.is_active) {
-                    setPromoCode("");
-                    setPromoStatus({ kind: "invalid", message: "Code not found." });
-                    return;
-                  }
-                  const now = Date.now();
-                  if (p.valid_from && new Date(p.valid_from).getTime() > now) {
-                    setPromoCode("");
-                    setPromoStatus({ kind: "invalid", message: "Code not yet valid." });
-                    return;
-                  }
-                  if (p.valid_until && new Date(p.valid_until).getTime() < now) {
-                    setPromoCode("");
-                    setPromoStatus({ kind: "invalid", message: "Code has expired." });
-                    return;
-                  }
-                  if (p.max_uses != null && (p.uses_count ?? 0) >= p.max_uses) {
-                    setPromoCode("");
-                    setPromoStatus({
-                      kind: "invalid",
-                      message: "Code has reached its usage limit.",
-                    });
-                    return;
-                  }
-                  const label =
-                    p.discount_type === "percentage"
-                      ? `${p.discount_value}% off`
-                      : `R${Number(p.discount_value).toLocaleString("en-ZA")} off`;
-                  setPromoCode(code);
-                  setPromoStatus({ kind: "valid", label });
-                  toast.success(`Code applied — ${label}`);
-                }}
-                className="shrink-0 rounded-lg bg-[#a3b693] px-4 py-2 text-sm font-semibold text-white hover:opacity-95"
-              >
-                Apply
-              </button>
-            </div>
-            {promoStatus.kind === "valid" && (
-              <p className="mt-1.5 text-xs font-medium text-[#a3b693] dark:text-primary">
-                ✓ {promoStatus.label}
-              </p>
-            )}
-            {promoStatus.kind === "invalid" && (
-              <p className="mt-1.5 text-xs font-medium text-destructive">{promoStatus.message}</p>
-            )}
-          </div>
-
           {loading ? (
             <div className="flex justify-center py-16">
               <Loader2
@@ -707,6 +554,126 @@ function PricingPage() {
               })}
             </div>
           )}
+
+          {flowPointsState === "loading" ? (
+            <p className="text-sm text-muted-foreground">Loading Flow Points…</p>
+          ) : flowPointsState === "guest" ? (
+            <div className="rounded-2xl border border-[#c5d4b8]/70 bg-[#fafbf8] px-4 py-3 text-sm dark:border-border dark:bg-card/60">
+              <span className="font-semibold text-[#3d4f36] dark:text-foreground">Flow Points</span>{" "}
+              —{" "}
+              <Link
+                to="/auth"
+                className="font-medium text-[#a3b693] underline-offset-2 hover:underline dark:text-primary"
+              >
+                Sign in
+              </Link>{" "}
+              to earn and redeem points on packs and memberships.
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-[#c5d4b8]/80 bg-gradient-to-r from-[#e8efe3] to-card px-4 py-3 shadow-sm dark:border-border dark:from-card dark:to-card">
+              <p className="font-display text-lg font-bold tracking-tight text-[#3d4f36] dark:text-foreground">
+                You have {flowPointsState.toLocaleString()} Flow Points
+              </p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                100 points = R{conversionRate} off at checkout (studio rate). Toggle “Use Flow Points”
+                on a pack above to redeem.
+              </p>
+            </div>
+          )}
+
+          <div className="rounded-2xl border border-[#c5d4b8]/70 bg-card p-3 shadow-sm dark:border-border">
+            <label
+              htmlFor="promo-input"
+              className="block text-[11px] font-bold uppercase tracking-[0.12em] text-[#a3b693] dark:text-foreground"
+            >
+              Promo code
+            </label>
+            <div className="mt-1.5 flex items-center gap-2">
+              <input
+                id="promo-input"
+                value={promoInput}
+                onChange={(e) => {
+                  setPromoInput(e.target.value.toUpperCase());
+                  setPromoStatus({ kind: "idle" });
+                }}
+                placeholder="Enter code"
+                className="min-w-0 flex-1 rounded-lg border border-border bg-background px-3 py-2 font-mono text-sm uppercase outline-none focus:border-[#a3b693]"
+              />
+              <button
+                type="button"
+                onClick={async () => {
+                  const code = promoInput.trim().toUpperCase();
+                  if (!code) {
+                    setPromoCode("");
+                    setPromoStatus({ kind: "idle" });
+                    return;
+                  }
+                  const { data: promo } = await supabase
+                    .from("promotions")
+                    .select(
+                      "code, discount_type, discount_value, applies_to, max_uses, uses_count, valid_from, valid_until, is_active",
+                    )
+                    .eq("code", code)
+                    .maybeSingle();
+                  const p = promo as
+                    | {
+                        code: string;
+                        discount_type: string;
+                        discount_value: number;
+                        applies_to: string;
+                        max_uses: number | null;
+                        uses_count: number | null;
+                        valid_from: string | null;
+                        valid_until: string | null;
+                        is_active: boolean;
+                      }
+                    | null;
+                  if (!p || !p.is_active) {
+                    setPromoCode("");
+                    setPromoStatus({ kind: "invalid", message: "Code not found." });
+                    return;
+                  }
+                  const now = Date.now();
+                  if (p.valid_from && new Date(p.valid_from).getTime() > now) {
+                    setPromoCode("");
+                    setPromoStatus({ kind: "invalid", message: "Code not yet valid." });
+                    return;
+                  }
+                  if (p.valid_until && new Date(p.valid_until).getTime() < now) {
+                    setPromoCode("");
+                    setPromoStatus({ kind: "invalid", message: "Code has expired." });
+                    return;
+                  }
+                  if (p.max_uses != null && (p.uses_count ?? 0) >= p.max_uses) {
+                    setPromoCode("");
+                    setPromoStatus({
+                      kind: "invalid",
+                      message: "Code has reached its usage limit.",
+                    });
+                    return;
+                  }
+                  const label =
+                    p.discount_type === "percentage"
+                      ? `${p.discount_value}% off`
+                      : `R${Number(p.discount_value).toLocaleString("en-ZA")} off`;
+                  setPromoCode(code);
+                  setPromoStatus({ kind: "valid", label });
+                  toast.success(`Code applied — ${label}`);
+                }}
+                className="shrink-0 rounded-lg bg-[#a3b693] px-4 py-2 text-sm font-semibold text-white hover:opacity-95"
+              >
+                Apply
+              </button>
+            </div>
+            {promoStatus.kind === "valid" && (
+              <p className="mt-1.5 text-xs font-medium text-[#a3b693] dark:text-primary">
+                ✓ {promoStatus.label}
+              </p>
+            )}
+            {promoStatus.kind === "invalid" && (
+              <p className="mt-1.5 text-xs font-medium text-destructive">{promoStatus.message}</p>
+            )}
+          </div>
 
           <p className="text-center text-xs text-muted-foreground">
             Questions?{" "}

@@ -16,6 +16,7 @@ import {
 import { toast } from "sonner";
 import { PageHeader } from "@/components/admin/PageHeader";
 import { StatCard } from "@/components/admin/StatCard";
+import { CLASS_TYPE_THEME } from "@/lib/classTypeTheme";
 import { getUser, supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/auth";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
@@ -248,15 +249,15 @@ function classMatchesGuideFilter(c: ClassRow, guideFilter: string, guides: Guide
 }
 
 const TYPE_BADGE_CLASS: Record<string, string> = {
-  yoga: "bg-[#e8efe3] text-[#3d4f36]",
-  sculpt: "bg-amber-100 text-amber-800",
-  power: "bg-stone-200 text-stone-900",
-  wellzone: "bg-sky-100 text-sky-800",
-  sauna_journey: "bg-orange-100 text-orange-800",
-  beginner: "bg-emerald-100 text-emerald-900",
-  beginner_sculpt: "bg-teal-100 text-teal-900",
-  event: "bg-purple-100 text-purple-900",
-  pilates: "bg-violet-100 text-violet-800",
+  yoga: `${CLASS_TYPE_THEME.Yoga.tagBg} ${CLASS_TYPE_THEME.Yoga.tagText}`,
+  sculpt: `${CLASS_TYPE_THEME.Sculpt.tagBg} ${CLASS_TYPE_THEME.Sculpt.tagText}`,
+  power: `${CLASS_TYPE_THEME.Power.tagBg} ${CLASS_TYPE_THEME.Power.tagText}`,
+  wellzone: `${CLASS_TYPE_THEME.Wellzone.tagBg} ${CLASS_TYPE_THEME.Wellzone.tagText}`,
+  sauna_journey: `${CLASS_TYPE_THEME["Sauna Journey"].tagBg} ${CLASS_TYPE_THEME["Sauna Journey"].tagText}`,
+  beginner: `${CLASS_TYPE_THEME.Beginner.tagBg} ${CLASS_TYPE_THEME.Beginner.tagText}`,
+  beginner_sculpt: `${CLASS_TYPE_THEME["Beginner sculpt"].tagBg} ${CLASS_TYPE_THEME["Beginner sculpt"].tagText}`,
+  event: `${CLASS_TYPE_THEME.Event.tagBg} ${CLASS_TYPE_THEME.Event.tagText}`,
+  pilates: `${CLASS_TYPE_THEME.Pilates.tagBg} ${CLASS_TYPE_THEME.Pilates.tagText}`,
 };
 
 function SchedulePage() {
