@@ -18,8 +18,8 @@
 
 @keyframes schedule-slide-from-right {
   from {
-    opacity: 0.65;
-    transform: translateX(18px);
+    opacity: 0.85;
+    transform: translateX(10px);
   }
   to {
     opacity: 1;
@@ -29,8 +29,8 @@
 
 @keyframes schedule-slide-from-left {
   from {
-    opacity: 0.65;
-    transform: translateX(-18px);
+    opacity: 0.85;
+    transform: translateX(-10px);
   }
   to {
     opacity: 1;
@@ -39,11 +39,11 @@
 }
 
 .schedule-slide-from-right {
-  animation: schedule-slide-from-right 0.28s ease-out;
+  animation: schedule-slide-from-right 0.2s ease-out;
 }
 
 .schedule-slide-from-left {
-  animation: schedule-slide-from-left 0.28s ease-out;
+  animation: schedule-slide-from-left 0.2s ease-out;
 }
 
 @custom-variant dark (&:is(.dark *));
