@@ -144,11 +144,14 @@ function PricingPage() {
       buckets[cat].push(p);
     }
 
-    const byName = (a: ProductRow, b: ProductRow) =>
-      a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+    const byPriceAsc = (a: ProductRow, b: ProductRow) => {
+      const priceDiff = (Number(a.price_zar) || 0) - (Number(b.price_zar) || 0);
+      if (priceDiff !== 0) return priceDiff;
+      return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+    };
 
     for (const c of CUSTOMER_PRICING_CATEGORY_ORDER) {
-      buckets[c].sort(byName);
+      buckets[c].sort(byPriceAsc);
     }
 
     return buckets;
