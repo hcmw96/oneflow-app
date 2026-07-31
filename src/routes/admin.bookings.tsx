@@ -205,8 +205,8 @@ function CapacityDonut({ booked, capacity }: { booked: number; capacity: number 
   const pct = capacity > 0 ? Math.min(1, booked / capacity) : 0;
   const dash = pct * c;
   return (
-    <div className="relative mx-auto shrink-0" style={{ width: 92, height: 92 }}>
-      <svg width="92" height="92" viewBox="0 0 92 92" className="block -rotate-90" aria-hidden>
+    <div className="relative size-12 shrink-0 sm:size-16">
+      <svg viewBox="0 0 92 92" className="block size-full -rotate-90" aria-hidden>
         <circle
           cx="46"
           cy="46"
@@ -214,7 +214,7 @@ function CapacityDonut({ booked, capacity }: { booked: number; capacity: number 
           fill="none"
           stroke="currentColor"
           className="text-neutral-200 dark:text-neutral-700"
-          strokeWidth="9"
+          strokeWidth="10"
         />
         <circle
           cx="46"
@@ -222,16 +222,16 @@ function CapacityDonut({ booked, capacity }: { booked: number; capacity: number 
           r={r}
           fill="none"
           stroke={SAGE}
-          strokeWidth="9"
+          strokeWidth="10"
           strokeLinecap="round"
           strokeDasharray={`${dash} ${c}`}
         />
       </svg>
-      <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center px-3 text-center">
-        <span className="font-display text-lg font-bold leading-none text-foreground">
+      <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center px-1 text-center sm:px-2">
+        <span className="font-display text-xs font-bold leading-none text-foreground sm:text-sm">
           {booked}
         </span>
-        <span className="text-[11px] font-medium tabular-nums text-muted-foreground">
+        <span className="text-[9px] font-medium tabular-nums leading-tight text-muted-foreground sm:text-[10px]">
           / {capacity}
         </span>
       </div>
@@ -573,7 +573,7 @@ function BookingsPage() {
     }
   };
 
-  const isExpanded = (id: string) => expanded[id] !== false;
+  const isExpanded = (id: string) => expanded[id] === true;
 
   const toggleGroup = (id: string) => {
     setExpanded((e) => ({ ...e, [id]: !isExpanded(id) }));
@@ -665,18 +665,18 @@ function BookingsPage() {
         </button>
       </div>
 
-      <div className="relative mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+      <div className="relative mb-3 flex flex-col gap-2 sm:mb-4 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
         <div className="relative flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search members for this day…"
-            className="w-full rounded-xl border-2 border-border bg-card py-2.5 pl-9 pr-3 text-sm outline-none transition focus:border-[#a3b693]"
+            className="w-full rounded-xl border-2 border-border bg-card py-2 pl-9 pr-3 text-sm outline-none transition focus:border-[#a3b693] sm:py-2.5"
           />
         </div>
         <Select value={bookingsSort} onValueChange={(v) => setBookingsSort(v as BookingsSortKey)}>
-          <SelectTrigger className="w-full sm:w-56 shrink-0">
+          <SelectTrigger className="h-9 w-full shrink-0 sm:h-10 sm:w-56">
             <SelectValue placeholder="Sort" />
           </SelectTrigger>
           <SelectContent>
@@ -687,7 +687,7 @@ function BookingsPage() {
         </Select>
       </div>
 
-      <div className="mb-5 flex flex-col gap-3">
+      <div className="mb-4 flex flex-col gap-2 sm:mb-5 sm:gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <span className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/40 px-2 py-1 text-xs font-semibold text-muted-foreground">
             <Filter className="h-3.5 w-3.5" aria-hidden />
@@ -711,13 +711,13 @@ function BookingsPage() {
             </Button>
           ) : null}
         </div>
-        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
-          <div className="w-full min-w-0 sm:w-44">
-            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-end sm:gap-3">
+          <div className="min-w-0 sm:w-44">
+            <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground sm:text-[11px]">
               Class type
             </label>
             <Select value={sessionTypeFilter} onValueChange={setSessionTypeFilter}>
-              <SelectTrigger className="w-full">
+              <SelectTrigger className="h-9 w-full sm:h-10">
                 <SelectValue placeholder="All types" />
               </SelectTrigger>
               <SelectContent>
@@ -732,12 +732,12 @@ function BookingsPage() {
               </SelectContent>
             </Select>
           </div>
-          <div className="w-full min-w-0 sm:w-52">
-            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+          <div className="min-w-0 sm:w-52">
+            <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground sm:text-[11px]">
               Guide
             </label>
             <Select value={sessionGuideFilter} onValueChange={setSessionGuideFilter}>
-              <SelectTrigger className="w-full">
+              <SelectTrigger className="h-9 w-full sm:h-10">
                 <SelectValue placeholder="All guides" />
               </SelectTrigger>
               <SelectContent>
@@ -750,12 +750,12 @@ function BookingsPage() {
               </SelectContent>
             </Select>
           </div>
-          <div className="w-full min-w-0 sm:w-44">
-            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+          <div className="col-span-2 min-w-0 sm:col-span-1 sm:w-44">
+            <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground sm:text-[11px]">
               Location
             </label>
             <Select value={sessionLocationFilter} onValueChange={setSessionLocationFilter}>
-              <SelectTrigger className="w-full">
+              <SelectTrigger className="h-9 w-full sm:h-10">
                 <SelectValue placeholder="All locations" />
               </SelectTrigger>
               <SelectContent>
@@ -788,7 +788,7 @@ function BookingsPage() {
           No members match &ldquo;{query.trim()}&rdquo; for the filtered classes on this day.
         </div>
       ) : (
-        <ul className="space-y-3 sm:space-y-4">
+        <ul className="space-y-2 sm:space-y-4">
           {visibleSessions.map((session, idx) => {
             const roster = bookingsByClass.get(session.id) ?? [];
             const filtered = qNorm
@@ -802,7 +802,7 @@ function BookingsPage() {
             return (
               <li key={session.id}>
                 {timeLineIndex === idx ? (
-                  <div className="mb-3 sm:mb-4">
+                  <div className="mb-2 sm:mb-4">
                     <CurrentTimeLine />
                   </div>
                 ) : null}
@@ -818,48 +818,48 @@ function BookingsPage() {
                 <button
                   type="button"
                   onClick={() => toggleGroup(session.id)}
-                  className="flex w-full items-start gap-3 p-3 text-left transition hover:bg-muted/30 sm:gap-4 sm:p-4"
+                  className="flex w-full items-center gap-2.5 p-2.5 text-left transition hover:bg-muted/30 sm:gap-3 sm:p-4"
                   aria-expanded={open}
                 >
-                  <div className="sm:pt-0.5">
+                  <div className="shrink-0">
                     {open ? (
-                      <ChevronDown className="h-5 w-5 shrink-0 text-muted-foreground" aria-hidden />
+                      <ChevronDown className="h-4 w-4 text-muted-foreground sm:h-5 sm:w-5" aria-hidden />
                     ) : (
                       <ChevronRight
-                        className="h-5 w-5 shrink-0 text-muted-foreground"
+                        className="h-4 w-4 text-muted-foreground sm:h-5 sm:w-5"
                         aria-hidden
                       />
                     )}
                   </div>
                   <CapacityDonut booked={session.booked_count} capacity={session.capacity} />
-                  <div className="min-w-0 flex-1 pt-1">
-                    <div className="flex flex-wrap items-center gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                       <p
-                        className="font-mono text-sm font-semibold tracking-tight"
+                        className="font-mono text-xs font-semibold tracking-tight sm:text-sm"
                         style={{ color: SAGE }}
                       >
                         {formatClassTime(session.starts_at)} — {formatClassTime(session.ends_at)}
                       </p>
-                      <TypeBadge type={badgeType} size="md" />
+                      <TypeBadge type={badgeType} size="sm" className="sm:px-2.5 sm:py-1 sm:text-xs" />
                     </div>
-                    <p className="mt-1 font-display text-base font-bold leading-snug text-foreground sm:text-lg">
+                    <p className="mt-0.5 font-display text-sm font-bold leading-snug text-foreground sm:mt-1 sm:text-lg">
                       {session.name}
                     </p>
-                    {session.guide_name?.trim() && (
-                      <p className="text-sm text-muted-foreground">
-                        with {session.guide_name.trim()}
-                      </p>
-                    )}
-                    <p className="mt-0.5 text-sm text-muted-foreground">
-                      {session.location?.trim() || "—"}
+                    <p className="mt-0.5 truncate text-xs text-muted-foreground sm:text-sm">
+                      {[
+                        session.guide_name?.trim() ? `with ${session.guide_name.trim()}` : null,
+                        session.location?.trim() || null,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ") || "—"}
                     </p>
                   </div>
                 </button>
 
                 {open && (
-                  <div className="border-t border-border bg-muted/20 px-3 py-3 sm:px-4 sm:pb-4">
+                  <div className="border-t border-border bg-muted/20 px-3 py-2.5 sm:px-4 sm:py-3 sm:pb-4">
                     {filtered.length === 0 ? (
-                      <p className="py-6 text-center text-sm text-muted-foreground">
+                      <p className="py-2 text-center text-sm text-muted-foreground sm:py-4">
                         No bookings yet.
                       </p>
                     ) : (
