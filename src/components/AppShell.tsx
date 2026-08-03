@@ -30,7 +30,10 @@ export function AppShell({ children }: { children: ReactNode }) {
             <img src={logo} alt="One Flow" className="h-9 w-auto" />
           </div>
         </header>
-        <div data-customer-scroll className="min-h-0 flex-1 overflow-y-auto scroll-touch">
+        <div
+          data-customer-scroll
+          className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden scroll-touch"
+        >
           {children}
         </div>
       </div>

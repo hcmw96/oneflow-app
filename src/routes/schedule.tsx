@@ -88,13 +88,15 @@ function ScheduleRowsSkeleton() {
   return (
     <>
       {Array.from({ length: 5 }).map((_, i) => (
-        <Skeleton key={i} className="h-40 w-full rounded-2xl" />
+        <Skeleton key={i} className="h-28 w-full rounded-xl" />
       ))}
     </>
   );
 }
 
-const SWIPE_MIN_PX = 44;
+const SWIPE_MIN_PX = 56;
+/** Prefer vertical scroll; only treat as day-change when clearly sideways. */
+const SWIPE_AXIS_RATIO = 1.35;
 
 function useHorizontalDaySwipe(onPrev: () => void, onNext: () => void) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -126,8 +128,11 @@ function useHorizontalDaySwipe(onPrev: () => void, onNext: () => void) {
       const dx = e.touches[0].clientX - origin.x;
       const dy = e.touches[0].clientY - origin.y;
       if (!locked) {
-        if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
-        locked = Math.abs(dx) > Math.abs(dy) ? "h" : "v";
+        if (Math.abs(dx) < 12 && Math.abs(dy) < 12) return;
+        // Diagonal / mostly-vertical gestures stay vertical so the page doesn't
+        // "scroll" sideways while the user is trying to move down the list.
+        locked =
+          Math.abs(dx) > Math.abs(dy) * SWIPE_AXIS_RATIO ? "h" : "v";
       }
       if (locked === "h") e.preventDefault();
     };
@@ -203,7 +208,7 @@ export default function SchedulePage() {
 
   useEffect(() => {
     if (!daySlide) return;
-    const t = window.setTimeout(() => setDaySlide(null), 320);
+    const t = window.setTimeout(() => setDaySlide(null), 220);
     return () => window.clearTimeout(t);
   }, [daySlide, selectedDateKey]);
 
@@ -232,6 +237,7 @@ export default function SchedulePage() {
 
   const nowMs = useNowMs();
   const classListRef = useRef<HTMLDivElement>(null);
+  const stickyHeaderRef = useRef<HTMLDivElement>(null);
   const didScrollToNowRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -349,28 +355,50 @@ export default function SchedulePage() {
     const key = `${selectedDateKey}:${focusClassId ?? "none"}`;
     if (didScrollToNowRef.current === key) return;
     didScrollToNowRef.current = key;
-    const el =
-      (focusClassId &&
-        classListRef.current?.querySelector(`[data-schedule-class-id="${focusClassId}"]`)) ||
-      classListRef.current?.querySelector("[data-schedule-now-line]");
-    el?.scrollIntoView({ block: "center", behavior: "smooth" });
-  }, [isToday, loading, classes, focusClassId, selectedDateKey]);
 
+    // Align under the sticky day chrome — block:"center" tucked cards (and type badges)
+    // under the translucent sticky header.
+    const run = () => {
+      const target =
+        (focusClassId &&
+          classListRef.current?.querySelector(
+            `[data-schedule-class-id="${CSS.escape(focusClassId)}"]`,
+          )) ||
+        classListRef.current?.querySelector("[data-schedule-now-line]");
+      if (!(target instanceof HTMLElement)) return;
+
+      const scroller = document.querySelector("[data-customer-scroll]");
+      if (!(scroller instanceof HTMLElement)) {
+        target.scrollIntoView({ block: "start", behavior: "smooth" });
+        return;
+      }
+
+      const sticky = stickyHeaderRef.current;
+      const stickyH = sticky?.getBoundingClientRect().height ?? 0;
+      const gap = 10;
+      const delta =
+        target.getBoundingClientRect().top -
+        scroller.getBoundingClientRect().top -
+        stickyH -
+        gap;
+      scroller.scrollBy({ top: delta, behavior: "smooth" });
+    };
+
+    requestAnimationFrame(() => requestAnimationFrame(run));
+  }, [isToday, loading, classes, focusClassId, selectedDateKey]);
   if (!authReady || !uid) {
     return (
       <AppShell>
-        <header className="safe-top px-5 pt-4 pb-2 text-center">
-          <h1 className="font-display text-[28px] font-extrabold leading-tight tracking-tight">
-            Explore the schedule
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">and book classes!</p>
+        <header className="px-4 pt-3 pb-1.5 text-center">
+          <h1 className="font-display text-lg font-semibold tracking-tight">Schedule</h1>
+          <p className="text-xs text-muted-foreground">Book a class</p>
         </header>
-        <div className="px-5 pt-4">
-          <Skeleton className="mx-auto mb-2 h-4 w-32" />
-          <Skeleton className="h-14 w-full rounded-2xl" />
+        <div className="px-4 pt-3">
+          <Skeleton className="mx-auto mb-2 h-3 w-28" />
+          <Skeleton className="h-12 w-full rounded-xl" />
         </div>
-        <main className="flex-1 space-y-5 px-5 pt-5">
-          <Skeleton className="h-7 w-52" />
+        <main className="flex-1 space-y-3 px-4 pt-3">
+          <Skeleton className="mx-auto h-4 w-40" />
           <ScheduleRowsSkeleton />
         </main>
       </AppShell>
@@ -379,18 +407,19 @@ export default function SchedulePage() {
 
   return (
     <AppShell>
-      <header className="safe-top px-5 pt-4 pb-2 text-center">
-        <h1 className="font-display text-[28px] font-extrabold leading-tight tracking-tight">
-          Explore the schedule
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">and book classes!</p>
+      <header className="px-4 pt-3 pb-1.5 text-center">
+        <h1 className="font-display text-lg font-semibold tracking-tight">Schedule</h1>
+        <p className="text-xs text-muted-foreground">Book a class</p>
       </header>
 
-      <div ref={swipeContainerRef} className="touch-pan-y">
-        <div className="sticky top-0 z-20 -mx-5 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-          <div className="px-5 pt-4">
-            <p className="mb-2 text-center text-sm text-muted-foreground">{monthLabel}</p>
-            <div className="rounded-2xl border border-border bg-card p-2">
+      <div ref={swipeContainerRef} className="min-w-0 overflow-x-hidden touch-pan-y">
+        <div
+          ref={stickyHeaderRef}
+          className="sticky top-0 z-20 border-b border-border bg-background"
+        >
+          <div className="space-y-2 px-4 py-2.5">
+            <p className="text-center text-xs text-muted-foreground">{monthLabel}</p>
+            <div className="rounded-xl border border-border bg-card p-1.5 shadow-sm">
               <div className="flex items-stretch justify-between gap-0.5">
                 {daysInWeek.map((dayKey) => {
                   const selected = dayKey === selectedDateKey;
@@ -402,10 +431,10 @@ export default function SchedulePage() {
                       type="button"
                       onClick={() => setSelectedDateKey(dayKey)}
                       className={cn(
-                        "flex min-h-[52px] min-w-0 flex-1 flex-col items-center justify-center rounded-xl px-0.5 py-1.5 transition-all duration-200",
+                        "flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center rounded-lg px-0.5 py-1 transition-colors",
                         selected && !dayIsPast && "text-white shadow-sm",
                         selected && dayIsPast && "bg-muted text-muted-foreground shadow-sm",
-                        !selected && isTodayCell && "ring-2 ring-[#a3b693]/80",
+                        !selected && isTodayCell && "ring-1 ring-[#a3b693]/80",
                         !selected && dayIsPast && "opacity-45",
                       )}
                       style={
@@ -418,12 +447,12 @@ export default function SchedulePage() {
                               : undefined
                       }
                     >
-                      <span className="font-display text-base font-bold leading-none">
+                      <span className="font-display text-sm font-bold leading-none">
                         {dayOfMonthFromDateKey(dayKey)}
                       </span>
                       <span
                         className={cn(
-                          "mt-1 text-[10px] font-semibold uppercase tracking-wide",
+                          "mt-0.5 text-[9px] font-semibold uppercase tracking-wide",
                           selected && !dayIsPast && "text-white/90",
                           (!selected || dayIsPast) && "text-muted-foreground",
                         )}
@@ -434,40 +463,37 @@ export default function SchedulePage() {
                   );
                 })}
               </div>
-              <p className="mt-2 text-center text-[11px] text-muted-foreground">
-                Swipe left or right to change day
-              </p>
             </div>
-          </div>
-          <div className="px-5 py-3">
-            <p
-              className={cn(
-                "text-center font-display text-xl font-bold leading-tight",
-                selectedDayIsPast && "text-muted-foreground",
+            <div className="text-center">
+              <p
+                className={cn(
+                  "font-display text-sm font-semibold leading-tight",
+                  selectedDayIsPast && "text-muted-foreground",
+                )}
+              >
+                {longDayLabel}
+              </p>
+              {selectedDateKey === todayKey ? (
+                <p className="mt-0.5 text-[11px] font-medium text-[#4a6b3c]">Today</p>
+              ) : selectedDateKey > todayKey ? (
+                <p className="mt-0.5 text-[11px] text-muted-foreground">Upcoming</p>
+              ) : (
+                <p className="mt-0.5 text-[11px] text-muted-foreground">Past</p>
               )}
-            >
-              {longDayLabel}
-            </p>
-            {selectedDateKey === todayKey ? (
-              <p className="mt-0.5 text-center text-xs font-medium text-[#4a6b3c]">Today</p>
-            ) : selectedDateKey > todayKey ? (
-              <p className="mt-0.5 text-center text-xs text-muted-foreground">Upcoming</p>
-            ) : (
-              <p className="mt-0.5 text-center text-xs text-muted-foreground">Past</p>
-            )}
+            </div>
           </div>
         </div>
 
       <main
         className={cn(
-          "flex-1 space-y-5 px-5 pt-3 transition-opacity",
+          "flex-1 space-y-3 px-4 pt-3 pb-4 transition-opacity",
           revalidating && "opacity-80",
         )}
       >
         <div
           key={selectedDateKey}
           className={cn(
-            "space-y-5",
+            "min-w-0 space-y-3 overflow-x-hidden",
             !loading &&
               (daySlide === "from-left"
                 ? "schedule-slide-from-left"
@@ -479,11 +505,11 @@ export default function SchedulePage() {
           {loading ? (
             <ScheduleRowsSkeleton />
           ) : classes.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-border bg-card/50 p-8 text-center text-sm text-muted-foreground">
+            <div className="rounded-xl border border-dashed border-border bg-card/50 p-6 text-center text-sm text-muted-foreground">
               <p>No classes scheduled for this day.</p>
             </div>
           ) : (
-            <div ref={classListRef} className="space-y-5">
+            <div ref={classListRef} className="space-y-3">
               {classes.map((c, idx) => {
                 const classIsPast =
                   selectedDayIsPast || isPastScheduleClass(c.starts_at, nowMs);
@@ -491,7 +517,7 @@ export default function SchedulePage() {
                 return (
                   <div key={c.id}>
                     {timeLineIndex === idx ? (
-                      <div data-schedule-now-line className="mb-5">
+                      <div data-schedule-now-line className="mb-3">
                         <CurrentTimeLine />
                       </div>
                     ) : null}
@@ -600,13 +626,13 @@ function ScheduleRow({
   return (
     <div
       className={cn(
-        "rounded-2xl border border-border bg-card px-5 py-5 border-l-4",
+        "rounded-xl border border-border border-l-4 bg-card px-3.5 py-3",
         typeTheme.tint,
         isPast && "opacity-55 saturate-50",
       )}
       style={{ borderLeftColor: typeTheme.accent }}
     >
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5">
             {isFreeClass && (
@@ -616,27 +642,25 @@ function ScheduleRow({
             )}
             {almostFull && !full && !isPast && (
               <span className="inline-flex rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-semibold text-orange-700">
-                Almost full — secure your spot
+                Almost full
               </span>
             )}
           </div>
+          <h3 className="font-display text-sm font-semibold leading-snug tracking-tight break-words text-foreground">
+            {session.name}
+          </h3>
+          {guideName ? (
+            <p className="mt-0.5 text-xs font-medium leading-snug" style={{ color: SAGE }}>
+              {guideName}
+            </p>
+          ) : null}
         </div>
-        <TypeBadge type={badgeType} size="lg" className="shrink-0" />
+        <TypeBadge type={badgeType} size="sm" className="shrink-0" />
       </div>
 
-      <h3 className="mt-2 font-display text-lg font-bold leading-snug tracking-tight break-words text-foreground">
-        {session.name}
-      </h3>
-
-      {guideName ? (
-        <p className="mt-1.5 text-sm font-medium leading-snug" style={{ color: SAGE }}>
-          {guideName}
-        </p>
-      ) : null}
-
-      <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs leading-relaxed text-muted-foreground">
+      <p className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] leading-relaxed text-muted-foreground">
         <span className="inline-flex flex-wrap items-center gap-1 font-medium tabular-nums">
-          <Clock className="h-3.5 w-3.5 shrink-0" aria-hidden />
+          <Clock className="h-3 w-3 shrink-0" aria-hidden />
           {timeLabel}
           {zoneLabel ? (
             <span className="font-normal text-muted-foreground/80">({zoneLabel})</span>
@@ -646,7 +670,7 @@ function ScheduleRow({
           ·
         </span>
         <span className="inline-flex min-w-0 items-center gap-1">
-          <MapPin className="h-3.5 w-3.5 shrink-0" aria-hidden />
+          <MapPin className="h-3 w-3 shrink-0" aria-hidden />
           <span className="break-words">{session.location}</span>
         </span>
         <span className="text-muted-foreground/40" aria-hidden>
@@ -656,10 +680,10 @@ function ScheduleRow({
       </p>
 
       {desc ? (
-        <div className="mt-3 min-w-0">
+        <div className="mt-2 min-w-0">
           <p
             className={cn(
-              "text-xs leading-snug text-muted-foreground",
+              "text-[11px] leading-snug text-muted-foreground",
               !descExpanded && "line-clamp-2",
             )}
           >
@@ -686,7 +710,7 @@ function ScheduleRow({
         onClick={onReserve}
         disabled={!canReserve && !canWaitlist}
         className={cn(
-          "mt-4 w-full rounded-xl py-3 text-sm font-semibold transition-opacity",
+          "mt-2.5 w-full rounded-lg py-2 text-xs font-semibold transition-opacity",
           isPast || alreadyBooked || hasOverlap
             ? "cursor-not-allowed bg-muted text-muted-foreground"
             : canWaitlist

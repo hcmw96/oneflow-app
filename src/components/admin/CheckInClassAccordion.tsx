@@ -11,6 +11,8 @@ export type CheckInClassSession = {
   total: number;
   attended: number;
   guideName?: string | null;
+  checkInOpen?: boolean;
+  checkInHint?: string;
 };
 
 export function CheckInClassAccordion({
@@ -37,6 +39,7 @@ export function CheckInClassAccordion({
         className={cn(
           "flex w-full items-start gap-2 rounded-xl border px-3 py-2.5 text-left transition-colors",
           expanded ? "border-primary bg-primary/10" : "border-border bg-background hover:bg-muted",
+          session.checkInOpen === false && !expanded && "opacity-70",
         )}
       >
         <ChevronDown
@@ -51,6 +54,16 @@ export function CheckInClassAccordion({
           <p className="text-[10px] text-muted-foreground">
             {session.time} · {session.attended}/{session.total} checked in
           </p>
+          {session.checkInHint ? (
+            <p
+              className={cn(
+                "mt-0.5 text-[10px] font-medium",
+                session.checkInOpen ? "text-emerald-700" : "text-muted-foreground",
+              )}
+            >
+              {session.checkInHint}
+            </p>
+          ) : null}
           {session.guideName ? (
             <p className="mt-1 text-[10px] font-medium text-[#4a5a42]">Guide · {session.guideName}</p>
           ) : null}

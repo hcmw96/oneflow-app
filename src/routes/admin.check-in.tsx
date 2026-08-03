@@ -29,7 +29,6 @@ import { parseQrCheckInToken } from "@/lib/qrCheckIn";
 import { pickNextUpcomingClassId } from "@/lib/checkInUpcoming";
 import { orderClassesForLiveDay } from "@/lib/liveClassList";
 import {
-  classVisibleOnCheckInRoster,
   DEFAULT_CHECKIN_OPEN_MINUTES_BEFORE,
   checkInWindowAt,
   parseCheckinOpenMinutesBefore,
@@ -123,7 +122,6 @@ function CheckInPage() {
   const loadData = useCallback(async () => {
     setLoading(true);
     const { startUtcIso, endUtcIso } = jhbDayBounds();
-    const now = Date.now();
 
     const [{ data: classesData, error: classesError }, settingsRes] = await Promise.all([
       supabase
@@ -157,20 +155,20 @@ function CheckInPage() {
     }
 
     const rawClasses = (classesData ?? []) as unknown as Record<string, unknown>[];
-    const classes: TodayClass[] = rawClasses
-      .map((row) => ({
-        id: String(row.id),
-        name: String(row.name ?? ""),
-        class_type: String(row.class_type ?? ""),
-        starts_at: String(row.starts_at ?? ""),
-        ends_at: String(row.ends_at ?? ""),
-        capacity: Number(row.capacity ?? 0),
-        booked_count: Number(row.booked_count ?? 0),
-        location: (row.location as string | null) ?? null,
-        guide_name: (row.guide_name as string | null) ?? null,
-        guide_id: (row.guide_id as string | null) ?? null,
-      }))
-      .filter((c) => classVisibleOnCheckInRoster(c.starts_at, c.class_type, openMinutes, now));
+    // Show the full JHB day — not only classes whose check-in window is open right now
+    // (that filter made mid-day look like “no classes today”).
+    const classes: TodayClass[] = rawClasses.map((row) => ({
+      id: String(row.id),
+      name: String(row.name ?? ""),
+      class_type: String(row.class_type ?? ""),
+      starts_at: String(row.starts_at ?? ""),
+      ends_at: String(row.ends_at ?? ""),
+      capacity: Number(row.capacity ?? 0),
+      booked_count: Number(row.booked_count ?? 0),
+      location: (row.location as string | null) ?? null,
+      guide_name: (row.guide_name as string | null) ?? null,
+      guide_id: (row.guide_id as string | null) ?? null,
+    }));
     setTodayClasses(classes);
 
     const classIds = classes.map((c) => c.id);
@@ -239,6 +237,12 @@ function CheckInPage() {
     return orderedClasses.map((c) => {
       const forClass = rosterByClassId.get(c.id) ?? [];
       const attended = forClass.filter((b) => b.status === "attended").length;
+      const window = checkInWindowAt(
+        c.starts_at,
+        c.class_type,
+        checkinOpenMinutes,
+        nowMs,
+      );
       return {
         key: c.id,
         label: c.name,
@@ -246,9 +250,13 @@ function CheckInPage() {
         total: forClass.length,
         attended,
         guideName: c.guide_name,
+        checkInOpen: window.allowed,
+        checkInHint: window.allowed
+          ? "Check-in open"
+          : (window.reason ?? "Check-in closed"),
       };
     });
-  }, [orderedClasses, rosterByClassId]);
+  }, [orderedClasses, rosterByClassId, checkinOpenMinutes, nowMs]);
 
   const toggleClassExpanded = (classId: string, open: boolean) => {
     setExpandedClassIds((prev) => {
@@ -488,7 +496,9 @@ function CheckInPage() {
               className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto pr-0.5"
             >
               {sessions.length === 0 ? (
-                <p className="py-8 text-center text-sm text-muted-foreground">No classes today.</p>
+                <p className="py-8 text-center text-sm text-muted-foreground">
+                  No classes scheduled for today.
+                </p>
               ) : (
                 sessions.map((s) => (
                   <div key={s.key} data-live-class-id={s.key}>

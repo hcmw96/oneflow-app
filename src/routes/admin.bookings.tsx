@@ -205,8 +205,8 @@ function CapacityDonut({ booked, capacity }: { booked: number; capacity: number 
   const pct = capacity > 0 ? Math.min(1, booked / capacity) : 0;
   const dash = pct * c;
   return (
-    <div className="relative mx-auto shrink-0" style={{ width: 92, height: 92 }}>
-      <svg width="92" height="92" viewBox="0 0 92 92" className="block -rotate-90" aria-hidden>
+    <div className="relative h-12 w-12 shrink-0 sm:h-16 sm:w-16">
+      <svg viewBox="0 0 92 92" className="block h-full w-full -rotate-90" aria-hidden>
         <circle
           cx="46"
           cy="46"
@@ -214,7 +214,7 @@ function CapacityDonut({ booked, capacity }: { booked: number; capacity: number 
           fill="none"
           stroke="currentColor"
           className="text-neutral-200 dark:text-neutral-700"
-          strokeWidth="9"
+          strokeWidth="10"
         />
         <circle
           cx="46"
@@ -222,16 +222,16 @@ function CapacityDonut({ booked, capacity }: { booked: number; capacity: number 
           r={r}
           fill="none"
           stroke={SAGE}
-          strokeWidth="9"
+          strokeWidth="10"
           strokeLinecap="round"
           strokeDasharray={`${dash} ${c}`}
         />
       </svg>
-      <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center px-3 text-center">
-        <span className="font-display text-lg font-bold leading-none text-foreground">
+      <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
+        <span className="font-display text-xs font-bold leading-none text-foreground sm:text-sm">
           {booked}
         </span>
-        <span className="text-[11px] font-medium tabular-nums text-muted-foreground">
+        <span className="text-[9px] font-medium tabular-nums leading-none text-muted-foreground sm:text-[10px]">
           / {capacity}
         </span>
       </div>
@@ -573,7 +573,8 @@ function BookingsPage() {
     }
   };
 
-  const isExpanded = (id: string) => expanded[id] !== false;
+  /** Collapsed by default so mobile can scan the day; staff tap to open a roster. */
+  const isExpanded = (id: string) => expanded[id] === true;
 
   const toggleGroup = (id: string) => {
     setExpanded((e) => ({ ...e, [id]: !isExpanded(id) }));
@@ -818,48 +819,48 @@ function BookingsPage() {
                 <button
                   type="button"
                   onClick={() => toggleGroup(session.id)}
-                  className="flex w-full items-start gap-3 p-3 text-left transition hover:bg-muted/30 sm:gap-4 sm:p-4"
+                  className="flex w-full items-center gap-2.5 p-3 text-left transition hover:bg-muted/30 sm:gap-3 sm:p-4"
                   aria-expanded={open}
                 >
-                  <div className="sm:pt-0.5">
+                  <div className="shrink-0">
                     {open ? (
-                      <ChevronDown className="h-5 w-5 shrink-0 text-muted-foreground" aria-hidden />
+                      <ChevronDown className="h-4 w-4 text-muted-foreground sm:h-5 sm:w-5" aria-hidden />
                     ) : (
                       <ChevronRight
-                        className="h-5 w-5 shrink-0 text-muted-foreground"
+                        className="h-4 w-4 text-muted-foreground sm:h-5 sm:w-5"
                         aria-hidden
                       />
                     )}
                   </div>
                   <CapacityDonut booked={session.booked_count} capacity={session.capacity} />
-                  <div className="min-w-0 flex-1 pt-1">
-                    <div className="flex flex-wrap items-center gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                       <p
-                        className="font-mono text-sm font-semibold tracking-tight"
+                        className="font-mono text-xs font-semibold tracking-tight sm:text-sm"
                         style={{ color: SAGE }}
                       >
                         {formatClassTime(session.starts_at)} — {formatClassTime(session.ends_at)}
                       </p>
                       <TypeBadge type={badgeType} size="md" />
                     </div>
-                    <p className="mt-1 font-display text-base font-bold leading-snug text-foreground sm:text-lg">
+                    <p className="mt-0.5 font-display text-sm font-bold leading-snug text-foreground sm:mt-1 sm:text-lg">
                       {session.name}
                     </p>
                     {session.guide_name?.trim() && (
-                      <p className="text-sm text-muted-foreground">
+                      <p className="truncate text-xs text-muted-foreground sm:text-sm">
                         with {session.guide_name.trim()}
                       </p>
                     )}
-                    <p className="mt-0.5 text-sm text-muted-foreground">
+                    <p className="truncate text-xs text-muted-foreground sm:mt-0.5 sm:text-sm">
                       {session.location?.trim() || "—"}
                     </p>
                   </div>
                 </button>
 
                 {open && (
-                  <div className="border-t border-border bg-muted/20 px-3 py-3 sm:px-4 sm:pb-4">
+                  <div className="border-t border-border bg-muted/20 px-3 py-2.5 sm:px-4 sm:py-3 sm:pb-4">
                     {filtered.length === 0 ? (
-                      <p className="py-6 text-center text-sm text-muted-foreground">
+                      <p className="py-3 text-center text-sm text-muted-foreground sm:py-4">
                         No bookings yet.
                       </p>
                     ) : (

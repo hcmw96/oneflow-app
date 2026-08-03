@@ -66,7 +66,7 @@ export function checkInWindowAt(
   return { opensAtMs, closesAtMs, allowed: true };
 }
 
-/** Show class on the admin check-in roster while check-in is still possible. */
+/** Whether check-in actions are allowed right now (not used to hide the day roster). */
 export function classVisibleOnCheckInRoster(
   classStartsAtIso: string,
   classType: string | null | undefined,
