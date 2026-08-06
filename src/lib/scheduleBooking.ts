@@ -1,6 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { isFreeBeginnerClass } from "@/lib/allowedClassTypes";
 import { isPastDateKey, STUDIO_TIMEZONE } from "@/lib/timezone";
 import { normalizeProductCategoryKey } from "@/lib/productCategories";
+
+export { isFreeBeginnerClass };
 
 export type BookedClassInterval = {
   class_id: string;
@@ -156,13 +159,6 @@ export function isPastScheduleClass(
   graceMs: number = CLASS_BOOKING_GRACE_MS,
 ): boolean {
   return new Date(startsAt).getTime() <= nowMs - graceMs;
-}
-
-const FREE_BEGINNER_CLASS_TYPES = new Set(["beginner", "beginner_sculpt"]);
-
-/** Intro classes booked without credits or payment. */
-export function isFreeBeginnerClass(classType: string | null | undefined): boolean {
-  return FREE_BEGINNER_CLASS_TYPES.has(String(classType ?? "").toLowerCase());
 }
 
 type BookableProductRow = {

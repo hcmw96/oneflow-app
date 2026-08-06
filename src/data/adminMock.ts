@@ -39,10 +39,12 @@ export interface AdminStaff {
   status: "active" | "invited" | "inactive";
 }
 
+import type { AllowedClassTypeSlug } from "@/lib/allowedClassTypes";
+
 export interface AdminClassRow {
   id: string;
   name: string;
-  type: "Yoga" | "Sculpt" | "Power" | "Wellzone" | "Sauna Journey";
+  type: AllowedClassTypeSlug;
   durationMin: number;
   capacity: number;
   defaultGuide: string;
@@ -175,12 +177,13 @@ export const staff: AdminStaff[] = [
 ];
 
 export const classRows: AdminClassRow[] = [
-  { id: "c1", name: "Sunrise Vinyasa", type: "Yoga", durationMin: 60, capacity: 20, defaultGuide: "Asha Naidoo" },
-  { id: "c2", name: "Sculpt & Tone", type: "Sculpt", durationMin: 50, capacity: 16, defaultGuide: "Liam Pretorius" },
-  { id: "c3", name: "Slow Flow", type: "Yoga", durationMin: 60, capacity: 20, defaultGuide: "Zinhle Khumalo" },
-  { id: "c4", name: "Power Yoga", type: "Power", durationMin: 60, capacity: 20, defaultGuide: "Tendai Moyo" },
-  { id: "c5", name: "Sauna Journey", type: "Sauna Journey", durationMin: 75, capacity: 12, defaultGuide: "Mika Sato" },
-  { id: "c6", name: "Wellzone Open", type: "Wellzone", durationMin: 90, capacity: 25, defaultGuide: "Mika Sato" },
+  { id: "c1", name: "Sunrise Vinyasa", type: "yoga", durationMin: 60, capacity: 20, defaultGuide: "Asha Naidoo" },
+  { id: "c2", name: "Sculpt & Tone", type: "sculpt", durationMin: 50, capacity: 16, defaultGuide: "Liam Pretorius" },
+  { id: "c3", name: "Slow Flow", type: "yoga", durationMin: 60, capacity: 20, defaultGuide: "Zinhle Khumalo" },
+  { id: "c4", name: "Power Yoga", type: "power", durationMin: 60, capacity: 20, defaultGuide: "Tendai Moyo" },
+  { id: "c5", name: "Sauna Journey", type: "sauna_journey", durationMin: 75, capacity: 12, defaultGuide: "Mika Sato" },
+  { id: "c6", name: "Wellzone Open", type: "wellzone", durationMin: 90, capacity: 25, defaultGuide: "Mika Sato" },
+  { id: "c7", name: "Pilates Flow", type: "pilates", durationMin: 55, capacity: 14, defaultGuide: "Zinhle Khumalo" },
 ];
 
 export const bookingRows: AdminBookingRow[] = [

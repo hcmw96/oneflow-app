@@ -3,7 +3,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Check,
   ChevronDown,
-  ChevronLeft,
   ChevronRight,
   Download,
   Filter,
@@ -28,6 +27,7 @@ import {
 import { WalkInSheet } from "@/components/admin/WalkInSheet";
 import { CurrentTimeLine, currentTimeLineInsertIndex } from "@/components/CurrentTimeLine";
 import { TypeBadge } from "@/components/TypeBadge";
+import { WeekDayStrip, weekdayStripLetter } from "@/components/WeekDayStrip";
 import { classTypeTheme } from "@/lib/classTypeTheme";
 import { displayClassType } from "@/types/studio";
 import {
@@ -237,11 +237,6 @@ function CapacityDonut({ booked, capacity }: { booked: number; capacity: number 
       </div>
     </div>
   );
-}
-
-function stripLetter(dow: number) {
-  const letters = ["S", "M", "T", "W", "T", "F", "S"];
-  return letters[dow] ?? "?";
 }
 
 const SESSION_LOCATIONS = ["Studio 1", "Studio 2", "Wellzone", "Sauna"] as const;
@@ -610,61 +605,28 @@ function BookingsPage() {
         }
       />
 
-      <div className="mb-4 flex items-center gap-2">
-        <button
-          type="button"
-          aria-label="Previous week"
-          onClick={() => {
-            const n = addDays(viewWeekStart, -7);
-            setViewWeekStart(n);
-            setSelectedDay((d) => addDays(d, -7));
-          }}
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition hover:bg-muted"
-        >
-          <ChevronLeft className="h-5 w-5" />
-        </button>
-        <div className="min-w-0 flex-1 overflow-x-auto rounded-2xl border border-border bg-card px-2 py-3 sm:px-3">
-          <div className="flex justify-between gap-1 sm:gap-2">
-            {stripDays.map((d) => {
-              const isSel = isSameDay(d, selectedDay);
-              const isToday = isSameDay(d, today);
-              return (
-                <button
-                  key={d.getTime()}
-                  type="button"
-                  onClick={() => setSelectedDay(startOfDay(d))}
-                  className={cn(
-                    "flex min-w-[40px] flex-1 flex-col items-center gap-1 rounded-xl py-2 text-xs font-semibold transition sm:min-w-[48px] sm:py-2.5",
-                    isSel && "text-white shadow-md",
-                    !isSel &&
-                      isToday &&
-                      "ring-2 ring-[#a3b693] ring-offset-2 ring-offset-background text-[#5f6b52]",
-                    !isSel && !isToday && "text-muted-foreground hover:bg-muted/80",
-                  )}
-                  style={isSel ? { backgroundColor: SAGE } : undefined}
-                >
-                  <span className="text-[10px] uppercase opacity-80 sm:text-[11px]">
-                    {stripLetter(d.getDay())}
-                  </span>
-                  <span className="font-display text-base sm:text-lg">{d.getDate()}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-        <button
-          type="button"
-          aria-label="Next week"
-          onClick={() => {
-            const n = addDays(viewWeekStart, 7);
-            setViewWeekStart(n);
-            setSelectedDay((d) => addDays(d, 7));
-          }}
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition hover:bg-muted"
-        >
-          <ChevronRight className="h-5 w-5" />
-        </button>
-      </div>
+      <WeekDayStrip
+        className="mb-3"
+        days={stripDays.map((d) => ({
+          key: String(d.getTime()),
+          weekdayLetter: weekdayStripLetter(d.getDay()),
+          dayOfMonth: d.getDate(),
+          selected: isSameDay(d, selectedDay),
+          isToday: isSameDay(d, today),
+        }))}
+        onSelect={(key) => {
+          const d = stripDays.find((x) => String(x.getTime()) === key);
+          if (d) setSelectedDay(startOfDay(d));
+        }}
+        onPrevWeek={() => {
+          setViewWeekStart(addDays(viewWeekStart, -7));
+          setSelectedDay((d) => addDays(d, -7));
+        }}
+        onNextWeek={() => {
+          setViewWeekStart(addDays(viewWeekStart, 7));
+          setSelectedDay((d) => addDays(d, 7));
+        }}
+      />
 
       <div className="relative mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
         <div className="relative flex-1">

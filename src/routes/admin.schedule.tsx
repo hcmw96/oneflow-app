@@ -16,18 +16,15 @@ import {
 import { toast } from "sonner";
 import { PageHeader } from "@/components/admin/PageHeader";
 import { StatCard } from "@/components/admin/StatCard";
-import { CLASS_TYPE_THEME } from "@/lib/classTypeTheme";
+import { CLASS_TYPE_THEME_BY_SLUG, classTypeBadgeClass } from "@/lib/allowedClassTypes";
 import { getUser, supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/auth";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { cancelBookingWithPolicy } from "@/lib/bookingCancellation";
 import { fetchGuidesForClassSelect, type GuideSelectRow } from "@/lib/guidesForSelect";
 import {
-  ADD_CLASS_TYPE_SELECT_VALUE,
   buildClassTypeSelectOptions,
   fetchCustomClassTypes,
-  saveCustomClassTypes,
-  slugifyClassTypeName,
   type CustomClassType,
 } from "@/lib/classTypeOptions";
 import { displayClassType } from "@/types/studio";
@@ -65,7 +62,6 @@ import {
   Select,
   SelectContent,
   SelectItem,
-  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -249,17 +245,11 @@ function classMatchesGuideFilter(c: ClassRow, guideFilter: string, guides: Guide
   return c.guide_id === g.guide_id || c.guide_id === g.profile_id;
 }
 
-const TYPE_BADGE_CLASS: Record<string, string> = {
-  yoga: `${CLASS_TYPE_THEME.Yoga.tagBg} ${CLASS_TYPE_THEME.Yoga.tagText}`,
-  sculpt: `${CLASS_TYPE_THEME.Sculpt.tagBg} ${CLASS_TYPE_THEME.Sculpt.tagText}`,
-  power: `${CLASS_TYPE_THEME.Power.tagBg} ${CLASS_TYPE_THEME.Power.tagText}`,
-  wellzone: `${CLASS_TYPE_THEME.Wellzone.tagBg} ${CLASS_TYPE_THEME.Wellzone.tagText}`,
-  sauna_journey: `${CLASS_TYPE_THEME["Sauna Journey"].tagBg} ${CLASS_TYPE_THEME["Sauna Journey"].tagText}`,
-  beginner: `${CLASS_TYPE_THEME.Beginner.tagBg} ${CLASS_TYPE_THEME.Beginner.tagText}`,
-  beginner_sculpt: `${CLASS_TYPE_THEME["Beginner sculpt"].tagBg} ${CLASS_TYPE_THEME["Beginner sculpt"].tagText}`,
-  event: `${CLASS_TYPE_THEME.Event.tagBg} ${CLASS_TYPE_THEME.Event.tagText}`,
-  pilates: `${CLASS_TYPE_THEME.Pilates.tagBg} ${CLASS_TYPE_THEME.Pilates.tagText}`,
-};
+const TYPE_BADGE_CLASS: Record<string, string> = Object.fromEntries(
+  (Object.keys(CLASS_TYPE_THEME_BY_SLUG) as Array<keyof typeof CLASS_TYPE_THEME_BY_SLUG>).map(
+    (slug) => [slug, classTypeBadgeClass(slug)],
+  ),
+);
 
 function SchedulePage() {
   const { profile } = useAuth();
@@ -294,11 +284,10 @@ function SchedulePage() {
   const [saving, setSaving] = useState(false);
   const [name, setName] = useState("");
   const [classType, setClassType] = useState<string>("yoga");
+  // Read-only: custom_class_types may exist in studio_settings, but Pass 1 does not
+  // expose add/remove UI — classes.class_type is a Postgres enum, so a settings-only
+  // slug is not a valid column value and would fail on insert/update.
   const [customClassTypes, setCustomClassTypes] = useState<CustomClassType[]>([]);
-  const [addTypeOpen, setAddTypeOpen] = useState(false);
-  const [newTypeName, setNewTypeName] = useState("");
-  const [savingNewType, setSavingNewType] = useState(false);
-  const [deleteTypeTarget, setDeleteTypeTarget] = useState<CustomClassType | null>(null);
   const [location, setLocation] = useState<string>("Studio 1");
   const [guideId, setGuideId] = useState<string>(GUIDE_DIALOG_NONE);
   const [dateStr, setDateStr] = useState(toDateInputValue(new Date()));
@@ -393,68 +382,6 @@ function SchedulePage() {
     () => buildClassTypeSelectOptions(customClassTypes),
     [customClassTypes],
   );
-
-  const onClassTypeSelect = (value: string) => {
-    if (value === ADD_CLASS_TYPE_SELECT_VALUE) {
-      setNewTypeName("");
-      setAddTypeOpen(true);
-      return;
-    }
-    setClassType(value);
-  };
-
-  const submitNewClassType = async () => {
-    const label = newTypeName.trim();
-    if (!label) {
-      toast.error("Enter a name for the new class type.");
-      return;
-    }
-    const slug = slugifyClassTypeName(label);
-    if (!slug) {
-      toast.error("Use letters or numbers in the type name.");
-      return;
-    }
-    if (classTypeOptions.some((o) => o.value === slug)) {
-      toast.error("That class type already exists.");
-      setClassType(slug);
-      setAddTypeOpen(false);
-      return;
-    }
-
-    setSavingNewType(true);
-    const next = [...customClassTypes, { slug, label }];
-    const { error } = await saveCustomClassTypes(next);
-    setSavingNewType(false);
-
-    if (error) {
-      toast.error(supabaseErrorMessage(error, "Could not save class type"));
-      return;
-    }
-
-    setCustomClassTypes(next);
-    setClassType(slug);
-    setAddTypeOpen(false);
-    toast.success(`Class type “${label}” added`);
-  };
-
-  const removeCustomClassType = async (target: CustomClassType) => {
-    const next = customClassTypes.filter((c) => c.slug !== target.slug);
-    setSavingNewType(true);
-    const { error } = await saveCustomClassTypes(next);
-    setSavingNewType(false);
-
-    if (error) {
-      toast.error(supabaseErrorMessage(error, "Could not remove class type"));
-      return;
-    }
-
-    setCustomClassTypes(next);
-    if (classType === target.slug) {
-      setClassType("yoga");
-    }
-    setDeleteTypeTarget(null);
-    toast.success(`Removed “${target.label}”`);
-  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1682,27 +1609,19 @@ function SchedulePage() {
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
                 <Label>Type</Label>
-                <Select value={classType} onValueChange={onClassTypeSelect} disabled={!canManage}>
+                <Select value={classType} onValueChange={setClassType} disabled={!canManage}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
+                    {/* Enum-backed types only — do not offer "+ Add class type" until
+                        Pass 2 (schema change). Settings-only slugs are not valid
+                        classes.class_type enum values. */}
                     {classTypeOptions.map((t) => (
                       <SelectItem key={t.value} value={t.value}>
                         {t.label}
                       </SelectItem>
                     ))}
-                    {canManage ? (
-                      <>
-                        <SelectSeparator />
-                        <SelectItem
-                          value={ADD_CLASS_TYPE_SELECT_VALUE}
-                          className="font-semibold text-[#4a6b3c]"
-                        >
-                          + Add class type…
-                        </SelectItem>
-                      </>
-                    ) : null}
                   </SelectContent>
                 </Select>
               </div>
@@ -1962,106 +1881,6 @@ function SchedulePage() {
           ) : null}
         </DialogContent>
       </Dialog>
-
-      <Dialog open={addTypeOpen} onOpenChange={setAddTypeOpen}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Class types</DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-4 py-2">
-            <div>
-              <Label htmlFor="new-class-type-name">Add custom type</Label>
-              <Input
-                id="new-class-type-name"
-                value={newTypeName}
-                onChange={(e) => setNewTypeName(e.target.value)}
-                placeholder="e.g. Reformer"
-                autoFocus
-                disabled={savingNewType}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") void submitNewClassType();
-                }}
-              />
-              <p className="mt-1.5 text-xs text-muted-foreground">
-                Built-in types (Yoga, Sculpt, Wellzone, etc.) are always available. Custom types are
-                saved for your studio and appear in the type dropdown.
-              </p>
-            </div>
-            {customClassTypes.length > 0 ? (
-              <div>
-                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Custom types
-                </p>
-                <ul className="max-h-40 space-y-1 overflow-y-auto rounded-lg border border-border">
-                  {customClassTypes.map((t) => (
-                    <li
-                      key={t.slug}
-                      className="flex items-center justify-between gap-2 border-b border-border px-3 py-2 last:border-b-0"
-                    >
-                      <span className="min-w-0 text-sm">
-                        <span className="font-medium">{t.label}</span>
-                        <span className="ml-2 font-mono text-xs text-muted-foreground">{t.slug}</span>
-                      </span>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="shrink-0 text-destructive hover:bg-destructive/10"
-                        disabled={savingNewType}
-                        onClick={() => setDeleteTypeTarget(t)}
-                      >
-                        <Trash2 className="h-4 w-4" aria-hidden />
-                        Remove
-                      </Button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-          </div>
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button type="button" variant="outline" onClick={() => setAddTypeOpen(false)}>
-              Close
-            </Button>
-            <Button
-              type="button"
-              disabled={savingNewType}
-              className="bg-[#a3b693] text-white hover:bg-[#8fa67d]"
-              onClick={() => void submitNewClassType()}
-            >
-              {savingNewType ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              Add type
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <AlertDialog open={!!deleteTypeTarget} onOpenChange={(o) => !o && setDeleteTypeTarget(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Remove custom type?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {deleteTypeTarget
-                ? `“${deleteTypeTarget.label}” (${deleteTypeTarget.slug}) will no longer appear in type lists. Existing scheduled sessions keep their stored type.`
-                : null}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={savingNewType}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              disabled={savingNewType}
-              onClick={(e) => {
-                e.preventDefault();
-                if (deleteTypeTarget) void removeCustomClassType(deleteTypeTarget);
-              }}
-            >
-              {savingNewType ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              Remove
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
       <AlertDialog
         open={recurringScopeOpen}

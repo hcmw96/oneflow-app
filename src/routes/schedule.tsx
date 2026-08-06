@@ -21,10 +21,10 @@ import {
   formatClassDateTime,
   formatLongDayFromDateKey,
   formatMonthYearFromDateKey,
-  formatWeekdayShortFromDateKey,
   todayDateKey,
   weekDateKeysFromSunday,
   weekSundayDateKey,
+  weekdayIndexSundayZero,
   ymdInTimeZone,
 } from "@/lib/timezone";
 import {
@@ -37,6 +37,7 @@ import {
 } from "@/lib/scheduleBooking";
 import { cn } from "@/lib/utils";
 import { TypeBadge } from "@/components/TypeBadge";
+import { WeekDayStrip, weekdayStripLetter } from "@/components/WeekDayStrip";
 import { CurrentTimeLine, currentTimeLineInsertIndex } from "@/components/CurrentTimeLine";
 import { classTypeTheme } from "@/lib/classTypeTheme";
 import { displayClassType } from "@/types/studio";
@@ -417,53 +418,26 @@ export default function SchedulePage() {
           ref={stickyHeaderRef}
           className="sticky top-0 z-20 border-b border-border bg-background"
         >
-          <div className="space-y-2 px-4 py-2.5">
+          <div className="space-y-2 px-4 py-2">
             <p className="text-center text-xs text-muted-foreground">{monthLabel}</p>
-            <div className="rounded-xl border border-border bg-card p-1.5 shadow-sm">
-              <div className="flex items-stretch justify-between gap-0.5">
-                {daysInWeek.map((dayKey) => {
-                  const selected = dayKey === selectedDateKey;
-                  const isTodayCell = dayKey === todayKey;
-                  const dayIsPast = isPastScheduleDay(dayKey, studioTimeZone);
-                  return (
-                    <button
-                      key={dayKey}
-                      type="button"
-                      onClick={() => setSelectedDateKey(dayKey)}
-                      className={cn(
-                        "flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center rounded-lg px-0.5 py-1 transition-colors",
-                        selected && !dayIsPast && "text-white shadow-sm",
-                        selected && dayIsPast && "bg-muted text-muted-foreground shadow-sm",
-                        !selected && isTodayCell && "ring-1 ring-[#a3b693]/80",
-                        !selected && dayIsPast && "opacity-45",
-                      )}
-                      style={
-                        selected && !dayIsPast
-                          ? { backgroundColor: SAGE, color: "#fff" }
-                          : selected && dayIsPast
-                            ? undefined
-                            : isTodayCell
-                              ? { backgroundColor: "transparent" }
-                              : undefined
-                      }
-                    >
-                      <span className="font-display text-sm font-bold leading-none">
-                        {dayOfMonthFromDateKey(dayKey)}
-                      </span>
-                      <span
-                        className={cn(
-                          "mt-0.5 text-[9px] font-semibold uppercase tracking-wide",
-                          selected && !dayIsPast && "text-white/90",
-                          (!selected || dayIsPast) && "text-muted-foreground",
-                        )}
-                      >
-                        {formatWeekdayShortFromDateKey(dayKey, studioTimeZone)}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+            <WeekDayStrip
+              days={daysInWeek.map((dayKey) => {
+                const selected = dayKey === selectedDateKey;
+                const dayIsPast = isPastScheduleDay(dayKey, studioTimeZone);
+                return {
+                  key: dayKey,
+                  weekdayLetter: weekdayStripLetter(
+                    weekdayIndexSundayZero(dayKey, studioTimeZone),
+                  ),
+                  dayOfMonth: dayOfMonthFromDateKey(dayKey),
+                  selected,
+                  isToday: dayKey === todayKey,
+                  selectedMuted: selected && dayIsPast,
+                  dimmed: !selected && dayIsPast,
+                };
+              })}
+              onSelect={setSelectedDateKey}
+            />
             <div className="text-center">
               <p
                 className={cn(

@@ -32,6 +32,10 @@ const ROLE_EMAIL_LABEL: Record<string, string> = {
   team: "team member",
 };
 
+/**
+ * Keep in sync with `ALLOWED_CLASS_TYPE_SLUGS` in `src/lib/allowedClassTypes.ts`
+ * (Postgres `class_type` enum). Deno edge functions cannot import the app module.
+ */
 const DISCIPLINE_SLUGS = new Set([
   "yoga",
   "sculpt",

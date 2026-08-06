@@ -1,14 +1,11 @@
+import { isWellzoneSaunaClassType } from "@/lib/allowedClassTypes";
+
+export { isWellzoneSaunaClassType };
+
 /** Late check-in grace after class start — Wellzone & Sauna Journey only. */
 export const WELLZONE_LATE_CHECKIN_MINUTES = 30;
 
 export const DEFAULT_CHECKIN_OPEN_MINUTES_BEFORE = 30;
-
-export function isWellzoneSaunaClassType(classType: string | null | undefined): boolean {
-  const s = String(classType ?? "")
-    .trim()
-    .toLowerCase();
-  return s === "wellzone" || s === "sauna_journey" || s.includes("sauna");
-}
 
 export function parseCheckinOpenMinutesBefore(raw: string | number | null | undefined): number {
   const n = typeof raw === "number" ? raw : Number(String(raw ?? "").trim());

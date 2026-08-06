@@ -9,7 +9,12 @@ import { supabase } from "@/lib/supabase";
 
 export const CUSTOM_CLASS_TYPES_SETTING_KEY = "custom_class_types";
 
-/** Radix Select sentinel — not stored on classes. */
+/**
+ * Radix Select sentinel — not stored on classes.
+ * Pass 1: the admin Schedule UI no longer offers "+ Add class type" because
+ * classes.class_type is a Postgres enum; a settings-only slug is not a valid
+ * column value. Keep this export for a possible Pass 2 schema change.
+ */
 export const ADD_CLASS_TYPE_SELECT_VALUE = "__add_class_type__";
 
 export type CustomClassType = {

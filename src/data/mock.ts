@@ -72,7 +72,7 @@ const make = (
 export const classes: ClassSession[] = [
   make(0, 6, 30, {
     name: "Sunrise Vinyasa",
-    type: "Yoga",
+    type: "yoga",
     durationMin: 60,
     location: "Studio 1",
     guideId: "g1",
@@ -81,16 +81,25 @@ export const classes: ClassSession[] = [
   }),
   make(0, 9, 0, {
     name: "Sculpt & Tone",
-    type: "Sculpt",
+    type: "sculpt",
     durationMin: 50,
     location: "Studio 2",
     guideId: "g2",
     capacity: 16,
     booked: 15,
   }),
+  make(0, 10, 30, {
+    name: "Pilates Flow",
+    type: "pilates",
+    durationMin: 55,
+    location: "Studio 1",
+    guideId: "g3",
+    capacity: 14,
+    booked: 7,
+  }),
   make(0, 17, 30, {
     name: "Slow Flow",
-    type: "Yoga",
+    type: "yoga",
     durationMin: 60,
     location: "Studio 1",
     guideId: "g3",
@@ -99,7 +108,7 @@ export const classes: ClassSession[] = [
   }),
   make(0, 18, 30, {
     name: "Sauna Journey",
-    type: "Sauna Journey",
+    type: "sauna_journey",
     durationMin: 75,
     location: "Wellzone",
     guideId: "g4",
@@ -109,7 +118,7 @@ export const classes: ClassSession[] = [
 
   make(1, 6, 30, {
     name: "Power Yoga",
-    type: "Power",
+    type: "power",
     durationMin: 60,
     location: "Studio 1",
     guideId: "g5",
@@ -118,7 +127,7 @@ export const classes: ClassSession[] = [
   }),
   make(1, 12, 0, {
     name: "Lunch Sculpt",
-    type: "Sculpt",
+    type: "sculpt",
     durationMin: 45,
     location: "Studio 2",
     guideId: "g2",
@@ -127,7 +136,7 @@ export const classes: ClassSession[] = [
   }),
   make(1, 18, 0, {
     name: "Wellzone Open",
-    type: "Wellzone",
+    type: "wellzone",
     durationMin: 90,
     location: "Wellzone",
     guideId: "g4",
@@ -137,7 +146,7 @@ export const classes: ClassSession[] = [
 
   make(2, 6, 30, {
     name: "Sunrise Vinyasa",
-    type: "Yoga",
+    type: "yoga",
     durationMin: 60,
     location: "Studio 1",
     guideId: "g1",
@@ -146,7 +155,7 @@ export const classes: ClassSession[] = [
   }),
   make(2, 17, 30, {
     name: "Yin & Restore",
-    type: "Yoga",
+    type: "yoga",
     durationMin: 75,
     location: "Studio 1",
     guideId: "g3",
@@ -156,7 +165,7 @@ export const classes: ClassSession[] = [
 
   make(3, 7, 0, {
     name: "Power Yoga",
-    type: "Power",
+    type: "power",
     durationMin: 60,
     location: "Studio 1",
     guideId: "g5",
@@ -165,7 +174,7 @@ export const classes: ClassSession[] = [
   }),
   make(3, 18, 30, {
     name: "Sauna Journey",
-    type: "Sauna Journey",
+    type: "sauna_journey",
     durationMin: 75,
     location: "Wellzone",
     guideId: "g4",
@@ -175,7 +184,7 @@ export const classes: ClassSession[] = [
 
   make(4, 6, 30, {
     name: "Sunrise Vinyasa",
-    type: "Yoga",
+    type: "yoga",
     durationMin: 60,
     location: "Studio 1",
     guideId: "g1",
@@ -184,7 +193,7 @@ export const classes: ClassSession[] = [
   }),
   make(4, 9, 0, {
     name: "Sculpt & Tone",
-    type: "Sculpt",
+    type: "sculpt",
     durationMin: 50,
     location: "Studio 2",
     guideId: "g2",
@@ -194,7 +203,7 @@ export const classes: ClassSession[] = [
 
   make(5, 8, 0, {
     name: "Saturday Slow Flow",
-    type: "Yoga",
+    type: "yoga",
     durationMin: 75,
     location: "Studio 1",
     guideId: "g3",
@@ -203,7 +212,7 @@ export const classes: ClassSession[] = [
   }),
   make(5, 10, 0, {
     name: "Sculpt Express",
-    type: "Sculpt",
+    type: "sculpt",
     durationMin: 40,
     location: "Studio 2",
     guideId: "g2",
@@ -213,7 +222,7 @@ export const classes: ClassSession[] = [
 
   make(6, 9, 0, {
     name: "Sunday Restore",
-    type: "Yoga",
+    type: "yoga",
     durationMin: 90,
     location: "Studio 1",
     guideId: "g1",
@@ -233,8 +242,8 @@ export const pastClasses: Record<
   string,
   { name: string; type: ClassType; startsAt: Date; guideId: string }
 > = {
-  "past-1": { name: "Slow Flow", type: "Yoga", startsAt: addDays(today, -2), guideId: "g3" },
-  "past-2": { name: "Sculpt & Tone", type: "Sculpt", startsAt: addDays(today, -5), guideId: "g2" },
+  "past-1": { name: "Slow Flow", type: "yoga", startsAt: addDays(today, -2), guideId: "g3" },
+  "past-2": { name: "Sculpt & Tone", type: "sculpt", startsAt: addDays(today, -5), guideId: "g2" },
 };
 
 export const packs: Pack[] = [
@@ -396,7 +405,10 @@ export const getStampedDays = (): Set<number> => {
 export const isChallengeComplete = () => getStampedDays().size >= challenge.totalDays;
 
 export const qualifiesForChallenge = (session: { type: ClassType }) =>
-  session.type === "Yoga" || session.type === "Sauna Journey";
+  session.type === "yoga" ||
+  session.type === "Yoga" ||
+  session.type === "sauna_journey" ||
+  session.type === "Sauna Journey";
 
 export const getClassById = (id: string) => classes.find((c) => c.id === id);
 export const getGuide = (id: string) => guides.find((g) => g.id === id);

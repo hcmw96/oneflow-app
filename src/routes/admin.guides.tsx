@@ -35,7 +35,12 @@ import {
   fetchActiveUserCreditsByProfileIds,
   type GuideCreditPillRow,
 } from "@/lib/activeUserCredits";
-import { CLASS_TYPE_SLUG_LABEL, isAllowedClassTypeSlug } from "@/lib/allowedClassTypes";
+import {
+  CLASS_TYPE_SLUG_LABEL,
+  GUIDE_DISCIPLINE_SLUGS,
+  isAllowedClassTypeSlug,
+  type AllowedClassTypeSlug,
+} from "@/lib/allowedClassTypes";
 
 export const Route = createFileRoute("/admin/guides")({
   head: () => ({
@@ -47,37 +52,17 @@ export const Route = createFileRoute("/admin/guides")({
 const SAGE = "#a3b693";
 const SAGE_BORDER = "border-[#c5d4b8]/80";
 
-/** Stored in `guides.disciplines` text[] — slug values only. */
-const GUIDE_DISCIPLINE_SLUGS = [
-  "yoga",
-  "sculpt",
-  "pilates",
-  "power",
-  "wellzone",
-  "sauna_journey",
-  "beginner",
-] as const;
-
-type GuideDisciplineSlug = (typeof GUIDE_DISCIPLINE_SLUGS)[number];
+/** Stored in `guides.disciplines` text[] — slug values only (full class_type enum). */
+type GuideDisciplineSlug = AllowedClassTypeSlug;
 
 const GUIDE_DISCIPLINE_SLUG_LABEL: Record<GuideDisciplineSlug, string> = {
-  yoga: CLASS_TYPE_SLUG_LABEL.yoga,
-  sculpt: CLASS_TYPE_SLUG_LABEL.sculpt,
-  pilates: CLASS_TYPE_SLUG_LABEL.pilates,
-  power: CLASS_TYPE_SLUG_LABEL.power,
-  wellzone: CLASS_TYPE_SLUG_LABEL.wellzone,
-  sauna_journey: CLASS_TYPE_SLUG_LABEL.sauna_journey,
-  beginner: CLASS_TYPE_SLUG_LABEL.beginner,
+  ...CLASS_TYPE_SLUG_LABEL,
 };
 
-const DISCIPLINE_FILTER_KEYS = [
-  ...GUIDE_DISCIPLINE_SLUGS.map((key) => ({
-    key,
-    label: GUIDE_DISCIPLINE_SLUG_LABEL[key],
-  })),
-  { key: "beginner_sculpt" as const, label: "Beginner sculpt" },
-  { key: "event" as const, label: "Event" },
-] as const;
+const DISCIPLINE_FILTER_KEYS = GUIDE_DISCIPLINE_SLUGS.map((key) => ({
+  key,
+  label: GUIDE_DISCIPLINE_SLUG_LABEL[key],
+}));
 type RoleType = "director" | "management" | "guide" | "customer" | "other";
 
 type GuideSortKey = "name_asc" | "name_desc" | "joined_asc" | "active_first";

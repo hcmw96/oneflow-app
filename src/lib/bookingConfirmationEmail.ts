@@ -3,16 +3,9 @@ import {
   formatStudioDateLong,
   formatStudioTime12Upper,
 } from "@/lib/timezone";
+import { bookingConfirmationTemplateForClassType } from "@/lib/allowedClassTypes";
 
-export function bookingConfirmationTemplateForClassType(
-  classType: string | null | undefined,
-): "booking_confirmation_sauna" | "booking_confirmation_class" {
-  const s = String(classType ?? "").toLowerCase();
-  if (s.includes("sauna") || s.includes("wellzone")) {
-    return "booking_confirmation_sauna";
-  }
-  return "booking_confirmation_class";
-}
+export { bookingConfirmationTemplateForClassType };
 
 /** Payload for send-email booking confirmation templates (`booking_confirmation_*`). */
 export function bookingConfirmationEmailData(args: {

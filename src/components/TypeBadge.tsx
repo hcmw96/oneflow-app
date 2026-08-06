@@ -1,4 +1,4 @@
-import { classTypeTheme } from "@/lib/classTypeTheme";
+import { CLASS_TYPE_BADGE_CLASS } from "@/lib/allowedClassTypes";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -15,15 +15,14 @@ const sizeClass = {
   lg: "px-3 py-1.5 text-sm",
 } as const;
 
+/** Class-type label pill — shared muted sage style (colour lives on the card stripe/tint). */
 export function TypeBadge({ type, className, size = "md" }: Props) {
-  const theme = classTypeTheme(type);
   return (
     <span
       className={cn(
         "inline-flex items-center rounded-full font-bold uppercase tracking-wide",
         sizeClass[size],
-        theme.tagBg,
-        theme.tagText,
+        CLASS_TYPE_BADGE_CLASS,
         className,
       )}
     >

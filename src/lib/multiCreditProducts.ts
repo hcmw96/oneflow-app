@@ -1,3 +1,8 @@
+import {
+  SEEKER_YOGA_CLASS_TYPES,
+  WELLZONE_CLASS_TYPES,
+} from "@/lib/allowedClassTypes";
+
 /** Rows inserted into `user_credits` for a product purchase or manual assign. */
 export type UserCreditInsertRow = {
   profile_id: string;
@@ -20,18 +25,6 @@ export const THE_SEEKER_PRODUCT_ID_PREFIX = "df5794ea";
 
 /** The Sage — `products.id` prefix `e8ea33ba`. */
 export const THE_SAGE_PRODUCT_ID_PREFIX = "e8ea33ba";
-
-const SEEKER_YOGA_CLASS_TYPES = [
-  "yoga",
-  "sculpt",
-  "pilates",
-  "power",
-  "beginner",
-  "beginner_sculpt",
-  "event",
-] as const;
-
-const WELLZONE_CLASS_TYPES = ["wellzone", "sauna_journey"] as const;
 
 const UNLIMITED_CREDITS = 999;
 
