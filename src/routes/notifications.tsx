@@ -43,7 +43,7 @@ const ROWS: { key: keyof Prefs; label: string; description: string }[] = [
   {
     key: "class_reminders",
     label: "Class reminders",
-    description: "Get a heads-up 1 hour before your booked class.",
+    description: "Class reminder emails are currently turned off studio-wide.",
   },
   {
     key: "booking_confirmations",

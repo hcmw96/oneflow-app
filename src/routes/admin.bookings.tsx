@@ -1,19 +1,15 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Check,
-  ChevronDown,
   ChevronRight,
   Download,
   Filter,
   Search,
-  Undo2,
   UserPlus,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/admin/PageHeader";
-import { useAuth } from "@/contexts/auth";
 import { getUser, supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { addDays, isSameDay, startOfDay } from "@/lib/format";
@@ -31,25 +27,13 @@ import { WeekDayStrip, weekdayStripLetter } from "@/components/WeekDayStrip";
 import { classTypeTheme } from "@/lib/classTypeTheme";
 import { displayClassType } from "@/types/studio";
 import {
-  Sheet,
-  SheetClose,
-  SheetContent,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
-import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { cancelBookingWithPolicy } from "@/lib/bookingCancellation";
-import { deleteMayChallengeCheckInForBooking } from "@/lib/mayChallengeCheckIn";
-import { manualCheckInToastMessage } from "@/lib/flowPoints";
 import {
   ALLOWED_CLASS_TYPE_SLUGS,
   CLASS_TYPE_SLUG_LABEL,
@@ -58,7 +42,6 @@ import {
 import {
   fetchRosterMemberAddonAccess,
   type RosterMemberAddonAccess,
-  RosterAddonPills,
 } from "@/components/admin/RosterAddonPills";
 import { useNowMs } from "@/hooks/use-now-ms";
 import { useScrollToLiveClass } from "@/hooks/use-scroll-to-live-class";
@@ -187,58 +170,6 @@ function rosterStatusSortRank(status: BookingStatus): number {
   return 3;
 }
 
-function rosterStatusClass(status: BookingStatus) {
-  return cn(
-    "inline-flex shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
-    status === "attended" &&
-      "bg-emerald-100 text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-50",
-    status === "confirmed" &&
-      "bg-neutral-100 text-neutral-800 dark:bg-neutral-800 dark:text-neutral-100",
-    status === "cancelled" && "bg-destructive/15 text-destructive",
-    status === "no-show" && "bg-amber-500/15 text-amber-800 dark:text-amber-300",
-  );
-}
-
-function CapacityDonut({ booked, capacity }: { booked: number; capacity: number }) {
-  const r = 34;
-  const c = 2 * Math.PI * r;
-  const pct = capacity > 0 ? Math.min(1, booked / capacity) : 0;
-  const dash = pct * c;
-  return (
-    <div className="relative h-12 w-12 shrink-0 sm:h-16 sm:w-16">
-      <svg viewBox="0 0 92 92" className="block h-full w-full -rotate-90" aria-hidden>
-        <circle
-          cx="46"
-          cy="46"
-          r={r}
-          fill="none"
-          stroke="currentColor"
-          className="text-neutral-200 dark:text-neutral-700"
-          strokeWidth="10"
-        />
-        <circle
-          cx="46"
-          cy="46"
-          r={r}
-          fill="none"
-          stroke={SAGE}
-          strokeWidth="10"
-          strokeLinecap="round"
-          strokeDasharray={`${dash} ${c}`}
-        />
-      </svg>
-      <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
-        <span className="font-display text-xs font-bold leading-none text-foreground sm:text-sm">
-          {booked}
-        </span>
-        <span className="text-[9px] font-medium tabular-nums leading-none text-muted-foreground sm:text-[10px]">
-          / {capacity}
-        </span>
-      </div>
-    </div>
-  );
-}
-
 const SESSION_LOCATIONS = ["Studio 1", "Studio 2", "Wellzone", "Sauna"] as const;
 
 function sessionMatchesClassTypeFilter(classType: string, filter: string): boolean {
@@ -251,8 +182,6 @@ function sessionMatchesClassTypeFilter(classType: string, filter: string): boole
 }
 
 function BookingsPage() {
-  const { profile } = useAuth();
-  const role = profile?.role ?? null;
   const [viewWeekStart, setViewWeekStart] = useState(() => startOfCalendarWeekSunday(new Date()));
   const [selectedDay, setSelectedDay] = useState(() => startOfDay(new Date()));
   const [weekClasses, setWeekClasses] = useState<WeekClassRow[]>([]);
@@ -263,11 +192,7 @@ function BookingsPage() {
   const [sessionTypeFilter, setSessionTypeFilter] = useState<string>("all");
   const [sessionGuideFilter, setSessionGuideFilter] = useState<string>("all");
   const [sessionLocationFilter, setSessionLocationFilter] = useState<string>("all");
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [walkInOpen, setWalkInOpen] = useState(false);
-  const [removeTarget, setRemoveTarget] = useState<AdminBookingRow | null>(null);
-  const [waiveLateFee, setWaiveLateFee] = useState(false);
-  const [removing, setRemoving] = useState(false);
 
   const nowMs = useNowMs();
   const todayKey = ymdInTimeZone(new Date(), STUDIO_TIMEZONE);
@@ -278,7 +203,6 @@ function BookingsPage() {
     () => Array.from({ length: 7 }, (_, i) => addDays(viewWeekStart, i)),
     [viewWeekStart],
   );
-  const isGuide = (role ?? "").toLowerCase() === "guide";
 
   const loadWeek = useCallback(async () => {
     setLoading(true);
@@ -467,11 +391,6 @@ function BookingsPage() {
 
   useScrollToLiveClass(focusClassId, isLiveDay && !loading);
 
-  useEffect(() => {
-    if (!focusClassId || loading) return;
-    setExpanded((e) => ({ ...e, [focusClassId]: true }));
-  }, [focusClassId, loading]);
-
   const bookingsFilterBadgeCount = sessionFilterCount + (qNorm ? 1 : 0);
 
   const exportCsv = () => {
@@ -505,74 +424,6 @@ function BookingsPage() {
     a.download = `bookings-${selectedDay.toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-  };
-
-  const updateBookingStatus = async (id: string, status: "attended" | "confirmed") => {
-    const patch =
-      status === "attended"
-        ? {
-            status: "attended" as const,
-            checked_in: true,
-            checked_in_at: new Date().toISOString(),
-          }
-        : {
-            status: "confirmed" as const,
-            checked_in: false,
-            checked_in_at: null as string | null,
-          };
-    const { error } = await supabase.from("bookings").update(patch).eq("id", id);
-    if (error) {
-      console.error("booking status update failed", error);
-      toast.error(supabaseErrorMessage(error, "Could not update booking"));
-      return;
-    }
-    if (status === "attended") {
-      const row = bookings.find((r) => r.id === id);
-      if (row?.profile_id && row.classStartsAtIso) {
-        await supabase.from("challenge_checkins").insert({
-          profile_id: row.profile_id,
-          class_date: new Date(row.classStartsAtIso).toISOString().split("T")[0],
-          booking_id: id,
-        });
-      }
-      toast.success(manualCheckInToastMessage(row?.memberRole));
-    } else {
-      await deleteMayChallengeCheckInForBooking(id);
-      toast.success("Undone");
-    }
-    await loadWeek();
-  };
-
-  const confirmRemoveBooking = async () => {
-    if (!removeTarget) return;
-    setRemoving(true);
-    try {
-      const res = await cancelBookingWithPolicy({
-        bookingId: removeTarget.id,
-        cancellationReason: "admin_cancelled",
-        waiveLateFee,
-      });
-      toast.success(
-        res.lateCancel && !res.waived
-          ? "Booking removed. Late cancellation fee pending."
-          : "Booking removed and credit returned.",
-      );
-      setRemoveTarget(null);
-      setWaiveLateFee(false);
-      await loadWeek();
-    } catch (error) {
-      console.error("remove booking failed", error);
-      toast.error(supabaseErrorMessage(error, "Could not remove booking"));
-    } finally {
-      setRemoving(false);
-    }
-  };
-
-  /** Collapsed by default so mobile can scan the day; staff tap to open a roster. */
-  const isExpanded = (id: string) => expanded[id] === true;
-
-  const toggleGroup = (id: string) => {
-    setExpanded((e) => ({ ...e, [id]: !isExpanded(id) }));
   };
 
   const today = startOfDay(new Date());
@@ -751,152 +602,49 @@ function BookingsPage() {
           No members match &ldquo;{query.trim()}&rdquo; for the filtered classes on this day.
         </div>
       ) : (
-        <ul className="space-y-3 sm:space-y-4">
+        <ul className="overflow-hidden rounded-xl border border-border bg-card">
           {visibleSessions.map((session, idx) => {
-            const roster = bookingsByClass.get(session.id) ?? [];
-            const filtered = qNorm
-              ? roster.filter((b) => b.memberFull.toLowerCase().includes(qNorm))
-              : roster;
-
-            const open = isExpanded(session.id);
             const badgeType = displayClassType(session.class_type);
             const typeTheme = classTypeTheme(badgeType);
 
             return (
               <li key={session.id}>
                 {timeLineIndex === idx ? (
-                  <div className="mb-3 sm:mb-4">
+                  <div className="border-b border-border px-2 py-1.5">
                     <CurrentTimeLine />
                   </div>
                 ) : null}
-              <div
-                data-live-class-id={session.id}
-                className={cn(
-                  "overflow-hidden rounded-2xl border border-border border-l-4 bg-card shadow-sm",
-                  typeTheme.tint,
-                  isLiveDay && isClassEnded(session, nowMs) && "opacity-60",
-                )}
-                style={{ borderLeftColor: typeTheme.accent }}
-              >
-                <button
-                  type="button"
-                  onClick={() => toggleGroup(session.id)}
-                  className="flex w-full items-center gap-2.5 p-3 text-left transition hover:bg-muted/30 sm:gap-3 sm:p-4"
-                  aria-expanded={open}
+                <Link
+                  to="/admin/bookings/$classId"
+                  params={{ classId: session.id }}
+                  data-live-class-id={session.id}
+                  className={cn(
+                    "flex items-center gap-2 border-b border-border border-l-4 px-3 py-2 transition last:border-b-0 hover:bg-muted/40",
+                    typeTheme.tint,
+                    isLiveDay && isClassEnded(session, nowMs) && "opacity-55",
+                  )}
+                  style={{ borderLeftColor: typeTheme.accent }}
                 >
-                  <div className="shrink-0">
-                    {open ? (
-                      <ChevronDown className="h-4 w-4 text-muted-foreground sm:h-5 sm:w-5" aria-hidden />
-                    ) : (
-                      <ChevronRight
-                        className="h-4 w-4 text-muted-foreground sm:h-5 sm:w-5"
-                        aria-hidden
-                      />
-                    )}
-                  </div>
-                  <CapacityDonut booked={session.booked_count} capacity={session.capacity} />
+                  <span className="w-[4.5rem] shrink-0 font-mono text-xs font-semibold tabular-nums text-foreground sm:w-24 sm:text-sm">
+                    {formatClassTime(session.starts_at)}
+                  </span>
                   <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-                      <p
-                        className="font-mono text-xs font-semibold tracking-tight sm:text-sm"
-                        style={{ color: SAGE }}
-                      >
-                        {formatClassTime(session.starts_at)} — {formatClassTime(session.ends_at)}
+                    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                      <p className="truncate font-display text-sm font-semibold text-foreground">
+                        {session.name}
                       </p>
-                      <TypeBadge type={badgeType} size="md" />
+                      <TypeBadge type={badgeType} size="sm" className="shrink-0" />
                     </div>
-                    <p className="mt-0.5 font-display text-sm font-bold leading-snug text-foreground sm:mt-1 sm:text-lg">
-                      {session.name}
-                    </p>
-                    {session.guide_name?.trim() && (
-                      <p className="truncate text-xs text-muted-foreground sm:text-sm">
-                        with {session.guide_name.trim()}
-                      </p>
-                    )}
-                    <p className="truncate text-xs text-muted-foreground sm:mt-0.5 sm:text-sm">
-                      {session.location?.trim() || "—"}
+                    <p className="truncate text-[11px] text-muted-foreground">
+                      {session.guide_name?.trim() || "No guide"}
+                      {session.location?.trim() ? ` · ${session.location.trim()}` : ""}
                     </p>
                   </div>
-                </button>
-
-                {open && (
-                  <div className="border-t border-border bg-muted/20 px-3 py-2.5 sm:px-4 sm:py-3 sm:pb-4">
-                    {filtered.length === 0 ? (
-                      <p className="py-3 text-center text-sm text-muted-foreground sm:py-4">
-                        No bookings yet.
-                      </p>
-                    ) : (
-                      <ul className="divide-y divide-border/70">
-                        {filtered.map((b) => {
-                          const isIn = b.status === "attended";
-                          const isCancelled = b.status === "cancelled";
-                          const isNoShow = b.status === "no-show";
-                          return (
-                            <li
-                              key={b.id}
-                              className="flex flex-wrap items-center gap-2 py-3 first:pt-0 last:pb-0 sm:flex-nowrap sm:gap-3"
-                            >
-                              <div className="min-w-0 flex-1">
-                                <p className="flex min-w-0 flex-wrap items-center gap-1.5 font-medium text-foreground">
-                                  <span className="min-w-0 truncate">{b.memberShort}</span>
-                                  <RosterAddonPills
-                                    mat={b.matAddon}
-                                    towel={b.towelAddon}
-                                    cafe={b.hasSageCredit}
-                                  />
-                                </p>
-                              </div>
-                              <span className={rosterStatusClass(b.status)}>
-                                {rosterStatusLabel(b.status)}
-                              </span>
-                              <div className="flex w-full justify-end gap-2 sm:w-auto sm:flex-none">
-                                {isIn ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => void updateBookingStatus(b.id, "confirmed")}
-                                    className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-full border border-border bg-background px-3 py-2 text-xs font-semibold hover:bg-muted sm:flex-none sm:py-1.5"
-                                  >
-                                    <Undo2 className="h-3.5 w-3.5 shrink-0" aria-hidden /> Undo
-                                  </button>
-                                ) : isCancelled ? (
-                                  <span className="text-xs text-muted-foreground">—</span>
-                                ) : (
-                                  <>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setRemoveTarget(b);
-                                        setWaiveLateFee(false);
-                                      }}
-                                      hidden={isGuide}
-                                      className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-full border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs font-semibold text-destructive transition hover:bg-destructive/20 sm:flex-none sm:py-1.5"
-                                    >
-                                      <X className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                                      Remove
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => void updateBookingStatus(b.id, "attended")}
-                                      className={cn(
-                                        "inline-flex flex-1 items-center justify-center gap-1.5 rounded-full px-3 py-2 text-xs font-semibold text-white transition hover:opacity-90 sm:flex-none sm:py-1.5",
-                                        isNoShow && "opacity-90",
-                                      )}
-                                      style={{ backgroundColor: SAGE }}
-                                    >
-                                      <Check className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                                      Check in
-                                    </button>
-                                  </>
-                                )}
-                              </div>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    )}
-                  </div>
-                )}
-              </div>
+                  <span className="shrink-0 tabular-nums text-xs font-semibold text-muted-foreground">
+                    {session.booked_count}/{session.capacity}
+                  </span>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                </Link>
               </li>
             );
           })}
@@ -908,53 +656,6 @@ function BookingsPage() {
         onOpenChange={setWalkInOpen}
         onDone={() => void loadWeek()}
       />
-      <Sheet
-        open={removeTarget !== null}
-        onOpenChange={(open) => {
-          if (!open) {
-            setRemoveTarget(null);
-            setWaiveLateFee(false);
-          }
-        }}
-      >
-        <SheetContent side="right" className="w-full max-w-md">
-          <SheetHeader>
-            <SheetTitle>Remove booking</SheetTitle>
-          </SheetHeader>
-          <div className="mt-5 space-y-4">
-            <p className="text-sm text-muted-foreground">
-              This applies the booking cancellation policy and refunds credits. For late
-              cancellations (within 2 hours), fee pending is set unless waived.
-            </p>
-            <label className="flex items-center gap-2 rounded-lg border border-border px-3 py-2">
-              <input
-                type="checkbox"
-                checked={waiveLateFee}
-                onChange={(e) => setWaiveLateFee(e.target.checked)}
-              />
-              <span className="text-sm font-medium">Waive fee</span>
-            </label>
-          </div>
-          <SheetFooter className="mt-8">
-            <SheetClose asChild>
-              <button
-                type="button"
-                className="rounded-md border border-border px-4 py-2 text-sm font-medium"
-              >
-                Cancel
-              </button>
-            </SheetClose>
-            <button
-              type="button"
-              onClick={() => void confirmRemoveBooking()}
-              disabled={removing}
-              className="rounded-md bg-destructive px-4 py-2 text-sm font-semibold text-destructive-foreground disabled:opacity-60"
-            >
-              {removing ? "Removing..." : "Remove booking"}
-            </button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
     </div>
   );
 }

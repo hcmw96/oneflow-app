@@ -5,12 +5,13 @@ export { isWellzoneSaunaClassType };
 /** Late check-in grace after class start — Wellzone & Sauna Journey only. */
 export const WELLZONE_LATE_CHECKIN_MINUTES = 30;
 
-export const DEFAULT_CHECKIN_OPEN_MINUTES_BEFORE = 30;
+/** QR / roster check-in opens this many minutes before class start. */
+export const DEFAULT_CHECKIN_OPEN_MINUTES_BEFORE = 120;
 
 export function parseCheckinOpenMinutesBefore(raw: string | number | null | undefined): number {
   const n = typeof raw === "number" ? raw : Number(String(raw ?? "").trim());
   if (!Number.isFinite(n) || n < 0) return DEFAULT_CHECKIN_OPEN_MINUTES_BEFORE;
-  return Math.min(120, Math.round(n));
+  return Math.min(180, Math.round(n));
 }
 
 export type CheckInWindowResult = {

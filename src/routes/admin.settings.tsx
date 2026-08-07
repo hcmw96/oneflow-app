@@ -43,7 +43,7 @@ const DEFAULT_VALUES: Record<SettingKey, string> = {
   studio_email: "info@oneflow.co.za",
   late_cancel_fee_zar: "100",
   booking_open_days_ahead: "14",
-  checkin_open_minutes_before: "30",
+  checkin_open_minutes_before: "120",
   flow_points_per_class: "10",
   flow_points_conversion_rate: "10",
 };

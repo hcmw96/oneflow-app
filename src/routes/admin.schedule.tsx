@@ -145,6 +145,14 @@ function toTimeInputValue(d: Date) {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
+/** `HH:MM` + minutes → `HH:MM` (wraps within the day). */
+function addMinutesToTimeInput(timeStr: string, minutes: number): string {
+  const [hh, mm] = timeStr.split(":").map(Number);
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return timeStr;
+  const total = ((hh * 60 + mm + minutes) % (24 * 60) + 24 * 60) % (24 * 60);
+  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+}
+
 function combineDateTimeLocal(dateStr: string, timeStr: string): Date {
   const [yy, mo, dd] = dateStr.split("-").map(Number);
   const [hh, mm] = timeStr.split(":").map(Number);
@@ -293,6 +301,8 @@ function SchedulePage() {
   const [dateStr, setDateStr] = useState(toDateInputValue(new Date()));
   const [startTime, setStartTime] = useState("09:00");
   const [endTime, setEndTime] = useState("10:00");
+  /** Once the user edits Ends, stop auto-following Starts + 60m. */
+  const endTimeTouchedRef = useRef(false);
   const [capacity, setCapacity] = useState("12");
   const [description, setDescription] = useState("");
   const [ticketPriceZar, setTicketPriceZar] = useState("");
@@ -663,6 +673,7 @@ function SchedulePage() {
     setDateStr(toDateInputValue(new Date()));
     setStartTime("09:00");
     setEndTime("10:00");
+    endTimeTouchedRef.current = false;
     setCapacity("12");
     setDescription("");
     setTicketPriceZar("");
@@ -754,6 +765,7 @@ function SchedulePage() {
     setDateStr(toDateInputValue(s));
     setStartTime(toTimeInputValue(s));
     setEndTime(toTimeInputValue(e));
+    endTimeTouchedRef.current = false;
     setCapacity(String(c.capacity));
     setDescription(c.description ?? "");
     setLinkedProductId(c.product_id);
@@ -1719,7 +1731,13 @@ function SchedulePage() {
                   id="cls-start"
                   type="time"
                   value={startTime}
-                  onChange={(e) => setStartTime(e.target.value)}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setStartTime(next);
+                    if (!endTimeTouchedRef.current) {
+                      setEndTime(addMinutesToTimeInput(next, 60));
+                    }
+                  }}
                   disabled={!canManage}
                 />
               </div>
@@ -1729,7 +1747,10 @@ function SchedulePage() {
                   id="cls-end"
                   type="time"
                   value={endTime}
-                  onChange={(e) => setEndTime(e.target.value)}
+                  onChange={(e) => {
+                    endTimeTouchedRef.current = true;
+                    setEndTime(e.target.value);
+                  }}
                   disabled={!canManage}
                 />
               </div>
