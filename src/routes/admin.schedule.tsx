@@ -1482,86 +1482,91 @@ function SchedulePage() {
                                 }
                               }}
                               className={cn(
-                                "flex cursor-pointer items-center gap-2 border-l-4 px-3 py-2 transition hover:bg-muted/40",
+                                "flex cursor-pointer items-stretch border-l-4 transition hover:bg-muted/40",
                                 typeTheme.tint,
                                 isSelected && "bg-[#e8efe3]/40",
                                 greyRow && "opacity-55",
                               )}
                               style={{ borderLeftColor: typeTheme.accent }}
                             >
-                              {canManage ? (
-                                <Checkbox
-                                  checked={isSelected}
-                                  onCheckedChange={() => toggleSelected(c.id)}
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="shrink-0 data-[state=checked]:border-[#a3b693] data-[state=checked]:bg-[#a3b693]"
-                                  aria-label={`Select ${c.name}`}
-                                />
-                              ) : null}
-                              <span className="w-[5.5rem] shrink-0 font-mono text-[11px] font-semibold tabular-nums text-foreground sm:w-28 sm:text-xs">
+                              {/* Time gutter: fixed width + border-r so the divider runs full row height and stacks flush into one continuous day line. */}
+                              <span className="flex w-[8.75rem] shrink-0 items-center whitespace-nowrap border-r border-border px-2.5 font-mono text-[11px] font-semibold tabular-nums text-foreground sm:text-xs">
                                 {formatTime(c.starts_at)}
                                 <span className="text-muted-foreground">–</span>
                                 {formatTime(c.ends_at)}
                               </span>
-                              <div className="min-w-0 flex-1">
-                                <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                                  <p className="truncate font-display text-sm font-semibold text-foreground">
-                                    {c.name}
-                                  </p>
-                                  <TypeBadge type={badgeType} size="sm" className="shrink-0" />
-                                </div>
-                                <p className="flex min-w-0 items-center gap-1 truncate text-[11px] text-muted-foreground">
-                                  <MapPin className="h-3 w-3 shrink-0" aria-hidden />
-                                  {c.location?.trim() || "—"}
-                                </p>
-                              </div>
-                              <div
-                                className="flex w-[11rem] shrink-0 flex-col items-stretch gap-0.5 sm:w-48"
-                                onClick={(e) => e.stopPropagation()}
-                                onKeyDown={(e) => e.stopPropagation()}
-                              >
-                                <Select
-                                  value={guideValue}
-                                  onValueChange={(v) => void saveInlineGuide(c, v)}
-                                  disabled={!canManage || savingThis}
-                                >
-                                  <SelectTrigger
-                                    className={cn(
-                                      "h-8 text-xs [&>span]:min-w-0 [&>span]:truncate",
-                                      guideValue === "none" && "text-muted-foreground italic",
-                                    )}
-                                    aria-label={`Guide for ${c.name}`}
-                                    title={
-                                      guideValue === "none"
-                                        ? "— Unguided"
-                                        : guideSelectOptions.find((o) => o.value === guideValue)
-                                            ?.label
-                                    }
-                                  >
-                                    <SelectValue placeholder="— Unguided" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="none">— Unguided</SelectItem>
-                                    {guideSelectOptions.map((opt) => (
-                                      <SelectItem key={opt.key} value={opt.value}>
-                                        {opt.label}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                                {savingThis ? (
-                                  <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                                    <Loader2 className="h-3 w-3 animate-spin" /> Saving…
-                                  </span>
-                                ) : savedFlash ? (
-                                  <span className="flex items-center gap-1 text-[10px] font-medium text-[#5a7a4a]">
-                                    <Check className="h-3 w-3" /> Saved
-                                  </span>
+                              <div className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2">
+                                {canManage ? (
+                                  <Checkbox
+                                    checked={isSelected}
+                                    onCheckedChange={() => toggleSelected(c.id)}
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="shrink-0 data-[state=checked]:border-[#a3b693] data-[state=checked]:bg-[#a3b693]"
+                                    aria-label={`Select ${c.name}`}
+                                  />
                                 ) : null}
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                                    <p className="truncate font-display text-sm font-semibold text-foreground">
+                                      {c.name}
+                                    </p>
+                                    <TypeBadge type={badgeType} size="sm" className="shrink-0" />
+                                  </div>
+                                  <p className="flex min-w-0 items-center gap-1 truncate text-[11px] text-muted-foreground">
+                                    <MapPin className="h-3 w-3 shrink-0" aria-hidden />
+                                    {c.location?.trim() || "—"}
+                                  </p>
+                                </div>
+                                <div
+                                  className="flex w-[10.5rem] shrink-0 flex-col items-stretch gap-0.5 sm:w-44"
+                                  onClick={(e) => e.stopPropagation()}
+                                  onKeyDown={(e) => e.stopPropagation()}
+                                >
+                                  <Select
+                                    value={guideValue}
+                                    onValueChange={(v) => void saveInlineGuide(c, v)}
+                                    disabled={!canManage || savingThis}
+                                  >
+                                    <SelectTrigger
+                                      className={cn(
+                                        // Override SelectTrigger’s default [&>span]:line-clamp-1 —
+                                        // it was clipping “Unguided” so the final “d” read as “a”.
+                                        "h-8 gap-1 px-2 text-xs [&>span]:line-clamp-none [&>span]:overflow-visible [&>span]:whitespace-nowrap",
+                                        guideValue === "none" && "text-muted-foreground italic",
+                                      )}
+                                      aria-label={`Guide for ${c.name}`}
+                                      title={
+                                        guideValue === "none"
+                                          ? "Unguided"
+                                          : guideSelectOptions.find((o) => o.value === guideValue)
+                                              ?.label
+                                      }
+                                    >
+                                      <SelectValue placeholder="Unguided" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="none">Unguided</SelectItem>
+                                      {guideSelectOptions.map((opt) => (
+                                        <SelectItem key={opt.key} value={opt.value}>
+                                          {opt.label}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                  {savingThis ? (
+                                    <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                                      <Loader2 className="h-3 w-3 animate-spin" /> Saving…
+                                    </span>
+                                  ) : savedFlash ? (
+                                    <span className="flex items-center gap-1 text-[10px] font-medium text-[#5a7a4a]">
+                                      <Check className="h-3 w-3" /> Saved
+                                    </span>
+                                  ) : null}
+                                </div>
+                                <span className="shrink-0 tabular-nums text-xs font-semibold text-muted-foreground">
+                                  {c.booked_count ?? 0}/{c.capacity}
+                                </span>
                               </div>
-                              <span className="shrink-0 tabular-nums text-xs font-semibold text-muted-foreground">
-                                {c.booked_count ?? 0}/{c.capacity}
-                              </span>
                             </div>
                           </li>
                         );
