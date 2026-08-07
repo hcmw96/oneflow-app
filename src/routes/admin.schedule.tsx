@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, forwardRef, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
   ChevronLeft,
@@ -223,9 +223,13 @@ function nowLineInsertIndex(list: { starts_at: string }[], nowMs: number): numbe
   return idx === -1 ? list.length : idx;
 }
 
-function MasterNowLine({ nowMs }: { nowMs: number }) {
+const MasterNowLine = forwardRef<HTMLLIElement, { nowMs: number }>(function MasterNowLine(
+  { nowMs },
+  ref,
+) {
   return (
     <li
+      ref={ref}
       className="pointer-events-none relative z-[1] list-none"
       aria-label={`Current time ${formatNowClock(nowMs)}`}
     >
@@ -238,7 +242,7 @@ function MasterNowLine({ nowMs }: { nowMs: number }) {
       </div>
     </li>
   );
-}
+});
 
 function todayJhbDayKey(): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: TZ });
@@ -314,6 +318,10 @@ function SchedulePage() {
   /** Brief “Saved” flash after inline guide write. */
   const [savedGuideFlashId, setSavedGuideFlashId] = useState<string | null>(null);
   const savedGuideFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const nowAnchorRef = useRef<HTMLLIElement | null>(null);
+  const todaySectionRef = useRef<HTMLElement | null>(null);
+  /** Scroll to now after load / “This week” / “Now” — not on every minute tick. */
+  const pendingScrollToNow = useRef(true);
 
   // Dialog state
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -642,6 +650,33 @@ function SchedulePage() {
       list: map.get(dayKey) ?? [],
     }));
   }, [filtered, viewWeekStart]);
+
+  const scrollToNow = useCallback(() => {
+    const run = () => {
+      (nowAnchorRef.current ?? todaySectionRef.current)?.scrollIntoView({
+        block: "center",
+        behavior: "smooth",
+      });
+    };
+    // Double rAF so the now-line exists in the DOM after week/data paint.
+    requestAnimationFrame(() => requestAnimationFrame(run));
+  }, []);
+
+  const goToNow = useCallback(() => {
+    pendingScrollToNow.current = true;
+    if (weekOffset !== 0) {
+      setWeekOffset(0);
+      return;
+    }
+    pendingScrollToNow.current = false;
+    scrollToNow();
+  }, [weekOffset, scrollToNow]);
+
+  useEffect(() => {
+    if (loading || weekOffset !== 0 || !pendingScrollToNow.current) return;
+    pendingScrollToNow.current = false;
+    scrollToNow();
+  }, [loading, weekOffset, daySections, scrollToNow]);
 
   const classesFilterCount =
     (q.trim() ? 1 : 0) +
@@ -1330,9 +1365,28 @@ function SchedulePage() {
                 "h-7 px-2.5 text-xs",
                 weekOffset === 0 && "bg-[#a3b693] hover:bg-[#8fa67d]",
               )}
-              onClick={() => setWeekOffset(0)}
+              onClick={() => {
+                pendingScrollToNow.current = true;
+                if (weekOffset === 0) {
+                  pendingScrollToNow.current = false;
+                  scrollToNow();
+                } else {
+                  setWeekOffset(0);
+                }
+              }}
             >
               This week
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 gap-1.5 border-[#a3b693]/60 px-2.5 text-xs text-[#3d4f36] hover:bg-[#e8efe3]/80"
+              onClick={goToNow}
+              aria-label="Jump to current time"
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-[#a3b693]" aria-hidden />
+              Now
             </Button>
             <Button
               type="button"
@@ -1476,7 +1530,10 @@ function SchedulePage() {
           ) : (
             <div className="space-y-4">
               {daySections.map(({ dayKey, list }) => (
-                <section key={dayKey}>
+                <section
+                  key={dayKey}
+                  ref={dayKey === todayKey ? todaySectionRef : undefined}
+                >
                   <div className="mb-1.5 flex items-baseline justify-between gap-3 border-b border-border pb-1">
                     <h2 className="font-display text-xs font-bold uppercase tracking-wider text-[#3d4f36]">
                       {masterDayHeaderLabel(dayKey)}
@@ -1510,7 +1567,9 @@ function SchedulePage() {
 
                           return (
                             <Fragment key={c.id}>
-                              {insertAt === i ? <MasterNowLine nowMs={nowMs} /> : null}
+                              {insertAt === i ? (
+                                <MasterNowLine ref={nowAnchorRef} nowMs={nowMs} />
+                              ) : null}
                               <li className="border-b border-border last:border-b-0">
                                 <div
                                   role="button"
@@ -1611,7 +1670,7 @@ function SchedulePage() {
                                 </div>
                               </li>
                               {insertAt === list.length && i === list.length - 1 ? (
-                                <MasterNowLine nowMs={nowMs} />
+                                <MasterNowLine ref={nowAnchorRef} nowMs={nowMs} />
                               ) : null}
                             </Fragment>
                           );
