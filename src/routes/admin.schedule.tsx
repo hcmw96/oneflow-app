@@ -1,7 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  CalendarDays,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -11,12 +10,10 @@ import {
   Plus,
   Search,
   Trash2,
-  Users,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/admin/PageHeader";
-import { StatCard } from "@/components/admin/StatCard";
 import { TypeBadge } from "@/components/TypeBadge";
 import { getUser, supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/auth";
@@ -276,6 +273,7 @@ function SchedulePage() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [occupancyFilter, setOccupancyFilter] = useState<"all" | "has_bookings" | "empty">("all");
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   /** Class id currently writing an inline guide change. */
   const [savingGuideClassId, setSavingGuideClassId] = useState<string | null>(null);
@@ -1228,6 +1226,7 @@ function SchedulePage() {
       <PageHeader
         title="Master"
         description="Create, edit and schedule classes across the week. Book members in from Bookings."
+        className="mb-2 gap-2 sm:mb-3 sm:items-center"
         actions={
           canManage ? (
             <Button
@@ -1241,161 +1240,197 @@ function SchedulePage() {
         }
       />
 
-      <div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <StatCard
-          label="Classes today"
-          value={stats.today.toLocaleString()}
-          icon={<CalendarDays className="h-4 w-4" />}
-        />
-        <StatCard label="This week" value={stats.thisWeek.toLocaleString()} />
-        <StatCard label="Total upcoming" value={stats.upcoming.toLocaleString()} />
-      </div>
-
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="gap-1"
-            onClick={() => setWeekOffset((o) => o - 1)}
-            aria-label="Previous week"
-          >
-            <ChevronLeft className="h-4 w-4" />
-            Prev
-          </Button>
-          <Button
-            type="button"
-            variant={weekOffset === 0 ? "default" : "outline"}
-            size="sm"
-            className={weekOffset === 0 ? "bg-[#a3b693] hover:bg-[#8fa67d]" : ""}
-            onClick={() => setWeekOffset(0)}
-          >
-            This week
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="gap-1"
-            onClick={() => setWeekOffset((o) => o + 1)}
-            aria-label="Next week"
-          >
-            Next
-            <ChevronRight className="h-4 w-4" />
-          </Button>
+      {/* Slim stats + week pager + filters toggle on one dense strip */}
+      <div className="mb-2 flex flex-col gap-2 border-b border-border pb-2 sm:mb-3">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+          <span className="inline-flex items-baseline gap-1.5">
+            <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              Today
+            </span>
+            <span className="font-display text-base font-bold tabular-nums leading-none">
+              {stats.today.toLocaleString()}
+            </span>
+          </span>
+          <span className="text-border" aria-hidden>
+            ·
+          </span>
+          <span className="inline-flex items-baseline gap-1.5">
+            <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              This week
+            </span>
+            <span className="font-display text-base font-bold tabular-nums leading-none">
+              {stats.thisWeek.toLocaleString()}
+            </span>
+          </span>
+          <span className="text-border" aria-hidden>
+            ·
+          </span>
+          <span className="inline-flex items-baseline gap-1.5">
+            <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              Upcoming
+            </span>
+            <span className="font-display text-base font-bold tabular-nums leading-none">
+              {stats.upcoming.toLocaleString()}
+            </span>
+          </span>
         </div>
-        <p className="text-sm font-medium text-muted-foreground">
-          {weekRangeLabel(viewWeekStart, viewWeekEnd)}
-        </p>
-      </div>
 
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-          <div className="flex flex-wrap items-center gap-2 sm:mr-auto sm:w-full sm:max-w-none">
-            <span className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/40 px-2 py-1 text-xs font-semibold text-muted-foreground">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 gap-0.5 px-2 text-xs"
+              onClick={() => setWeekOffset((o) => o - 1)}
+              aria-label="Previous week"
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+              Prev
+            </Button>
+            <Button
+              type="button"
+              variant={weekOffset === 0 ? "default" : "outline"}
+              size="sm"
+              className={cn(
+                "h-7 px-2.5 text-xs",
+                weekOffset === 0 && "bg-[#a3b693] hover:bg-[#8fa67d]",
+              )}
+              onClick={() => setWeekOffset(0)}
+            >
+              This week
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 gap-0.5 px-2 text-xs"
+              onClick={() => setWeekOffset((o) => o + 1)}
+              aria-label="Next week"
+            >
+              Next
+              <ChevronRight className="h-3.5 w-3.5" />
+            </Button>
+            <span className="ml-1 text-xs font-medium text-muted-foreground">
+              {weekRangeLabel(viewWeekStart, viewWeekEnd)}
+            </span>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Button
+              type="button"
+              variant={filtersOpen ? "secondary" : "outline"}
+              size="sm"
+              className="h-7 gap-1.5 px-2.5 text-xs"
+              aria-expanded={filtersOpen}
+              onClick={() => setFiltersOpen((o) => !o)}
+            >
               <Filter className="h-3.5 w-3.5" aria-hidden />
               Filters
               {classesFilterCount > 0 ? (
-                <span className="rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-bold text-primary-foreground">
+                <span className="rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-bold leading-none text-primary-foreground">
                   {classesFilterCount}
                 </span>
               ) : null}
-            </span>
+            </Button>
             {classesFilterCount > 0 ? (
               <Button
                 type="button"
                 variant="ghost"
                 size="sm"
-                className="h-8 gap-1 text-xs text-muted-foreground"
+                className="h-7 gap-1 px-2 text-xs text-muted-foreground"
                 onClick={clearClassesFilters}
               >
                 <X className="h-3.5 w-3.5" aria-hidden />
-                Clear filters
+                Clear
               </Button>
             ) : null}
           </div>
         </div>
 
-        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-          <div className="relative w-full sm:max-w-xs">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Search by class or guide…"
-              className="w-full rounded-lg border border-border bg-card py-2.5 pl-9 pr-3 text-sm outline-none focus:border-primary"
+        {filtersOpen ? (
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+            <div className="relative w-full sm:max-w-xs">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Search by class or guide…"
+                className="h-8 w-full rounded-md border border-border bg-card py-1.5 pl-8 pr-2.5 text-xs outline-none focus:border-primary"
+              />
+            </div>
+            <Select value={typeFilter} onValueChange={setTypeFilter}>
+              <SelectTrigger className="h-8 w-full text-xs sm:w-36">
+                <SelectValue placeholder="All types" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All types</SelectItem>
+                {filterTypeOptions.map((t) => (
+                  <SelectItem key={t.value} value={t.value}>
+                    {t.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={locationFilter} onValueChange={setLocationFilter}>
+              <SelectTrigger className="h-8 w-full text-xs sm:w-36">
+                <SelectValue placeholder="All locations" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All locations</SelectItem>
+                {LOCATIONS.map((loc) => (
+                  <SelectItem key={loc} value={loc}>
+                    {loc}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={guideFilter} onValueChange={setGuideFilter}>
+              <SelectTrigger className="h-8 w-full text-xs sm:w-44">
+                <SelectValue placeholder="All guides" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All guides</SelectItem>
+                <SelectItem value={GUIDE_NONE}>No guide assigned</SelectItem>
+                {guideSelectOptions.map((opt) => (
+                  <SelectItem key={opt.key} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="h-8 w-full text-xs sm:w-36"
+              aria-label="Date (from)"
+              title="Single day when used alone; start of range with “To”"
             />
+            <Input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="h-8 w-full text-xs sm:w-36"
+              aria-label="Date (to)"
+              title="End of range (optional)"
+            />
+            <Select
+              value={occupancyFilter}
+              onValueChange={(v) => setOccupancyFilter(v as "all" | "has_bookings" | "empty")}
+            >
+              <SelectTrigger className="h-8 w-full text-xs sm:w-40">
+                <SelectValue placeholder="Bookings" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Any bookings</SelectItem>
+                <SelectItem value="has_bookings">Has bookings</SelectItem>
+                <SelectItem value="empty">Empty classes</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
-          <Select value={typeFilter} onValueChange={setTypeFilter}>
-            <SelectTrigger className="w-full sm:w-40">
-              <SelectValue placeholder="All types" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All types</SelectItem>
-              {filterTypeOptions.map((t) => (
-                <SelectItem key={t.value} value={t.value}>
-                  {t.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={locationFilter} onValueChange={setLocationFilter}>
-            <SelectTrigger className="w-full sm:w-40">
-              <SelectValue placeholder="All locations" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All locations</SelectItem>
-              {LOCATIONS.map((loc) => (
-                <SelectItem key={loc} value={loc}>
-                  {loc}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={guideFilter} onValueChange={setGuideFilter}>
-            <SelectTrigger className="w-full sm:w-52">
-              <SelectValue placeholder="All guides" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All guides</SelectItem>
-              <SelectItem value={GUIDE_NONE}>No guide assigned</SelectItem>
-              {guideSelectOptions.map((opt) => (
-                <SelectItem key={opt.key} value={opt.value}>
-                  {opt.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Input
-            type="date"
-            value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
-            className="w-full sm:w-40"
-            aria-label="Date (from)"
-            title="Single day when used alone; start of range with “To”"
-          />
-          <Input
-            type="date"
-            value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
-            className="w-full sm:w-40"
-            aria-label="Date (to)"
-            title="End of range (optional)"
-          />
-          <Select
-            value={occupancyFilter}
-            onValueChange={(v) => setOccupancyFilter(v as "all" | "has_bookings" | "empty")}
-          >
-            <SelectTrigger className="w-full sm:w-44">
-              <SelectValue placeholder="Bookings" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Any bookings</SelectItem>
-              <SelectItem value="has_bookings">Has bookings</SelectItem>
-              <SelectItem value="empty">Empty classes</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        ) : null}
+      </div>
 
         <div className={cn(canManage && selected.size > 0 && "pb-28")}>
           {loading ? (
@@ -1405,10 +1440,10 @@ function SchedulePage() {
               ))}
             </div>
           ) : (
-            <div className="space-y-6">
+            <div className="space-y-4">
               {daySections.map(({ dayKey, list }) => (
                 <section key={dayKey}>
-                  <div className="mb-2 flex items-baseline justify-between gap-3 border-b border-border pb-1.5">
+                  <div className="mb-1.5 flex items-baseline justify-between gap-3 border-b border-border pb-1">
                     <h2 className="font-display text-xs font-bold uppercase tracking-wider text-[#3d4f36]">
                       {masterDayHeaderLabel(dayKey)}
                       <span className="ml-2 font-sans font-medium normal-case tracking-normal text-muted-foreground">
@@ -1422,7 +1457,7 @@ function SchedulePage() {
                     ) : null}
                   </div>
                   {list.length === 0 ? (
-                    <p className="px-1 py-2 text-xs text-muted-foreground">No classes</p>
+                    <p className="px-1 py-1.5 text-xs text-muted-foreground">No classes</p>
                   ) : (
                     <ul className="overflow-hidden rounded-xl border border-border bg-card">
                       {list.map((c) => {
@@ -1481,7 +1516,7 @@ function SchedulePage() {
                                 </p>
                               </div>
                               <div
-                                className="flex w-[9.5rem] shrink-0 flex-col items-stretch gap-0.5 sm:w-44"
+                                className="flex w-[11rem] shrink-0 flex-col items-stretch gap-0.5 sm:w-48"
                                 onClick={(e) => e.stopPropagation()}
                                 onKeyDown={(e) => e.stopPropagation()}
                               >
@@ -1492,12 +1527,18 @@ function SchedulePage() {
                                 >
                                   <SelectTrigger
                                     className={cn(
-                                      "h-8 text-xs",
+                                      "h-8 text-xs [&>span]:min-w-0 [&>span]:truncate",
                                       guideValue === "none" && "text-muted-foreground italic",
                                     )}
                                     aria-label={`Guide for ${c.name}`}
+                                    title={
+                                      guideValue === "none"
+                                        ? "— Unguided"
+                                        : guideSelectOptions.find((o) => o.value === guideValue)
+                                            ?.label
+                                    }
                                   >
-                                    <SelectValue placeholder="Unguided" />
+                                    <SelectValue placeholder="— Unguided" />
                                   </SelectTrigger>
                                   <SelectContent>
                                     <SelectItem value="none">— Unguided</SelectItem>
@@ -1521,7 +1562,6 @@ function SchedulePage() {
                               <span className="shrink-0 tabular-nums text-xs font-semibold text-muted-foreground">
                                 {c.booked_count ?? 0}/{c.capacity}
                               </span>
-                              <Users className="hidden h-3.5 w-3.5 shrink-0 text-muted-foreground sm:block" aria-hidden />
                             </div>
                           </li>
                         );
