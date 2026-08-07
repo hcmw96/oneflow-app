@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
   ChevronLeft,
@@ -204,6 +204,40 @@ function formatTime(iso: string): string {
       hour12: true,
     })
     .toUpperCase();
+}
+
+function formatNowClock(ms: number): string {
+  return new Date(ms)
+    .toLocaleTimeString("en-ZA", {
+      timeZone: TZ,
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    })
+    .toUpperCase();
+}
+
+/** Index to insert the now-line: before the first class that hasn't started yet. */
+function nowLineInsertIndex(list: { starts_at: string }[], nowMs: number): number {
+  const idx = list.findIndex((c) => new Date(c.starts_at).getTime() > nowMs);
+  return idx === -1 ? list.length : idx;
+}
+
+function MasterNowLine({ nowMs }: { nowMs: number }) {
+  return (
+    <li
+      className="pointer-events-none relative z-[1] list-none"
+      aria-label={`Current time ${formatNowClock(nowMs)}`}
+    >
+      <div className="flex items-center gap-2 py-0.5 pl-2 pr-3">
+        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#a3b693]" aria-hidden />
+        <span className="shrink-0 font-mono text-[10px] font-semibold tabular-nums text-[#a3b693]">
+          {formatNowClock(nowMs)}
+        </span>
+        <span className="h-px min-w-0 flex-1 bg-[#a3b693]" aria-hidden />
+      </div>
+    </li>
+  );
 }
 
 function todayJhbDayKey(): string {
@@ -1460,117 +1494,129 @@ function SchedulePage() {
                     <p className="px-1 py-1.5 text-xs text-muted-foreground">No classes</p>
                   ) : (
                     <ul className="overflow-hidden rounded-xl border border-border bg-card">
-                      {list.map((c) => {
-                        const badgeType = displayClassType(c.class_type);
-                        const typeTheme = classTypeTheme(badgeType);
-                        const isSelected = selected.has(c.id);
-                        const greyRow = dayKey === todayKey && isClassEnded(c, nowMs);
-                        const guideValue = guideSelectValueForClass(c);
-                        const savingThis = savingGuideClassId === c.id;
-                        const savedFlash = savedGuideFlashId === c.id;
+                      {(() => {
+                        // Date-keyed (todayKey), not position — other weeks never match → no line.
+                        const insertAt =
+                          dayKey === todayKey ? nowLineInsertIndex(list, nowMs) : null;
 
-                        return (
-                          <li key={c.id} className="border-b border-border last:border-b-0">
-                            <div
-                              role="button"
-                              tabIndex={0}
-                              onClick={() => void openEdit(c)}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter" || e.key === " ") {
-                                  e.preventDefault();
-                                  void openEdit(c);
-                                }
-                              }}
-                              className={cn(
-                                "flex cursor-pointer items-stretch border-l-4 transition hover:bg-muted/40",
-                                typeTheme.tint,
-                                isSelected && "bg-[#e8efe3]/40",
-                                greyRow && "opacity-55",
-                              )}
-                              style={{ borderLeftColor: typeTheme.accent }}
-                            >
-                              {/* Time gutter: fixed width + border-r so the divider runs full row height and stacks flush into one continuous day line. */}
-                              <span className="flex w-[8.75rem] shrink-0 items-center whitespace-nowrap border-r border-border px-2.5 font-mono text-[11px] font-semibold tabular-nums text-foreground sm:text-xs">
-                                {formatTime(c.starts_at)}
-                                <span className="text-muted-foreground">–</span>
-                                {formatTime(c.ends_at)}
-                              </span>
-                              <div className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2">
-                                {canManage ? (
-                                  <Checkbox
-                                    checked={isSelected}
-                                    onCheckedChange={() => toggleSelected(c.id)}
-                                    onClick={(e) => e.stopPropagation()}
-                                    className="shrink-0 data-[state=checked]:border-[#a3b693] data-[state=checked]:bg-[#a3b693]"
-                                    aria-label={`Select ${c.name}`}
-                                  />
-                                ) : null}
-                                <div className="min-w-0 flex-1">
-                                  <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                                    <p className="truncate font-display text-sm font-semibold text-foreground">
-                                      {c.name}
-                                    </p>
-                                    <TypeBadge type={badgeType} size="sm" className="shrink-0" />
-                                  </div>
-                                  <p className="flex min-w-0 items-center gap-1 truncate text-[11px] text-muted-foreground">
-                                    <MapPin className="h-3 w-3 shrink-0" aria-hidden />
-                                    {c.location?.trim() || "—"}
-                                  </p>
-                                </div>
+                        return list.map((c, i) => {
+                          const badgeType = displayClassType(c.class_type);
+                          const typeTheme = classTypeTheme(badgeType);
+                          const isSelected = selected.has(c.id);
+                          const greyRow = dayKey === todayKey && isClassEnded(c, nowMs);
+                          const guideValue = guideSelectValueForClass(c);
+                          const savingThis = savingGuideClassId === c.id;
+                          const savedFlash = savedGuideFlashId === c.id;
+
+                          return (
+                            <Fragment key={c.id}>
+                              {insertAt === i ? <MasterNowLine nowMs={nowMs} /> : null}
+                              <li className="border-b border-border last:border-b-0">
                                 <div
-                                  className="flex w-[10.5rem] shrink-0 flex-col items-stretch gap-0.5 sm:w-44"
-                                  onClick={(e) => e.stopPropagation()}
-                                  onKeyDown={(e) => e.stopPropagation()}
+                                  role="button"
+                                  tabIndex={0}
+                                  onClick={() => void openEdit(c)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter" || e.key === " ") {
+                                      e.preventDefault();
+                                      void openEdit(c);
+                                    }
+                                  }}
+                                  className={cn(
+                                    "flex cursor-pointer items-stretch border-l-4 transition hover:bg-muted/40",
+                                    typeTheme.tint,
+                                    isSelected && "bg-[#e8efe3]/40",
+                                    greyRow && "opacity-55",
+                                  )}
+                                  style={{ borderLeftColor: typeTheme.accent }}
                                 >
-                                  <Select
-                                    value={guideValue}
-                                    onValueChange={(v) => void saveInlineGuide(c, v)}
-                                    disabled={!canManage || savingThis}
-                                  >
-                                    <SelectTrigger
-                                      className={cn(
-                                        // Override SelectTrigger’s default [&>span]:line-clamp-1 —
-                                        // it was clipping “Unguided” so the final “d” read as “a”.
-                                        "h-8 gap-1 px-2 text-xs [&>span]:line-clamp-none [&>span]:overflow-visible [&>span]:whitespace-nowrap",
-                                        guideValue === "none" && "text-muted-foreground italic",
-                                      )}
-                                      aria-label={`Guide for ${c.name}`}
-                                      title={
-                                        guideValue === "none"
-                                          ? "Unguided"
-                                          : guideSelectOptions.find((o) => o.value === guideValue)
-                                              ?.label
-                                      }
+                                  {/* Time gutter: fixed width + border-r so the divider runs full row height and stacks flush into one continuous day line. */}
+                                  <span className="flex w-[8.75rem] shrink-0 items-center whitespace-nowrap border-r border-border px-2.5 font-mono text-[11px] font-semibold tabular-nums text-foreground sm:text-xs">
+                                    {formatTime(c.starts_at)}
+                                    <span className="text-muted-foreground">–</span>
+                                    {formatTime(c.ends_at)}
+                                  </span>
+                                  <div className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2">
+                                    {canManage ? (
+                                      <Checkbox
+                                        checked={isSelected}
+                                        onCheckedChange={() => toggleSelected(c.id)}
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="shrink-0 data-[state=checked]:border-[#a3b693] data-[state=checked]:bg-[#a3b693]"
+                                        aria-label={`Select ${c.name}`}
+                                      />
+                                    ) : null}
+                                    <div className="min-w-0 flex-1">
+                                      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                                        <p className="truncate font-display text-sm font-semibold text-foreground">
+                                          {c.name}
+                                        </p>
+                                        <TypeBadge type={badgeType} size="sm" className="shrink-0" />
+                                      </div>
+                                      <p className="flex min-w-0 items-center gap-1 truncate text-[11px] text-muted-foreground">
+                                        <MapPin className="h-3 w-3 shrink-0" aria-hidden />
+                                        {c.location?.trim() || "—"}
+                                      </p>
+                                    </div>
+                                    <div
+                                      className="flex w-[10.5rem] shrink-0 flex-col items-stretch gap-0.5 sm:w-44"
+                                      onClick={(e) => e.stopPropagation()}
+                                      onKeyDown={(e) => e.stopPropagation()}
                                     >
-                                      <SelectValue placeholder="Unguided" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="none">Unguided</SelectItem>
-                                      {guideSelectOptions.map((opt) => (
-                                        <SelectItem key={opt.key} value={opt.value}>
-                                          {opt.label}
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                  {savingThis ? (
-                                    <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                                      <Loader2 className="h-3 w-3 animate-spin" /> Saving…
+                                      <Select
+                                        value={guideValue}
+                                        onValueChange={(v) => void saveInlineGuide(c, v)}
+                                        disabled={!canManage || savingThis}
+                                      >
+                                        <SelectTrigger
+                                          className={cn(
+                                            // Override SelectTrigger’s default [&>span]:line-clamp-1 —
+                                            // it was clipping “Unguided” so the final “d” read as “a”.
+                                            "h-8 gap-1 px-2 text-xs [&>span]:line-clamp-none [&>span]:overflow-visible [&>span]:whitespace-nowrap",
+                                            guideValue === "none" && "text-muted-foreground italic",
+                                          )}
+                                          aria-label={`Guide for ${c.name}`}
+                                          title={
+                                            guideValue === "none"
+                                              ? "Unguided"
+                                              : guideSelectOptions.find((o) => o.value === guideValue)
+                                                  ?.label
+                                          }
+                                        >
+                                          <SelectValue placeholder="Unguided" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="none">Unguided</SelectItem>
+                                          {guideSelectOptions.map((opt) => (
+                                            <SelectItem key={opt.key} value={opt.value}>
+                                              {opt.label}
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                      {savingThis ? (
+                                        <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                                          <Loader2 className="h-3 w-3 animate-spin" /> Saving…
+                                        </span>
+                                      ) : savedFlash ? (
+                                        <span className="flex items-center gap-1 text-[10px] font-medium text-[#5a7a4a]">
+                                          <Check className="h-3 w-3" /> Saved
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                    <span className="shrink-0 tabular-nums text-xs font-semibold text-muted-foreground">
+                                      {c.booked_count ?? 0}/{c.capacity}
                                     </span>
-                                  ) : savedFlash ? (
-                                    <span className="flex items-center gap-1 text-[10px] font-medium text-[#5a7a4a]">
-                                      <Check className="h-3 w-3" /> Saved
-                                    </span>
-                                  ) : null}
+                                  </div>
                                 </div>
-                                <span className="shrink-0 tabular-nums text-xs font-semibold text-muted-foreground">
-                                  {c.booked_count ?? 0}/{c.capacity}
-                                </span>
-                              </div>
-                            </div>
-                          </li>
-                        );
-                      })}
+                              </li>
+                              {insertAt === list.length && i === list.length - 1 ? (
+                                <MasterNowLine nowMs={nowMs} />
+                              ) : null}
+                            </Fragment>
+                          );
+                        });
+                      })()}
                     </ul>
                   )}
                 </section>
