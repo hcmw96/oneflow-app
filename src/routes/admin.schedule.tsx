@@ -1,12 +1,13 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CalendarDays,
-  ChevronDown,
+  Check,
+  ChevronLeft,
+  ChevronRight,
   Filter,
   Loader2,
   MapPin,
-  Pencil,
   Plus,
   Search,
   Trash2,
@@ -16,7 +17,7 @@ import {
 import { toast } from "sonner";
 import { PageHeader } from "@/components/admin/PageHeader";
 import { StatCard } from "@/components/admin/StatCard";
-import { CLASS_TYPE_THEME_BY_SLUG, classTypeBadgeClass } from "@/lib/allowedClassTypes";
+import { TypeBadge } from "@/components/TypeBadge";
 import { getUser, supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/auth";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
@@ -28,6 +29,7 @@ import {
   type CustomClassType,
 } from "@/lib/classTypeOptions";
 import { displayClassType } from "@/types/studio";
+import { classTypeTheme } from "@/lib/classTypeTheme";
 import {
   createClassTicketProduct,
   parseTicketPriceZar,
@@ -39,7 +41,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
@@ -67,18 +68,12 @@ import {
 } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useNowMs } from "@/hooks/use-now-ms";
-import { useScrollToLiveClass } from "@/hooks/use-scroll-to-live-class";
-import {
-  isClassEnded,
-  orderClassesForLiveDay,
-  pickFocusClassId,
-  type LiveClassRow,
-} from "@/lib/liveClassList";
-import { civilAddDaysYmd, dayBoundsForDateKey, todayDateKey } from "@/lib/timezone";
+import { isClassEnded } from "@/lib/liveClassList";
+import { civilAddDaysYmd, dayBoundsForDateKey } from "@/lib/timezone";
 
 export const Route = createFileRoute("/admin/schedule")({
   head: () => ({
-    meta: [{ title: "Schedule — One Flow Admin" }],
+    meta: [{ title: "Master — One Flow Admin" }],
   }),
   component: SchedulePage,
 });
@@ -119,7 +114,6 @@ type GuideOption = GuideSelectRow;
 /** Flat option for toolbar / reassign (value follows `guideFkTarget`). */
 type GuideSelectOption = { value: string; label: string; key: string };
 
-type TabKey = "today" | "week" | "upcoming";
 type ClassDialogMode = "create" | "edit" | "bulk-reassign";
 
 /** Resolve `classes.guide_id` to `guides.id` when options use guides PK as `SelectItem` value. */
@@ -164,17 +158,9 @@ function jhbDayKey(iso: string): string {
   return new Date(iso).toLocaleDateString("en-CA", { timeZone: TZ });
 }
 
-/** Add calendar days in Africa/Johannesburg (no DST). */
-function jhbOffsetDayKey(dayKey: string, deltaDays: number): string {
-  const [y, m, d] = dayKey.split("-").map(Number);
-  const dt = new Date(Date.UTC(y, (m || 1) - 1, d || 1, 12, 0, 0));
-  dt.setUTCDate(dt.getUTCDate() + deltaDays);
-  return dt.toLocaleDateString("en-CA", { timeZone: TZ });
-}
-
+/** e.g. "Friday, 7 August" (sentence case for dialogs). */
 function jhbDayLabel(dayKey: string): string {
   const [y, m, d] = dayKey.split("-").map(Number);
-  // Build a noon UTC date and format in JHB to avoid DST/edge issues (none in JHB anyway).
   const dt = new Date(Date.UTC(y, (m || 1) - 1, d || 1, 12, 0, 0));
   return dt.toLocaleDateString("en-ZA", {
     timeZone: TZ,
@@ -184,21 +170,32 @@ function jhbDayLabel(dayKey: string): string {
   });
 }
 
-/** Within calendar “today” (JHB), in-progress + upcoming first, ended at bottom. */
-function orderClassesForLiveViewIfToday(
-  list: ClassRow[],
-  dayKey: string,
-  todayKey: string,
-  tab: TabKey,
-  todaySubDay: number,
-  nowMs: number,
-): ClassRow[] {
-  const isLiveDay =
-    todaySubDay === 0 && dayKey === todayKey && (tab === "today" || tab === "week");
-  if (!isLiveDay) {
-    return [...list].sort((a, b) => a.starts_at.localeCompare(b.starts_at));
-  }
-  return orderClassesForLiveDay(list as LiveClassRow[], nowMs) as ClassRow[];
+/** e.g. "FRIDAY, 07 AUGUST" */
+function masterDayHeaderLabel(dayKey: string): string {
+  const [y, m, d] = dayKey.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, (m || 1) - 1, d || 1, 12, 0, 0));
+  const weekday = dt
+    .toLocaleDateString("en-GB", { timeZone: TZ, weekday: "long" })
+    .toUpperCase();
+  const day = dt.toLocaleDateString("en-GB", { timeZone: TZ, day: "2-digit" });
+  const month = dt
+    .toLocaleDateString("en-GB", { timeZone: TZ, month: "long" })
+    .toUpperCase();
+  return `${weekday}, ${day} ${month}`;
+}
+
+function weekRangeLabel(startKey: string, endKey: string): string {
+  const fmt = (key: string, withYear: boolean) => {
+    const [y, m, d] = key.split("-").map(Number);
+    const dt = new Date(Date.UTC(y, (m || 1) - 1, d || 1, 12, 0, 0));
+    return dt.toLocaleDateString("en-GB", {
+      timeZone: TZ,
+      day: "numeric",
+      month: "short",
+      ...(withYear ? { year: "numeric" as const } : {}),
+    });
+  };
+  return `${fmt(startKey, false)} – ${fmt(endKey, true)}`;
 }
 
 function formatTime(iso: string): string {
@@ -227,12 +224,12 @@ function startOfWeekJhbDayKey(): string {
   return start.toLocaleDateString("en-CA", { timeZone: TZ });
 }
 
-function endOfWeekJhbDayKey(): string {
-  const startKey = startOfWeekJhbDayKey();
-  const [y, m, d] = startKey.split("-").map(Number);
-  const dt = new Date(Date.UTC(y, (m || 1) - 1, d || 1, 12, 0, 0));
-  dt.setUTCDate(dt.getUTCDate() + 6);
-  return dt.toLocaleDateString("en-CA", { timeZone: TZ });
+function endOfWeekJhbDayKey(startKey = startOfWeekJhbDayKey()): string {
+  return civilAddDaysYmd(startKey, 6);
+}
+
+function weekDayKeys(weekStartKey: string): string[] {
+  return Array.from({ length: 7 }, (_, i) => civilAddDaysYmd(weekStartKey, i));
 }
 
 /** Inclusive JHB calendar-day filter (YYYY-MM-DD from `<input type="date">`). */
@@ -253,28 +250,25 @@ function classMatchesGuideFilter(c: ClassRow, guideFilter: string, guides: Guide
   return c.guide_id === g.guide_id || c.guide_id === g.profile_id;
 }
 
-const TYPE_BADGE_CLASS: Record<string, string> = Object.fromEntries(
-  (Object.keys(CLASS_TYPE_THEME_BY_SLUG) as Array<keyof typeof CLASS_TYPE_THEME_BY_SLUG>).map(
-    (slug) => [slug, classTypeBadgeClass(slug)],
-  ),
-);
-
 function SchedulePage() {
-  const { profile } = useAuth();
+  const navigate = useNavigate();
+  const { profile, profileReady } = useAuth();
   const role = profile?.role ?? null;
+  const roleLower = (role ?? "").toLowerCase();
+  /** Match customers/payouts: director || management (no separate "manager" role). */
+  const canAccessMaster = roleLower === "director" || roleLower === "management";
+  const canManage = canAccessMaster;
+
   const [rows, setRows] = useState<ClassRow[]>([]);
   /** Loaded once; paired with `guideSelectOptions` for display. */
   const [guides, setGuides] = useState<GuideOption[]>([]);
   /** Whether `classes.guide_id` stores `guides.id` or legacy `profiles.id`. */
   const [guideFkTarget, setGuideFkTarget] = useState<"guides" | "profiles">("guides");
   const [loading, setLoading] = useState(true);
-  const isGuide = (role ?? "").toLowerCase() === "guide";
-  const canManage = !isGuide;
+  const [stats, setStats] = useState({ today: 0, thisWeek: 0, upcoming: 0 });
 
-  // UI state
-  const [tab, setTab] = useState<TabKey>("today");
-  /** When tab is "today": 0 = today, 1 = yesterday, 2 = day before yesterday (JHB). */
-  const [todaySubDay, setTodaySubDay] = useState(0);
+  // UI state — weekOffset 0 = current Mon–Sun week (JHB)
+  const [weekOffset, setWeekOffset] = useState(0);
   const [q, setQ] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [locationFilter, setLocationFilter] = useState<string>("all");
@@ -282,8 +276,12 @@ function SchedulePage() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [occupancyFilter, setOccupancyFilter] = useState<"all" | "has_bookings" | "empty">("all");
-  const [collapsedDays, setCollapsedDays] = useState<Record<string, boolean>>({});
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  /** Class id currently writing an inline guide change. */
+  const [savingGuideClassId, setSavingGuideClassId] = useState<string | null>(null);
+  /** Brief “Saved” flash after inline guide write. */
+  const [savedGuideFlashId, setSavedGuideFlashId] = useState<string | null>(null);
+  const savedGuideFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Dialog state
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -393,13 +391,52 @@ function SchedulePage() {
     [customClassTypes],
   );
 
+  const todayKey = todayJhbDayKey();
+  const thisWeekStart = startOfWeekJhbDayKey();
+  const thisWeekEnd = endOfWeekJhbDayKey(thisWeekStart);
+  const viewWeekStart = civilAddDaysYmd(thisWeekStart, weekOffset * 7);
+  const viewWeekEnd = endOfWeekJhbDayKey(viewWeekStart);
+  const nowMs = useNowMs();
+
+  const loadStats = useCallback(async () => {
+    const todayBounds = dayBoundsForDateKey(todayKey, TZ);
+    const weekStartIso = dayBoundsForDateKey(thisWeekStart, TZ).startUtcIso;
+    const weekEndExclusive = dayBoundsForDateKey(civilAddDaysYmd(thisWeekEnd, 1), TZ).startUtcIso;
+    const nowIso = new Date().toISOString();
+    const notCancelled = "is_cancelled.is.null,is_cancelled.eq.false";
+
+    const [todayRes, weekRes, upcomingRes] = await Promise.all([
+      supabase
+        .from("classes")
+        .select("id", { count: "exact", head: true })
+        .gte("starts_at", todayBounds.startUtcIso)
+        .lte("starts_at", todayBounds.endUtcIso)
+        .or(notCancelled),
+      supabase
+        .from("classes")
+        .select("id", { count: "exact", head: true })
+        .gte("starts_at", weekStartIso)
+        .lt("starts_at", weekEndExclusive)
+        .or(notCancelled),
+      supabase
+        .from("classes")
+        .select("id", { count: "exact", head: true })
+        .gte("starts_at", nowIso)
+        .or(notCancelled),
+    ]);
+
+    setStats({
+      today: todayRes.count ?? 0,
+      thisWeek: weekRes.count ?? 0,
+      upcoming: upcomingRes.count ?? 0,
+    });
+  }, [todayKey, thisWeekStart, thisWeekEnd]);
+
   const load = useCallback(async () => {
     setLoading(true);
-    // Do NOT load oldest-first without a date floor: with 5k+ historical rows a
-    // limit of 2000 never reaches today/upcoming. Start from "day before yesterday"
-    // (Today tab can show those days) and take the next 3000 sessions forward.
-    const fromKey = civilAddDaysYmd(todayDateKey(TZ), -2);
-    const fromIso = dayBoundsForDateKey(fromKey, TZ).startUtcIso;
+    // Scope to the selected Mon–Sun week only (not all upcoming).
+    const fromIso = dayBoundsForDateKey(viewWeekStart, TZ).startUtcIso;
+    const toExclusiveIso = dayBoundsForDateKey(civilAddDaysYmd(viewWeekEnd, 1), TZ).startUtcIso;
 
     const { data, error } = await supabase
       .from("classes")
@@ -407,8 +444,8 @@ function SchedulePage() {
         "id, name, class_type, location, starts_at, ends_at, capacity, booked_count, guide_id, guide_name, description, is_cancelled, product_id, recurring_group_id",
       )
       .gte("starts_at", fromIso)
-      .order("starts_at", { ascending: true })
-      .limit(3000);
+      .lt("starts_at", toExclusiveIso)
+      .order("starts_at", { ascending: true });
 
     if (error) {
       console.error("classes load failed", error);
@@ -419,11 +456,17 @@ function SchedulePage() {
     }
     setRows((data ?? []) as ClassRow[]);
     setLoading(false);
-  }, []);
+  }, [viewWeekStart, viewWeekEnd]);
 
   useEffect(() => {
+    if (!canAccessMaster) return;
     void load();
-  }, [load]);
+  }, [load, canAccessMaster]);
+
+  useEffect(() => {
+    if (!canAccessMaster) return;
+    void loadStats();
+  }, [loadStats, canAccessMaster]);
 
   useEffect(() => {
     if (!guides.length || !rows.length) return;
@@ -520,66 +563,22 @@ function SchedulePage() {
     return (fromMap ?? c.guide_name ?? "").trim() || "—";
   };
 
-  // Stats
-  const todayKey = todayJhbDayKey();
-  const weekStart = startOfWeekJhbDayKey();
-  const weekEnd = endOfWeekJhbDayKey();
-  const nowMs = useNowMs();
-  const liveViewEnabled = tab === "today" && todaySubDay === 0;
-
-  const stats = useMemo(() => {
-    let today = 0;
-    let thisWeek = 0;
-    let upcoming = 0;
-    for (const c of rows) {
-      if (c.is_cancelled) continue;
-      const dk = jhbDayKey(c.starts_at);
-      if (dk === todayKey) today += 1;
-      if (dk >= weekStart && dk <= weekEnd) thisWeek += 1;
-      if (new Date(c.starts_at).getTime() >= nowMs) upcoming += 1;
-    }
-    return { today, thisWeek, upcoming };
-  }, [rows, todayKey, weekStart, weekEnd, nowMs]);
-
   const hasDateFilter = Boolean(dateFrom || dateTo);
 
-  // Tab + date filter (JHB calendar days)
-  const tabFiltered = useMemo(() => {
+  // Week list + optional date filter (JHB calendar days)
+  const weekFiltered = useMemo(() => {
     return rows.filter((c) => {
       if (c.is_cancelled) return false;
-      const startMs = new Date(c.starts_at).getTime();
       const dk = jhbDayKey(c.starts_at);
-
       if (hasDateFilter && !matchesJhbDateFilter(dk, dateFrom, dateTo)) return false;
-
-      if (hasDateFilter) {
-        switch (tab) {
-          case "upcoming":
-            return startMs >= nowMs;
-          case "week":
-            return dk >= weekStart && dk <= weekEnd;
-          case "today":
-            return true;
-        }
-      }
-
-      switch (tab) {
-        case "today": {
-          const anchor = jhbOffsetDayKey(todayKey, -todaySubDay);
-          return dk === anchor;
-        }
-        case "week":
-          return dk >= weekStart && dk <= weekEnd;
-        case "upcoming":
-          return startMs >= nowMs;
-      }
+      return true;
     });
-  }, [rows, tab, todayKey, weekStart, weekEnd, nowMs, todaySubDay, dateFrom, dateTo, hasDateFilter]);
+  }, [rows, dateFrom, dateTo, hasDateFilter]);
 
   // Search + filter bar
   const filtered = useMemo(() => {
     const ql = q.trim().toLowerCase();
-    return tabFiltered.filter((c) => {
+    return weekFiltered.filter((c) => {
       if (ql) {
         const guideDisp = resolveGuideDisplay(c).toLowerCase();
         const hay = `${c.name} ${guideDisp}`.toLowerCase();
@@ -593,57 +592,24 @@ function SchedulePage() {
       if (occupancyFilter === "empty" && booked > 0) return false;
       return true;
     });
-  }, [tabFiltered, q, typeFilter, locationFilter, guideFilter, occupancyFilter, guides, guideMap]);
+  }, [weekFiltered, q, typeFilter, locationFilter, guideFilter, occupancyFilter, guides, guideMap]);
 
-  const sorted = useMemo(() => {
-    const copy = [...filtered];
-    copy.sort((a, b) => a.starts_at.localeCompare(b.starts_at));
-    return copy;
-  }, [filtered]);
-
-  // Group by JHB day; week tab lists today first, then future weekdays, then Mon–Sun past days collapsed by default.
-  const grouped = useMemo(() => {
+  /** Mon–Sun sections for the selected week (include empty days). */
+  const daySections = useMemo(() => {
     const map = new Map<string, ClassRow[]>();
-    for (const c of sorted) {
+    for (const c of filtered) {
       const k = jhbDayKey(c.starts_at);
       if (!map.has(k)) map.set(k, []);
       map.get(k)!.push(c);
     }
-
-    let entries: [string, ClassRow[]][] = [...map.entries()].map(([k, list]) => [
-      k,
-      orderClassesForLiveViewIfToday(list, k, todayKey, tab, todaySubDay, nowMs),
-    ]);
-
-    if (tab === "week") {
-      const inRange = entries.filter(([k]) => k >= weekStart && k <= weekEnd);
-      const outRange = entries.filter(([k]) => k < weekStart || k > weekEnd);
-      const beforeToday = inRange
-        .filter(([k]) => k < todayKey)
-        .sort((a, b) => a[0].localeCompare(b[0]));
-      const todayEnt = inRange.filter(([k]) => k === todayKey);
-      const afterToday = inRange
-        .filter(([k]) => k > todayKey)
-        .sort((a, b) => a[0].localeCompare(b[0]));
-      entries = [...todayEnt, ...afterToday, ...beforeToday, ...outRange];
-    } else {
-      entries.sort((a, b) => a[0].localeCompare(b[0]));
+    for (const list of map.values()) {
+      list.sort((a, b) => a.starts_at.localeCompare(b.starts_at));
     }
-    return entries;
-  }, [sorted, tab, todayKey, weekStart, weekEnd, todaySubDay, nowMs]);
-
-  const focusClassId = useMemo(() => {
-    if (!liveViewEnabled) return null;
-    const todayList = grouped.find(([k]) => k === todayKey)?.[1];
-    if (!todayList?.length) return null;
-    return pickFocusClassId(todayList, nowMs);
-  }, [grouped, liveViewEnabled, todayKey, nowMs]);
-
-  useScrollToLiveClass(focusClassId, liveViewEnabled && !loading);
-
-  useEffect(() => {
-    if (tab !== "today") setTodaySubDay(0);
-  }, [tab]);
+    return weekDayKeys(viewWeekStart).map((dayKey) => ({
+      dayKey,
+      list: map.get(dayKey) ?? [],
+    }));
+  }, [filtered, viewWeekStart]);
 
   const classesFilterCount =
     (q.trim() ? 1 : 0) +
@@ -731,6 +697,45 @@ function SchedulePage() {
       : null;
     const gName = gid ? (guideMap.get(gid) ?? null) : null;
     return { guide_id: gid, guide_name: gName };
+  };
+
+  const guideSelectValueForClass = (c: ClassRow): string => {
+    if (!c.guide_id) return "none";
+    if (guideFkTarget === "profiles") {
+      const g = guides.find((x) => x.guide_id === c.guide_id || x.profile_id === c.guide_id);
+      return g?.profile_id || "none";
+    }
+    const tid = guidesTableIdForClassGuideId(c.guide_id, guides);
+    return tid !== GUIDE_NONE ? tid : "none";
+  };
+
+  const saveInlineGuide = async (c: ClassRow, selectValue: string) => {
+    if (!canManage) return;
+    const current = guideSelectValueForClass(c);
+    if (normalizeGuideSelectValue(selectValue) === normalizeGuideSelectValue(current)) return;
+
+    const { guide_id, guide_name } = resolveGuideIdAndName(selectValue);
+    setSavingGuideClassId(c.id);
+    const { error } = await supabase
+      .from("classes")
+      .update({ guide_id, guide_name })
+      .eq("id", c.id);
+    setSavingGuideClassId(null);
+
+    if (error) {
+      console.error("inline guide save failed", error);
+      toast.error(supabaseErrorMessage(error, "Could not update guide"));
+      return;
+    }
+
+    setRows((prev) =>
+      prev.map((row) => (row.id === c.id ? { ...row, guide_id, guide_name } : row)),
+    );
+    if (savedGuideFlashTimer.current) clearTimeout(savedGuideFlashTimer.current);
+    setSavedGuideFlashId(c.id);
+    savedGuideFlashTimer.current = setTimeout(() => {
+      setSavedGuideFlashId((id) => (id === c.id ? null : id));
+    }, 1600);
   };
 
   const openCreate = () => {
@@ -867,6 +872,7 @@ function SchedulePage() {
         setEditingStartsAt(null);
         setGuideChangeScope(null);
         await load();
+        void loadStats();
         return;
       }
 
@@ -906,6 +912,7 @@ function SchedulePage() {
       setEditingStartsAt(null);
       setGuideChangeScope(null);
       await load();
+      void loadStats();
     } catch (e: unknown) {
       console.error("class save failed", e);
       toast.error(`Save failed: ${supabaseErrorMessage(e, "Save failed — please try again")}`);
@@ -1008,6 +1015,7 @@ function SchedulePage() {
       setDialogOpen(false);
       setEditingId(null);
       await load();
+      void loadStats();
     } catch (e: unknown) {
       console.error("class save failed", e);
       toast.error(`Save failed: ${supabaseErrorMessage(e, "Save failed — please try again")}`);
@@ -1067,6 +1075,7 @@ function SchedulePage() {
     setDialogOpen(false);
     setEditingId(null);
     await load();
+    void loadStats();
   };
 
   // Bulk actions
@@ -1123,6 +1132,7 @@ function SchedulePage() {
     setBulkCancelOpen(false);
     clearSelected();
     await load();
+    void loadStats();
   };
 
   const executeBulkReassign = async (scope: RecurringScope) => {
@@ -1166,6 +1176,7 @@ function SchedulePage() {
       setGuideId(GUIDE_DIALOG_NONE);
       clearSelected();
       await load();
+      void loadStats();
     } catch (error) {
       console.error("bulk reassign failed", error);
       toast.error(supabaseErrorMessage(error, "Could not reassign classes"));
@@ -1197,15 +1208,26 @@ function SchedulePage() {
     }
   };
 
+  useEffect(() => {
+    if (!profileReady) return;
+    if (!canAccessMaster) {
+      navigate({ to: "/admin/check-in", replace: true });
+    }
+  }, [profileReady, canAccessMaster, navigate]);
+
+  if (!profileReady || !canAccessMaster) {
+    return (
+      <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted-foreground">
+        Checking access…
+      </div>
+    );
+  }
+
   return (
     <div>
       <PageHeader
-        title="Schedule"
-        description={
-          isGuide
-            ? "Scheduled sessions (view only)"
-            : "Browse, edit, and cancel scheduled sessions. Class types are chosen when creating or editing a class."
-        }
+        title="Master"
+        description="Create, edit and schedule classes across the week. Book members in from Bookings."
         actions={
           canManage ? (
             <Button
@@ -1229,47 +1251,46 @@ function SchedulePage() {
         <StatCard label="Total upcoming" value={stats.upcoming.toLocaleString()} />
       </div>
 
-      <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)}>
-        <TabsList className="mb-3 flex flex-wrap">
-          <TabsTrigger value="today">Today</TabsTrigger>
-          <TabsTrigger value="week">This Week</TabsTrigger>
-          <TabsTrigger value="upcoming">All Upcoming</TabsTrigger>
-        </TabsList>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="gap-1"
+            onClick={() => setWeekOffset((o) => o - 1)}
+            aria-label="Previous week"
+          >
+            <ChevronLeft className="h-4 w-4" />
+            Prev
+          </Button>
+          <Button
+            type="button"
+            variant={weekOffset === 0 ? "default" : "outline"}
+            size="sm"
+            className={weekOffset === 0 ? "bg-[#a3b693] hover:bg-[#8fa67d]" : ""}
+            onClick={() => setWeekOffset(0)}
+          >
+            This week
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="gap-1"
+            onClick={() => setWeekOffset((o) => o + 1)}
+            aria-label="Next week"
+          >
+            Next
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+        <p className="text-sm font-medium text-muted-foreground">
+          {weekRangeLabel(viewWeekStart, viewWeekEnd)}
+        </p>
+      </div>
 
-        {tab === "today" && !hasDateFilter ? (
-          <div className="mb-4 flex flex-wrap items-center gap-2">
-            <span className="text-xs font-medium text-muted-foreground">View:</span>
-            <Button
-              type="button"
-              size="sm"
-              variant={todaySubDay === 0 ? "default" : "outline"}
-              className={todaySubDay === 0 ? "bg-[#a3b693] hover:bg-[#8fa67d]" : ""}
-              onClick={() => setTodaySubDay(0)}
-            >
-              Today
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant={todaySubDay === 1 ? "default" : "outline"}
-              className={todaySubDay === 1 ? "bg-[#a3b693] hover:bg-[#8fa67d]" : ""}
-              onClick={() => setTodaySubDay(1)}
-            >
-              Yesterday
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant={todaySubDay === 2 ? "default" : "outline"}
-              className={todaySubDay === 2 ? "bg-[#a3b693] hover:bg-[#8fa67d]" : ""}
-              onClick={() => setTodaySubDay(2)}
-            >
-              Day before yesterday
-            </Button>
-          </div>
-        ) : null}
-
-        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
           <div className="flex flex-wrap items-center gap-2 sm:mr-auto sm:w-full sm:max-w-none">
             <span className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/40 px-2 py-1 text-xs font-semibold text-muted-foreground">
               <Filter className="h-3.5 w-3.5" aria-hidden />
@@ -1376,151 +1397,142 @@ function SchedulePage() {
           </Select>
         </div>
 
-        <TabsContent
-          value={tab}
-          className={cn("mt-0", canManage && selected.size > 0 && "pb-28")}
-        >
+        <div className={cn(canManage && selected.size > 0 && "pb-28")}>
           {loading ? (
             <div className="space-y-3">
               {Array.from({ length: 4 }).map((_, i) => (
-                <Skeleton key={i} className="h-20 w-full rounded-2xl" />
+                <Skeleton key={i} className="h-12 w-full rounded-xl" />
               ))}
             </div>
-          ) : grouped.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-border bg-card py-16 text-center">
-              <CalendarDays className="h-10 w-10 text-muted-foreground" strokeWidth={1.5} />
-              <p className="text-sm text-muted-foreground">No classes match your filters.</p>
-            </div>
           ) : (
-            <div className="space-y-4">
-              {grouped.map(([dayKey, list]) => {
-                const isPastWeekDay =
-                  tab === "week" && dayKey < todayKey && dayKey >= weekStart && dayKey <= weekEnd;
-                const collapsed = isPastWeekDay
-                  ? collapsedDays[dayKey] !== false
-                  : collapsedDays[dayKey] === true;
-                return (
-                  <section
-                    key={dayKey}
-                    className="overflow-hidden rounded-2xl border border-[#c5d4b8]/80 bg-card shadow-sm"
-                  >
-                    <button
-                      type="button"
-                      aria-expanded={!collapsed}
-                      onClick={() =>
-                        setCollapsedDays((prev) => ({ ...prev, [dayKey]: !collapsed }))
-                      }
-                      className="flex w-full items-center justify-between gap-3 bg-[#e8efe3]/60 px-4 py-3 text-left transition-colors hover:bg-[#e8efe3]"
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate font-display text-sm font-bold uppercase tracking-wider text-[#3d4f36]">
-                          {jhbDayLabel(dayKey)}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {list.length} class{list.length === 1 ? "" : "es"}
-                        </p>
-                      </div>
-                      <ChevronDown
-                        className={cn(
-                          "h-4 w-4 shrink-0 text-[#3d4f36] transition-transform",
-                          collapsed && "-rotate-90",
-                        )}
-                      />
-                    </button>
-                    {!collapsed && (
-                      <ul className="divide-y divide-border">
-                        {list.map((c) => {
-                          const guideDisp = resolveGuideDisplay(c);
-                          const typeBadge =
-                            TYPE_BADGE_CLASS[c.class_type] ?? "bg-muted text-foreground";
-                          const isSelected = selected.has(c.id);
-                          const startedPast = isClassEnded(c, nowMs);
-                          const greyRow =
-                            startedPast &&
-                            ((tab === "today" && todaySubDay === 0 && dayKey === todayKey) ||
-                              (tab === "week" && dayKey === todayKey));
-                          return (
-                            <li
-                              key={c.id}
-                              data-live-class-id={c.id}
+            <div className="space-y-6">
+              {daySections.map(({ dayKey, list }) => (
+                <section key={dayKey}>
+                  <div className="mb-2 flex items-baseline justify-between gap-3 border-b border-border pb-1.5">
+                    <h2 className="font-display text-xs font-bold uppercase tracking-wider text-[#3d4f36]">
+                      {masterDayHeaderLabel(dayKey)}
+                      <span className="ml-2 font-sans font-medium normal-case tracking-normal text-muted-foreground">
+                        — {list.length} class{list.length === 1 ? "" : "es"}
+                      </span>
+                    </h2>
+                    {dayKey === todayKey ? (
+                      <span className="text-[10px] font-semibold uppercase tracking-wide text-[#a3b693]">
+                        Today
+                      </span>
+                    ) : null}
+                  </div>
+                  {list.length === 0 ? (
+                    <p className="px-1 py-2 text-xs text-muted-foreground">No classes</p>
+                  ) : (
+                    <ul className="overflow-hidden rounded-xl border border-border bg-card">
+                      {list.map((c) => {
+                        const badgeType = displayClassType(c.class_type);
+                        const typeTheme = classTypeTheme(badgeType);
+                        const isSelected = selected.has(c.id);
+                        const greyRow = dayKey === todayKey && isClassEnded(c, nowMs);
+                        const guideValue = guideSelectValueForClass(c);
+                        const savingThis = savingGuideClassId === c.id;
+                        const savedFlash = savedGuideFlashId === c.id;
+
+                        return (
+                          <li key={c.id} className="border-b border-border last:border-b-0">
+                            <div
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => void openEdit(c)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  void openEdit(c);
+                                }
+                              }}
                               className={cn(
-                                "flex items-start gap-3 px-4 py-3 hover:bg-muted/30",
+                                "flex cursor-pointer items-center gap-2 border-l-4 px-3 py-2 transition hover:bg-muted/40",
+                                typeTheme.tint,
                                 isSelected && "bg-[#e8efe3]/40",
-                                greyRow && "opacity-[0.55]",
+                                greyRow && "opacity-55",
                               )}
+                              style={{ borderLeftColor: typeTheme.accent }}
                             >
-                              {canManage && (
+                              {canManage ? (
                                 <Checkbox
                                   checked={isSelected}
                                   onCheckedChange={() => toggleSelected(c.id)}
-                                  className="mt-1.5 data-[state=checked]:border-[#a3b693] data-[state=checked]:bg-[#a3b693]"
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="shrink-0 data-[state=checked]:border-[#a3b693] data-[state=checked]:bg-[#a3b693]"
                                   aria-label={`Select ${c.name}`}
                                 />
-                              )}
+                              ) : null}
+                              <span className="w-[5.5rem] shrink-0 font-mono text-[11px] font-semibold tabular-nums text-foreground sm:w-28 sm:text-xs">
+                                {formatTime(c.starts_at)}
+                                <span className="text-muted-foreground">–</span>
+                                {formatTime(c.ends_at)}
+                              </span>
                               <div className="min-w-0 flex-1">
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <span className="font-mono text-sm font-bold tabular-nums text-[#a3b693]">
-                                    {formatTime(c.starts_at)}
-                                  </span>
-                                  <span className="text-xs text-muted-foreground">
-                                    – {formatTime(c.ends_at)}
-                                  </span>
-                                  <span
-                                    className={cn(
-                                      "rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
-                                      typeBadge,
-                                    )}
-                                  >
-                                    {displayClassType(c.class_type)}
-                                  </span>
+                                <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                                  <p className="truncate font-display text-sm font-semibold text-foreground">
+                                    {c.name}
+                                  </p>
+                                  <TypeBadge type={badgeType} size="sm" className="shrink-0" />
                                 </div>
-                                <p className="mt-0.5 truncate font-display text-base font-semibold">
-                                  {c.name}
-                                </p>
-                                <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
-                                  <span className="inline-flex items-center gap-1">
-                                    <span
-                                      className={cn(
-                                        "font-medium",
-                                        guideDisp === "—" && "italic text-amber-600",
-                                      )}
-                                    >
-                                      {guideDisp}
-                                    </span>
-                                  </span>
-                                  <span className="inline-flex items-center gap-1">
-                                    <MapPin className="h-3 w-3" />
-                                    {c.location || "—"}
-                                  </span>
-                                  <span className="inline-flex items-center gap-1 tabular-nums">
-                                    <Users className="h-3 w-3" />
-                                    {c.booked_count}/{c.capacity}
-                                  </span>
+                                <p className="flex min-w-0 items-center gap-1 truncate text-[11px] text-muted-foreground">
+                                  <MapPin className="h-3 w-3 shrink-0" aria-hidden />
+                                  {c.location?.trim() || "—"}
                                 </p>
                               </div>
-                              {canManage && (
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  size="sm"
-                                  className="shrink-0 gap-1"
-                                  onClick={() => openEdit(c)}
+                              <div
+                                className="flex w-[9.5rem] shrink-0 flex-col items-stretch gap-0.5 sm:w-44"
+                                onClick={(e) => e.stopPropagation()}
+                                onKeyDown={(e) => e.stopPropagation()}
+                              >
+                                <Select
+                                  value={guideValue}
+                                  onValueChange={(v) => void saveInlineGuide(c, v)}
+                                  disabled={!canManage || savingThis}
                                 >
-                                  <Pencil className="h-3.5 w-3.5" /> Edit
-                                </Button>
-                              )}
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    )}
-                  </section>
-                );
-              })}
+                                  <SelectTrigger
+                                    className={cn(
+                                      "h-8 text-xs",
+                                      guideValue === "none" && "text-muted-foreground italic",
+                                    )}
+                                    aria-label={`Guide for ${c.name}`}
+                                  >
+                                    <SelectValue placeholder="Unguided" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="none">— Unguided</SelectItem>
+                                    {guideSelectOptions.map((opt) => (
+                                      <SelectItem key={opt.key} value={opt.value}>
+                                        {opt.label}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                {savingThis ? (
+                                  <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                                    <Loader2 className="h-3 w-3 animate-spin" /> Saving…
+                                  </span>
+                                ) : savedFlash ? (
+                                  <span className="flex items-center gap-1 text-[10px] font-medium text-[#5a7a4a]">
+                                    <Check className="h-3 w-3" /> Saved
+                                  </span>
+                                ) : null}
+                              </div>
+                              <span className="shrink-0 tabular-nums text-xs font-semibold text-muted-foreground">
+                                {c.booked_count ?? 0}/{c.capacity}
+                              </span>
+                              <Users className="hidden h-3.5 w-3.5 shrink-0 text-muted-foreground sm:block" aria-hidden />
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </section>
+              ))}
             </div>
           )}
-        </TabsContent>
-      </Tabs>
+        </div>
 
       {canManage && selected.size > 0 ? (
         <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">

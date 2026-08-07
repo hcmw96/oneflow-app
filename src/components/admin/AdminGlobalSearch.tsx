@@ -257,7 +257,7 @@ export function AdminGlobalSearch({ className }: { className?: string }) {
               {grouped.classes.length > 0 ? (
                 <section>
                   <p className="mb-2 flex items-center gap-2 px-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">
-                    <Calendar className="h-3.5 w-3.5" aria-hidden /> Schedule
+                    <Calendar className="h-3.5 w-3.5" aria-hidden /> Master
                   </p>
                   <ul className="space-y-1">
                     {grouped.classes.map((h) => (
@@ -313,7 +313,7 @@ export function AdminGlobalSearch({ className }: { className?: string }) {
             className="underline underline-offset-2"
             onClick={() => setOpen(false)}
           >
-            Open schedule
+            Open Master
           </Link>
         </div>
       </SheetContent>

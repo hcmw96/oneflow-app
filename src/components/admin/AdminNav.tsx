@@ -42,10 +42,7 @@ export interface AdminNavItem {
 export const LIMITED_ADMIN_ROUTES = [
   "/admin/check-in",
   "/admin/bookings",
-  "/admin/schedule",
-  // /admin/scheduling redirects to /admin/schedule; keep it allow-listed so
-  // the redirect can complete before the limited-role guard fires.
-  "/admin/scheduling",
+  // Master (/admin/schedule) is director/management only — not in limited set.
 ] as const;
 
 export function isLimitedAdminRole(role: string | null | undefined) {
@@ -90,7 +87,9 @@ export function navItemsForRole(profile: AdminRoleProfile): AdminNavItem[] {
     return adminNavItems.filter((i) => i.to === "/admin/check-in");
   }
   if (isMarketingScopedStaff(profile) && !isLimitedAdminRole(profile.role)) {
-    return adminNavItems.filter((i) => !isMarketingFinancialAdminPath(i.to));
+    return adminNavItems.filter(
+      (i) => !isMarketingFinancialAdminPath(i.to) && i.to !== "/admin/schedule",
+    );
   }
   if (isLimitedAdminRole(profile.role)) {
     const allow = new Set<string>(LIMITED_ADMIN_ROUTES);
@@ -105,7 +104,7 @@ export function navItemsForRole(profile: AdminRoleProfile): AdminNavItem[] {
 export const adminNavItems: AdminNavItem[] = [
   { to: "/admin", label: "Dashboard", icon: LayoutGrid },
   { to: "/admin/check-in", label: "Check-In", icon: QrCode },
-  { to: "/admin/schedule", label: "Schedule", icon: CalendarDays },
+  { to: "/admin/schedule", label: "Master", icon: CalendarDays },
   { to: "/admin/bookings", label: "Bookings", icon: BookOpen },
   { to: "/admin/customers", label: "Customers", icon: Users },
   { to: "/admin/products", label: "Products", icon: Package },
