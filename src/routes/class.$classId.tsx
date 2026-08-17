@@ -9,6 +9,8 @@ import { cn } from "@/lib/utils";
 import { getUser, supabase } from "@/lib/supabase";
 import { customerClassCapacityLabel } from "@/lib/scheduleBooking";
 import { displayClassType } from "@/types/studio";
+import { classTitle, classTypeSlugFor } from "@/lib/classTitle";
+import { useClassCatalog } from "@/contexts/classCatalog";
 
 export const Route = createFileRoute("/class/$classId")({
   component: ClassDetailPage,
@@ -24,7 +26,9 @@ type PaymentMethod = "credit" | "yoco" | "points";
 type ClassDetail = {
   id: string;
   name: string;
+  title_override: string | null;
   class_type: string;
+  class_type_id: string | null;
   location: string;
   starts_at: string;
   ends_at: string;
@@ -35,6 +39,8 @@ type ClassDetail = {
 };
 
 function ClassDetailPage() {
+  // Subscribe so a class-type rename repaints the title and badge.
+  useClassCatalog();
   const { classId } = Route.useParams();
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -50,7 +56,7 @@ function ClassDetailPage() {
       supabase
         .from("classes")
         .select(
-          "id, name, class_type, location, starts_at, ends_at, capacity, booked_count, description, guide_name",
+          "id, name, title_override, class_type, class_type_id, location, starts_at, ends_at, capacity, booked_count, description, guide_name",
         )
         .eq("id", classId)
         .maybeSingle(),
@@ -102,7 +108,7 @@ function ClassDetailPage() {
     );
   }
 
-  const badgeType = displayClassType(session.class_type);
+  const badgeType = displayClassType(classTypeSlugFor(session) ?? session.class_type);
   const startsAt = new Date(session.starts_at);
   const durationMin = Math.round(
     (new Date(session.ends_at).getTime() - startsAt.getTime()) / 60000,
@@ -142,7 +148,7 @@ function ClassDetailPage() {
       <main className="flex-1 space-y-5 px-5 pt-2">
         <section className="rounded-3xl bg-primary-soft p-5">
           <TypeBadge type={badgeType} className="bg-card/60" />
-          <h2 className="mt-2 font-display text-3xl font-semibold leading-tight">{session.name}</h2>
+          <h2 className="mt-2 font-display text-3xl font-semibold leading-tight">{classTitle(session)}</h2>
           {session.description?.trim() ? (
             <p className="mt-2 text-sm leading-relaxed text-foreground/85">
               {session.description.trim()}

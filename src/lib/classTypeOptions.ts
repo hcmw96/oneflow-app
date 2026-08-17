@@ -7,6 +7,15 @@ import {
 } from "@/lib/allowedClassTypes";
 import { supabase } from "@/lib/supabase";
 
+/**
+ * @deprecated Superseded by `public.class_types` (migration 20260817120000).
+ *
+ * Class types are rows now, created and renamed in Master → Class types, so the
+ * `studio_settings.custom_class_types` JSON blob is no longer read anywhere. Only
+ * `slugifyClassTypeName` is still live — `ClassTypesPanel` uses it to derive a slug from
+ * a new type's name. The rest is kept for one release in case a studio_settings row needs
+ * migrating by hand; delete it once production is confirmed clean.
+ */
 export const CUSTOM_CLASS_TYPES_SETTING_KEY = "custom_class_types";
 
 /**

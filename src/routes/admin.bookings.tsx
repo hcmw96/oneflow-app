@@ -25,6 +25,8 @@ import { CurrentTimeLine, currentTimeLineInsertIndex } from "@/components/Curren
 import { TypeBadge } from "@/components/TypeBadge";
 import { WeekDayStrip, weekdayStripLetter } from "@/components/WeekDayStrip";
 import { classTypeTheme } from "@/lib/classTypeTheme";
+import { classTitle, classTypeSlugFor } from "@/lib/classTitle";
+import { useClassCatalog } from "@/contexts/classCatalog";
 import { displayClassType } from "@/types/studio";
 import {
   Select,
@@ -60,7 +62,9 @@ type BookingStatus = "confirmed" | "attended" | "cancelled" | "no-show";
 type WeekClassRow = {
   id: string;
   name: string;
+  title_override: string | null;
   class_type: string;
+  class_type_id: string | null;
   starts_at: string;
   ends_at: string;
   capacity: number;
@@ -182,6 +186,8 @@ function sessionMatchesClassTypeFilter(classType: string, filter: string): boole
 }
 
 function BookingsPage() {
+  // Subscribe so a class-type rename repaints class titles and badges.
+  useClassCatalog();
   const [viewWeekStart, setViewWeekStart] = useState(() => startOfCalendarWeekSunday(new Date()));
   const [selectedDay, setSelectedDay] = useState(() => startOfDay(new Date()));
   const [weekClasses, setWeekClasses] = useState<WeekClassRow[]>([]);
@@ -214,7 +220,7 @@ function BookingsPage() {
     const { data: classesData, error: classesError } = await supabase
       .from("classes")
       .select(
-        "id, name, class_type, starts_at, ends_at, capacity, booked_count, location, guide_name, is_cancelled",
+        "id, name, title_override, class_type, class_type_id, starts_at, ends_at, capacity, booked_count, location, guide_name, is_cancelled",
       )
       .gte("starts_at", startIso)
       .lt("starts_at", endIso)
@@ -404,7 +410,7 @@ function BookingsPage() {
       for (const b of filtered) {
         rows.push(
           [
-            session.name,
+            classTitle(session),
             `${formatClassTime(session.starts_at)} – ${formatClassTime(session.ends_at)}`,
             b.memberFull,
             b.memberShort,
@@ -604,7 +610,7 @@ function BookingsPage() {
       ) : (
         <ul className="overflow-hidden rounded-xl border border-border bg-card">
           {visibleSessions.map((session, idx) => {
-            const badgeType = displayClassType(session.class_type);
+            const badgeType = displayClassType(classTypeSlugFor(session) ?? session.class_type);
             const typeTheme = classTypeTheme(badgeType);
 
             return (
@@ -631,7 +637,7 @@ function BookingsPage() {
                   <div className="min-w-0 flex-1">
                     <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                       <p className="truncate font-display text-sm font-semibold text-foreground">
-                        {session.name}
+                        {classTitle(session)}
                       </p>
                       <TypeBadge type={badgeType} size="sm" className="shrink-0" />
                     </div>

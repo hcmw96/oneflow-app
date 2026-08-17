@@ -5,7 +5,9 @@ import { queryKeys } from "./queryKeys";
 
 export type MemberBookingClassJoin = {
   name: string;
+  title_override?: string | null;
   class_type: string;
+  class_type_id?: string | null;
   location: string;
   starts_at: string;
   ends_at: string;
@@ -32,7 +34,7 @@ export async function fetchMemberBookings(profileId: string): Promise<MemberBook
     .from("bookings")
     .select(
       `id, status, qr_token, created_at, checked_in_at, class_id,
-       classes ( name, class_type, location, starts_at, ends_at, guide_name )`,
+       classes ( name, title_override, class_type, class_type_id, location, starts_at, ends_at, guide_name )`,
     )
     .eq("profile_id", profileId)
     .in("status", ["confirmed", "attended"])

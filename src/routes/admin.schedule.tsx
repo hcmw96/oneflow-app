@@ -20,13 +20,12 @@ import { useAuth } from "@/contexts/auth";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { cancelBookingWithPolicy } from "@/lib/bookingCancellation";
 import { fetchGuidesForClassSelect, type GuideSelectRow } from "@/lib/guidesForSelect";
-import {
-  buildClassTypeSelectOptions,
-  fetchCustomClassTypes,
-  type CustomClassType,
-} from "@/lib/classTypeOptions";
 import { displayClassType } from "@/types/studio";
 import { classTypeTheme } from "@/lib/classTypeTheme";
+import { useClassCatalog } from "@/contexts/classCatalog";
+import { activeTypesByCategory, type ClassTypeRow } from "@/lib/classTypeCatalog";
+import { classTitle, classTypeSlugFor } from "@/lib/classTitle";
+import { ClassTypesPanel } from "@/components/admin/ClassTypesPanel";
 import {
   createClassTicketProduct,
   parseTicketPriceZar,
@@ -38,6 +37,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
@@ -90,7 +90,13 @@ const LOCATIONS = ["Studio 1", "Studio 2", "Wellzone", "Sauna"] as const;
 type ClassRow = {
   id: string;
   name: string;
+  /** Legacy `public.class_type` enum value — still what credit eligibility matches on. */
   class_type: string;
+  /** FK to `class_types`. Null on historical rows whose enum names only a category. */
+  class_type_id: string | null;
+  /** Set only for one-offs; otherwise the title derives from category + type. */
+  title_override: string | null;
+  credit_covered: boolean;
   location: string;
   starts_at: string;
   ends_at: string;
@@ -302,6 +308,9 @@ function SchedulePage() {
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ today: 0, thisWeek: 0, upcoming: 0 });
 
+  /** Master has two jobs: schedule the week, and control the class types it draws from. */
+  const [view, setView] = useState<"week" | "types">("week");
+
   // UI state — weekOffset 0 = current Mon–Sun week (JHB)
   const [weekOffset, setWeekOffset] = useState(0);
   const [q, setQ] = useState("");
@@ -328,12 +337,12 @@ function SchedulePage() {
   const [dialogMode, setDialogMode] = useState<ClassDialogMode>("create");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [name, setName] = useState("");
+  /** `public.class_type` enum value written to the column — never a client-created slug. */
   const [classType, setClassType] = useState<string>("yoga");
-  // Read-only: custom_class_types may exist in studio_settings, but Pass 1 does not
-  // expose add/remove UI — classes.class_type is a Postgres enum, so a settings-only
-  // slug is not a valid column value and would fail on insert/update.
-  const [customClassTypes, setCustomClassTypes] = useState<CustomClassType[]>([]);
+  /** Picker selection: `type:<uuid>` or `cat:<uuid>` for a class with no specific type. */
+  const [typeSelection, setTypeSelection] = useState<string>("");
+  const [titleOverride, setTitleOverride] = useState("");
+  const [creditCovered, setCreditCovered] = useState(true);
   const [location, setLocation] = useState<string>("Studio 1");
   const [guideId, setGuideId] = useState<string>(GUIDE_DIALOG_NONE);
   const [dateStr, setDateStr] = useState(toDateInputValue(new Date()));
@@ -414,22 +423,104 @@ function SchedulePage() {
   }, []);
 
   useEffect(() => {
-    void (async () => {
-      const custom = await fetchCustomClassTypes();
-      setCustomClassTypes(custom);
-      await loadGuideOptions();
-    })();
+    void loadGuideOptions();
   }, [loadGuideOptions]);
 
-  const classTypeOptions = useMemo(
-    () => buildClassTypeSelectOptions(customClassTypes, classType),
-    [customClassTypes, classType],
+  const { catalog } = useClassCatalog();
+
+  /** Active types grouped under their category, for the create/edit picker. */
+  const typeGroups = useMemo(() => activeTypesByCategory(catalog), [catalog]);
+
+  const typeById = useMemo(() => {
+    const map = new Map<string, ClassTypeRow>();
+    for (const t of catalog.types) map.set(t.id, t);
+    return map;
+  }, [catalog.types]);
+
+  /**
+   * Picker value for a class. Prefers its type FK; historical rows whose enum names only a
+   * category fall back to the category-only entry so saving them does not invent a type.
+   */
+  const typeSelectionForClass = useCallback(
+    (c: Pick<ClassRow, "class_type" | "class_type_id">): string => {
+      if (c.class_type_id && typeById.has(c.class_type_id)) return `type:${c.class_type_id}`;
+      const cat = catalog.categories.find((x) => x.slug === c.class_type);
+      if (cat) return `cat:${cat.id}`;
+      const viaType = catalog.types.find((t) => t.slug === c.class_type);
+      if (viaType) return `type:${viaType.id}`;
+      return "";
+    },
+    [catalog.categories, catalog.types, typeById],
   );
 
-  const filterTypeOptions = useMemo(
-    () => buildClassTypeSelectOptions(customClassTypes),
-    [customClassTypes],
+  /** Resolve a picker value to the pair of columns written on `classes`. */
+  const columnsForTypeSelection = useCallback(
+    (value: string): { class_type: string; class_type_id: string | null } | null => {
+      if (value.startsWith("type:")) {
+        const row = typeById.get(value.slice(5));
+        if (!row) return null;
+        return { class_type: row.legacy_class_type, class_type_id: row.id };
+      }
+      if (value.startsWith("cat:")) {
+        const cat = catalog.categoryById.get(value.slice(4));
+        if (!cat) return null;
+        return { class_type: cat.slug, class_type_id: null };
+      }
+      return null;
+    },
+    [catalog.categoryById, typeById],
   );
+
+  const selectedTypeRow = useMemo(
+    () => (typeSelection.startsWith("type:") ? typeById.get(typeSelection.slice(5)) : undefined),
+    [typeSelection, typeById],
+  );
+
+  /** Unguided types have no guide, so the field is hidden rather than left blank. */
+  const selectedTypeIsGuided = selectedTypeRow ? selectedTypeRow.is_guided : true;
+
+  const selectedCategorySlug = useMemo(() => {
+    if (selectedTypeRow) return catalog.categoryById.get(selectedTypeRow.category_id)?.slug ?? null;
+    if (typeSelection.startsWith("cat:")) {
+      return catalog.categoryById.get(typeSelection.slice(4))?.slug ?? null;
+    }
+    return null;
+  }, [selectedTypeRow, typeSelection, catalog.categoryById]);
+
+  /**
+   * Title the class will carry. Derived from category + type so a later rename of the type
+   * cascades; `title_override` wins when the client types one for a one-off.
+   */
+  const derivedTitle = useMemo(() => {
+    if (selectedTypeRow) {
+      const cat = catalog.categoryById.get(selectedTypeRow.category_id);
+      return cat ? `${cat.name}: ${selectedTypeRow.name}` : selectedTypeRow.name;
+    }
+    if (typeSelection.startsWith("cat:")) {
+      return catalog.categoryById.get(typeSelection.slice(4))?.name ?? "";
+    }
+    return "";
+  }, [selectedTypeRow, typeSelection, catalog.categoryById]);
+
+  const effectiveTitle = titleOverride.trim() || derivedTitle;
+
+  /** Filter bar lists every type plus each category, matched against `classes.class_type`. */
+  const filterTypeOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const opts: { value: string; label: string }[] = [];
+    for (const { category, types } of typeGroups) {
+      if (!seen.has(category.slug)) {
+        seen.add(category.slug);
+        opts.push({ value: category.slug, label: category.name });
+      }
+      for (const t of types) {
+        if (seen.has(t.legacy_class_type)) continue;
+        seen.add(t.legacy_class_type);
+        opts.push({ value: t.legacy_class_type, label: `${category.name}: ${t.name}` });
+      }
+    }
+    return opts;
+  }, [typeGroups]);
 
   const todayKey = todayJhbDayKey();
   const thisWeekStart = startOfWeekJhbDayKey();
@@ -481,7 +572,7 @@ function SchedulePage() {
     const { data, error } = await supabase
       .from("classes")
       .select(
-        "id, name, class_type, location, starts_at, ends_at, capacity, booked_count, guide_id, guide_name, description, is_cancelled, product_id, recurring_group_id",
+        "id, name, class_type, class_type_id, title_override, credit_covered, location, starts_at, ends_at, capacity, booked_count, guide_id, guide_name, description, is_cancelled, product_id, recurring_group_id",
       )
       .gte("starts_at", fromIso)
       .lt("starts_at", toExclusiveIso)
@@ -621,7 +712,7 @@ function SchedulePage() {
     return weekFiltered.filter((c) => {
       if (ql) {
         const guideDisp = resolveGuideDisplay(c).toLowerCase();
-        const hay = `${c.name} ${guideDisp}`.toLowerCase();
+        const hay = `${classTitle(c)} ${guideDisp}`.toLowerCase();
         if (!hay.includes(ql)) return false;
       }
       if (typeFilter !== "all" && c.class_type !== typeFilter) return false;
@@ -699,8 +790,10 @@ function SchedulePage() {
 
   // Dialog helpers
   const resetForm = () => {
-    setName("");
     setClassType("yoga");
+    setTypeSelection(typeGroups[0]?.types[0] ? `type:${typeGroups[0].types[0].id}` : "");
+    setTitleOverride("");
+    setCreditCovered(true);
     setLocation("Studio 1");
     setGuideId(GUIDE_DIALOG_NONE);
     setDateStr(toDateInputValue(new Date()));
@@ -815,8 +908,33 @@ function SchedulePage() {
     setDialogOpen(true);
   };
 
+  /**
+   * Unguided types have no guide, so bulk reassignment must skip them rather than quietly
+   * assigning a teacher to a self-service sauna slot.
+   */
+  const classIsGuided = useCallback(
+    (c: ClassRow): boolean => {
+      const row = c.class_type_id ? typeById.get(c.class_type_id) : undefined;
+      if (row) return row.is_guided;
+      const bySlug = catalog.types.find((t) => t.slug === c.class_type);
+      return bySlug ? bySlug.is_guided : true;
+    },
+    [typeById, catalog.types],
+  );
+
+  const reassignableSelected = useMemo(
+    () => rows.filter((r) => selected.has(r.id) && classIsGuided(r)),
+    [rows, selected, classIsGuided],
+  );
+
+  const skippedUnguidedCount = selected.size - reassignableSelected.length;
+
   const openBulkReassign = () => {
     if (!canManage || selected.size === 0) return;
+    if (reassignableSelected.length === 0) {
+      toast.error("Every selected class is unguided — nothing to reassign");
+      return;
+    }
     setDialogMode("bulk-reassign");
     setEditingId(null);
     setGuideId(GUIDE_DIALOG_NONE);
@@ -829,8 +947,10 @@ function SchedulePage() {
     setEditingRecurringGroupId(c.recurring_group_id);
     setEditingStartsAt(c.starts_at);
     setGuideChangeScope(null);
-    setName(c.name);
     setClassType(c.class_type || "yoga");
+    setTypeSelection(typeSelectionForClass(c));
+    setTitleOverride(c.title_override ?? "");
+    setCreditCovered(c.credit_covered !== false);
     setLocation(c.location || "Studio 1");
     const s = new Date(c.starts_at);
     const e = new Date(c.ends_at);
@@ -862,8 +982,12 @@ function SchedulePage() {
   };
 
   const validateForm = (): boolean => {
-    if (!name.trim()) {
-      toast.error("Class name is required");
+    if (!typeSelection) {
+      toast.error("Pick a class type");
+      return false;
+    }
+    if (!effectiveTitle.trim()) {
+      toast.error("That class type could not be resolved — reload and try again");
       return false;
     }
     const cap = Number(capacity);
@@ -891,11 +1015,21 @@ function SchedulePage() {
     const start = combineDateTimeLocal(dateStr, startTime);
     const end = combineDateTimeLocal(dateStr, endTime);
     const cap = Math.round(Number(capacity));
-    const { guide_id: gid, guide_name: gName } = resolveGuideIdAndName(guideId);
+    // Unguided types have no guide, so never persist one even if the field held a stale pick.
+    const { guide_id: gid, guide_name: gName } = selectedTypeIsGuided
+      ? resolveGuideIdAndName(guideId)
+      : { guide_id: null, guide_name: null };
+    const typeColumns = columnsForTypeSelection(typeSelection);
+    // `ticketCategory()` in classTicketProduct.ts keys on the enum value, so the ticket
+    // product must be built from the picker's resolution, not the last-loaded state.
+    const effectiveClassType = typeColumns?.class_type ?? classType;
 
     const base = {
-      name: name.trim(),
-      class_type: classType,
+      name: effectiveTitle,
+      class_type: effectiveClassType,
+      class_type_id: typeColumns?.class_type_id ?? null,
+      title_override: titleOverride.trim() ? titleOverride.trim() : null,
+      credit_covered: creditCovered,
       location,
       starts_at: start.toISOString(),
       ends_at: end.toISOString(),
@@ -911,8 +1045,8 @@ function SchedulePage() {
     try {
       if (linkedProductId && wantsTicket) {
         await updateClassTicketProduct(supabase, linkedProductId, {
-          className: name.trim(),
-          classType,
+          className: effectiveTitle,
+          classType: effectiveClassType,
           priceZar: ticketPrice,
           startsAt: start,
           description: description.trim() || null,
@@ -921,8 +1055,8 @@ function SchedulePage() {
         await supabase.from("classes").update({ product_id: null }).eq("id", editingId);
       } else if (!linkedProductId && wantsTicket) {
         const productId = await createClassTicketProduct(supabase, {
-          className: name.trim(),
-          classType,
+          className: effectiveTitle,
+          classType: effectiveClassType,
           priceZar: ticketPrice,
           startsAt: start,
           description: description.trim() || null,
@@ -947,6 +1081,9 @@ function SchedulePage() {
         const shared = {
           name: base.name,
           class_type: base.class_type,
+          class_type_id: base.class_type_id,
+          title_override: base.title_override,
+          credit_covered: base.credit_covered,
           location: base.location,
           capacity: base.capacity,
           description: base.description,
@@ -1010,11 +1147,21 @@ function SchedulePage() {
     const start = combineDateTimeLocal(dateStr, startTime);
     const end = combineDateTimeLocal(dateStr, endTime);
     const cap = Math.round(Number(capacity));
-    const { guide_id: gid, guide_name: gName } = resolveGuideIdAndName(guideId);
+    // Unguided types have no guide, so never persist one even if the field held a stale pick.
+    const { guide_id: gid, guide_name: gName } = selectedTypeIsGuided
+      ? resolveGuideIdAndName(guideId)
+      : { guide_id: null, guide_name: null };
+    const typeColumns = columnsForTypeSelection(typeSelection);
+    // `ticketCategory()` in classTicketProduct.ts keys on the enum value, so the ticket
+    // product must be built from the picker's resolution, not the last-loaded state.
+    const effectiveClassType = typeColumns?.class_type ?? classType;
 
     const base = {
-      name: name.trim(),
-      class_type: classType,
+      name: effectiveTitle,
+      class_type: effectiveClassType,
+      class_type_id: typeColumns?.class_type_id ?? null,
+      title_override: titleOverride.trim() ? titleOverride.trim() : null,
+      credit_covered: creditCovered,
       location,
       starts_at: start.toISOString(),
       ends_at: end.toISOString(),
@@ -1034,8 +1181,8 @@ function SchedulePage() {
       ): Promise<{ product_id: string | null }> => {
         if (!wantsTicket) return { product_id: null };
         const productId = await createClassTicketProduct(supabase, {
-          className: name.trim(),
-          classType,
+          className: effectiveTitle,
+          classType: effectiveClassType,
           priceZar: ticketPrice,
           startsAt: occStart,
           description: description.trim() || null,
@@ -1206,16 +1353,24 @@ function SchedulePage() {
     if (!canManage || selected.size === 0) return;
     const { guide_id: gid, guide_name: gName } = resolveGuideIdAndName(guideId);
     setBulkBusy(true);
-    const selectedRows = rows.filter((r) => selected.has(r.id));
+    const selectedRows = reassignableSelected;
+    if (selectedRows.length === 0) {
+      setBulkBusy(false);
+      toast.error("Every selected class is unguided — nothing to reassign");
+      return;
+    }
     try {
       if (scope === "single") {
-        const ids = [...selected];
+        const ids = selectedRows.map((r) => r.id);
         const { error } = await supabase
           .from("classes")
           .update({ guide_id: gid, guide_name: gName })
           .in("id", ids);
         if (error) throw error;
-        toast.success(`Reassigned ${ids.length} class${ids.length === 1 ? "" : "es"}`);
+        toast.success(
+          `Reassigned ${ids.length} class${ids.length === 1 ? "" : "es"}` +
+            (skippedUnguidedCount > 0 ? ` · skipped ${skippedUnguidedCount} unguided` : ""),
+        );
       } else {
         for (const row of selectedRows) {
           if (row.recurring_group_id) {
@@ -1236,7 +1391,10 @@ function SchedulePage() {
             .in("id", nonRecurringIds);
           if (error) throw error;
         }
-        toast.success("Guide reassigned for this and all future classes in the series");
+        toast.success(
+          "Guide reassigned for this and all future classes in the series" +
+            (skippedUnguidedCount > 0 ? ` · skipped ${skippedUnguidedCount} unguided` : ""),
+        );
       }
       setDialogOpen(false);
       setDialogMode("create");
@@ -1254,8 +1412,7 @@ function SchedulePage() {
 
   const applyBulkReassign = async () => {
     if (!canManage || selected.size === 0) return;
-    const selectedRows = rows.filter((r) => selected.has(r.id));
-    const hasRecurring = selectedRows.some((r) => r.recurring_group_id);
+    const hasRecurring = reassignableSelected.some((r) => r.recurring_group_id);
     if (hasRecurring) {
       setRecurringScopeAction("bulk-reassign");
       setRecurringScopeOpen(true);
@@ -1294,10 +1451,14 @@ function SchedulePage() {
     <div>
       <PageHeader
         title="Master"
-        description="Create, edit and schedule classes across the week. Book members in from Bookings."
+        description={
+          view === "week"
+            ? "Create, edit and schedule classes across the week. Book members in from Bookings."
+            : "Name the classes the studio runs. Changes here cascade to every class of that type."
+        }
         className="mb-2 gap-2 sm:mb-3 sm:items-center"
         actions={
-          canManage ? (
+          canManage && view === "week" ? (
             <Button
               type="button"
               onClick={openCreate}
@@ -1309,6 +1470,30 @@ function SchedulePage() {
         }
       />
 
+      <div className="mb-3 flex items-center gap-1.5" role="tablist" aria-label="Master view">
+        {(
+          [
+            ["week", "Week"],
+            ["types", "Class types"],
+          ] as const
+        ).map(([key, label]) => (
+          <Button
+            key={key}
+            type="button"
+            role="tab"
+            aria-selected={view === key}
+            variant={view === key ? "default" : "outline"}
+            size="sm"
+            className={cn("h-7 px-3 text-xs", view === key && "bg-[#a3b693] hover:bg-[#8fa67d]")}
+            onClick={() => setView(key)}
+          >
+            {label}
+          </Button>
+        ))}
+      </div>
+
+      {view === "types" ? <ClassTypesPanel canManage={canManage} /> : (
+      <>
       {/* Slim stats + week pager + filters toggle on one dense strip */}
       <div className="mb-2 flex flex-col gap-2 border-b border-border pb-2 sm:mb-3">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
@@ -1557,7 +1742,8 @@ function SchedulePage() {
                           dayKey === todayKey ? nowLineInsertIndex(list, nowMs) : null;
 
                         return list.map((c, i) => {
-                          const badgeType = displayClassType(c.class_type);
+                          const badgeType = displayClassType(classTypeSlugFor(c) ?? c.class_type);
+                          const title = classTitle(c);
                           const typeTheme = classTypeTheme(badgeType);
                           const isSelected = selected.has(c.id);
                           const greyRow = dayKey === todayKey && isClassEnded(c, nowMs);
@@ -1587,7 +1773,10 @@ function SchedulePage() {
                                     isSelected && "bg-[#e8efe3]/40",
                                     greyRow && "opacity-55",
                                   )}
-                                  style={{ borderLeftColor: typeTheme.accent }}
+                                  style={{
+                                    borderLeftColor: typeTheme.accent,
+                                    backgroundColor: typeTheme.tintBg || undefined,
+                                  }}
                                 >
                                   {/* Time gutter: fixed width + border-r so the divider runs full row height and stacks flush into one continuous day line. */}
                                   <span className="flex w-[8.75rem] shrink-0 items-center whitespace-nowrap border-r border-border px-2.5 font-mono text-[11px] font-semibold tabular-nums text-foreground sm:text-xs">
@@ -1602,13 +1791,13 @@ function SchedulePage() {
                                         onCheckedChange={() => toggleSelected(c.id)}
                                         onClick={(e) => e.stopPropagation()}
                                         className="shrink-0 data-[state=checked]:border-[#a3b693] data-[state=checked]:bg-[#a3b693]"
-                                        aria-label={`Select ${c.name}`}
+                                        aria-label={`Select ${title}`}
                                       />
                                     ) : null}
                                     <div className="min-w-0 flex-1">
                                       <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                                         <p className="truncate font-display text-sm font-semibold text-foreground">
-                                          {c.name}
+                                          {title}
                                         </p>
                                         <TypeBadge type={badgeType} size="sm" className="shrink-0" />
                                       </div>
@@ -1634,7 +1823,7 @@ function SchedulePage() {
                                             "h-8 gap-1 px-2 text-xs [&>span]:line-clamp-none [&>span]:overflow-visible [&>span]:whitespace-nowrap",
                                             guideValue === "none" && "text-muted-foreground italic",
                                           )}
-                                          aria-label={`Guide for ${c.name}`}
+                                          aria-label={`Guide for ${title}`}
                                           title={
                                             guideValue === "none"
                                               ? "Unguided"
@@ -1710,6 +1899,8 @@ function SchedulePage() {
           </div>
         </div>
       ) : null}
+      </>
+      )}
 
       <Dialog
         open={dialogOpen}
@@ -1738,7 +1929,12 @@ function SchedulePage() {
           {dialogMode === "bulk-reassign" ? (
             <div className="grid gap-3 py-2">
               <p className="text-sm text-muted-foreground">
-                Choose a guide for all selected classes. Pick “No guide” to clear assignments.
+                Choose a guide for {reassignableSelected.length} selected class
+                {reassignableSelected.length === 1 ? "" : "es"}. Pick “No guide” to clear
+                assignments.
+                {skippedUnguidedCount > 0
+                  ? ` ${skippedUnguidedCount} unguided class${skippedUnguidedCount === 1 ? "" : "es"} will be skipped.`
+                  : ""}
               </p>
               <div>
                 <Label>Guide</Label>
@@ -1771,30 +1967,32 @@ function SchedulePage() {
             </div>
           ) : (
           <div className="grid gap-3 py-2">
-            <div>
-              <Label htmlFor="cls-name">Class name</Label>
-              <Input
-                id="cls-name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                disabled={!canManage}
-              />
-            </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
                 <Label>Type</Label>
-                <Select value={classType} onValueChange={setClassType} disabled={!canManage}>
+                <Select
+                  value={typeSelection}
+                  onValueChange={setTypeSelection}
+                  disabled={!canManage}
+                >
                   <SelectTrigger>
-                    <SelectValue />
+                    <SelectValue placeholder="Pick a class type" />
                   </SelectTrigger>
                   <SelectContent>
-                    {/* Enum-backed types only — do not offer "+ Add class type" until
-                        Pass 2 (schema change). Settings-only slugs are not valid
-                        classes.class_type enum values. */}
-                    {classTypeOptions.map((t) => (
-                      <SelectItem key={t.value} value={t.value}>
-                        {t.label}
-                      </SelectItem>
+                    {/* Types come from `class_types`, so one created in the Class types tab
+                        is schedulable immediately. The category-only entry keeps historical
+                        rows saveable without inventing a type for them. */}
+                    {typeGroups.map(({ category, types }) => (
+                      <Fragment key={category.id}>
+                        <SelectItem value={`cat:${category.id}`}>
+                          {category.name} — no specific type
+                        </SelectItem>
+                        {types.map((t) => (
+                          <SelectItem key={t.id} value={`type:${t.id}`}>
+                            {category.name}: {t.name}
+                          </SelectItem>
+                        ))}
+                      </Fragment>
                     ))}
                   </SelectContent>
                 </Select>
@@ -1815,6 +2013,25 @@ function SchedulePage() {
                 </Select>
               </div>
             </div>
+            <div>
+              <Label htmlFor="cls-title-override">Title</Label>
+              <Input
+                id="cls-title-override"
+                value={titleOverride}
+                onChange={(e) => setTitleOverride(e.target.value)}
+                disabled={!canManage}
+                placeholder={derivedTitle || "Pick a type first"}
+              />
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                Leave blank to follow the class type — renaming{" "}
+                <span className="font-medium text-foreground">
+                  {selectedTypeRow?.name ?? "the type"}
+                </span>{" "}
+                then retitles this class automatically. Fill it in only for one-offs like
+                “Full Moon Sauna”.
+              </p>
+            </div>
+            {selectedTypeIsGuided ? (
             <div>
               <Label>Guide</Label>
               <Select
@@ -1876,6 +2093,15 @@ function SchedulePage() {
                 </div>
               ) : null}
             </div>
+            ) : (
+              <p className="rounded-lg border border-border bg-muted/30 px-3 py-2.5 text-xs text-muted-foreground">
+                <span className="font-medium text-foreground">
+                  {selectedTypeRow?.name ?? "This type"}
+                </span>{" "}
+                is unguided, so no guide is assigned. Turn “Has a guide” on for the type in
+                Class types if that changes.
+              </p>
+            )}
             <div>
               <Label htmlFor="cls-date">Date (SAST)</Label>
               <Input
@@ -1928,6 +2154,25 @@ function SchedulePage() {
                 disabled={!canManage}
               />
             </div>
+            {selectedCategorySlug === "event" ? (
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2.5">
+                <div className="min-w-0">
+                  <Label htmlFor="cls-credit-covered" className="cursor-pointer">
+                    Covered by credits
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    On means members can book with a package. Combine with a ticket price
+                    below and members use credits while non-members pay.
+                  </p>
+                </div>
+                <Switch
+                  id="cls-credit-covered"
+                  checked={creditCovered}
+                  onCheckedChange={setCreditCovered}
+                  disabled={!canManage}
+                />
+              </div>
+            ) : null}
             {dialogMode === "create" || dialogMode === "edit" ? (
               <div>
                 <Label htmlFor="cls-ticket-price">Ticket price (ZAR)</Label>
@@ -2111,7 +2356,7 @@ function SchedulePage() {
             <AlertDialogTitle>Cancel this class?</AlertDialogTitle>
             <AlertDialogDescription>
               {deleteFromDialog
-                ? `“${deleteFromDialog.name}” on ${jhbDayLabel(jhbDayKey(deleteFromDialog.starts_at))} at ${formatTime(deleteFromDialog.starts_at)} will be marked cancelled. Existing bookings may need follow-up.`
+                ? `“${classTitle(deleteFromDialog)}” on ${jhbDayLabel(jhbDayKey(deleteFromDialog.starts_at))} at ${formatTime(deleteFromDialog.starts_at)} will be marked cancelled. Existing bookings may need follow-up.`
                 : null}
             </AlertDialogDescription>
           </AlertDialogHeader>

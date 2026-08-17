@@ -15,6 +15,8 @@ import { useMemberBookings } from "@/lib/queries/memberBookings";
 import { useMemberWaitlist } from "@/lib/queries/memberWaitlist";
 import { invalidateMemberBookingCaches } from "@/lib/queries/invalidate";
 import { displayClassType, type ClassType } from "@/types/studio";
+import { classTitle, classTypeSlugFor } from "@/lib/classTitle";
+import { useClassCatalog } from "@/contexts/classCatalog";
 import { leaveWaitlist } from "@/lib/waitlist";
 import { PracticeShareComposerSheet } from "@/components/PracticeShareComposerSheet";
 import type { ClassPracticeShareInput } from "@/lib/classPracticeShare";
@@ -104,6 +106,9 @@ function BookingsPage() {
 
   const loading = bookingsLoading || waitlistLoading;
 
+  // Subscribe so a class-type rename repaints booking titles.
+  const { catalog } = useClassCatalog();
+
   const rows = useMemo<BookingListRow[]>(() => {
     return memberBookings
       .map((raw) => {
@@ -112,8 +117,10 @@ function BookingsPage() {
           id: raw.id,
           status: raw.status,
           qrToken: raw.qr_token ?? null,
-          className: cls?.name ?? "Class",
-          classType: displayClassType(cls?.class_type),
+          className: (cls ? classTitle(cls) : "") || "Class",
+          classType: displayClassType(
+            (cls ? classTypeSlugFor(cls) : null) ?? cls?.class_type,
+          ),
           location: cls?.location ?? "",
           startsAt: new Date(cls?.starts_at ?? Date.now()),
           guideFirst: guideFirstFromClass(cls),
@@ -121,7 +128,10 @@ function BookingsPage() {
         };
       })
       .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
-  }, [memberBookings]);
+    // `catalog` is not read here, but classTitle() resolves against module state that
+    // hydration mutates, so the memo must invalidate when the catalog lands.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [memberBookings, catalog]);
 
   const upcoming = useMemo(
     () => rows.filter((r) => r.status === "confirmed" && r.startsAt.getTime() >= Date.now()),

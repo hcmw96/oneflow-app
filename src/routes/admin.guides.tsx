@@ -38,6 +38,7 @@ import {
 import {
   CLASS_TYPE_SLUG_LABEL,
   GUIDE_DISCIPLINE_SLUGS,
+  humanizeClassTypeSlug,
   isAllowedClassTypeSlug,
   type AllowedClassTypeSlug,
 } from "@/lib/allowedClassTypes";
@@ -55,14 +56,18 @@ const SAGE_BORDER = "border-[#c5d4b8]/80";
 /** Stored in `guides.disciplines` text[] — slug values only (full class_type enum). */
 type GuideDisciplineSlug = AllowedClassTypeSlug;
 
-const GUIDE_DISCIPLINE_SLUG_LABEL: Record<GuideDisciplineSlug, string> = {
-  ...CLASS_TYPE_SLUG_LABEL,
-};
+/**
+ * Read through to the canonical record rather than snapshotting it: labels are hydrated
+ * from `class_types` at boot, so renaming "Power" in Master must relabel the discipline
+ * checkbox here too.
+ */
+function guideDisciplineLabel(slug: GuideDisciplineSlug): string {
+  return CLASS_TYPE_SLUG_LABEL[slug] ?? humanizeClassTypeSlug(slug);
+}
 
-const DISCIPLINE_FILTER_KEYS = GUIDE_DISCIPLINE_SLUGS.map((key) => ({
-  key,
-  label: GUIDE_DISCIPLINE_SLUG_LABEL[key],
-}));
+function disciplineFilterKeys(): { key: GuideDisciplineSlug; label: string }[] {
+  return GUIDE_DISCIPLINE_SLUGS.map((key) => ({ key, label: guideDisciplineLabel(key) }));
+}
 type RoleType = "director" | "management" | "guide" | "customer" | "other";
 
 type GuideSortKey = "name_asc" | "name_desc" | "joined_asc" | "active_first";
@@ -114,7 +119,7 @@ function disciplineValueToSlug(value: string): GuideDisciplineSlug | null {
   if (v === "sauna" || v === "sauna_journey") return "sauna_journey";
   if ((GUIDE_DISCIPLINE_SLUGS as readonly string[]).includes(v)) return v as GuideDisciplineSlug;
   const fromLabel = GUIDE_DISCIPLINE_SLUGS.find(
-    (slug) => GUIDE_DISCIPLINE_SLUG_LABEL[slug].toLowerCase() === raw.toLowerCase(),
+    (slug) => guideDisciplineLabel(slug).toLowerCase() === raw.toLowerCase(),
   );
   return fromLabel ?? null;
 }
@@ -152,7 +157,7 @@ function GuideDisciplinePills({ disciplines }: { disciplines: string[] }) {
           key={slug}
           className="inline-flex rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-foreground"
         >
-          {GUIDE_DISCIPLINE_SLUG_LABEL[slug]}
+          {guideDisciplineLabel(slug)}
         </span>
       ))}
     </div>
@@ -629,7 +634,7 @@ function GuidesPage() {
           <span className="w-full text-[11px] font-semibold uppercase tracking-wide text-muted-foreground sm:w-auto sm:py-1.5">
             Disciplines
           </span>
-          {DISCIPLINE_FILTER_KEYS.map(({ key, label }) => {
+          {disciplineFilterKeys().map(({ key, label }) => {
             const on = disciplineFilters.includes(key);
             return (
               <Button
@@ -820,7 +825,7 @@ function GuidesPage() {
                         checked={checked}
                         onCheckedChange={() => toggleDiscipline(slug)}
                       />
-                      <span>{GUIDE_DISCIPLINE_SLUG_LABEL[slug]}</span>
+                      <span>{guideDisciplineLabel(slug)}</span>
                     </label>
                   );
                 })}
