@@ -5,6 +5,7 @@ import { BottomNav } from "@/components/BottomNav";
 import { PageTransition } from "@/components/PageTransition";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider, useAuth } from "@/contexts/auth";
+import { ClassCatalogProvider } from "@/contexts/classCatalog";
 import { canViewCustomerApp } from "@/lib/adminMarketingAccess";
 import { captureReferrerFromSearch } from "@/lib/referral";
 
@@ -207,9 +208,11 @@ function RootComponent() {
     <>
       <HeadContent />
       <AuthProvider>
-        <ReferralCapture />
-        <ProtectedOutlet />
-        <CustomerBottomNav />
+        <ClassCatalogProvider>
+          <ReferralCapture />
+          <ProtectedOutlet />
+          <CustomerBottomNav />
+        </ClassCatalogProvider>
       </AuthProvider>
       <Toaster position="top-center" />
     </>

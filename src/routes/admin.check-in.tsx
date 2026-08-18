@@ -9,6 +9,8 @@ import { WalkInSheet } from "@/components/admin/WalkInSheet";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
+import { classTitle } from "@/lib/classTitle";
+import { useClassCatalog } from "@/contexts/classCatalog";
 import { useMaxWidth } from "@/hooks/use-max-width";
 import { cn } from "@/lib/utils";
 import { awardClassesAttendedBadges } from "@/lib/badges";
@@ -52,7 +54,9 @@ export const Route = createFileRoute("/admin/check-in")({
 type TodayClass = {
   id: string;
   name: string;
+  title_override: string | null;
   class_type: string;
+  class_type_id: string | null;
   starts_at: string;
   ends_at: string;
   capacity: number;
@@ -63,6 +67,8 @@ type TodayClass = {
 };
 
 function CheckInPage() {
+  // Subscribe so a class-type rename repaints the roster headings.
+  useClassCatalog();
   const stackLayout = useMaxWidth(600);
   const { profile } = useAuth();
   const showOctivVitalityQr = canShowOctivVitalityQr(profile);
@@ -127,7 +133,7 @@ function CheckInPage() {
       supabase
         .from("classes")
         .select(
-          "id, name, class_type, starts_at, ends_at, capacity, booked_count, location, guide_name, guide_id",
+          "id, name, title_override, class_type, class_type_id, starts_at, ends_at, capacity, booked_count, location, guide_name, guide_id",
         )
         .gte("starts_at", startUtcIso)
         .lte("starts_at", endUtcIso)
@@ -160,6 +166,8 @@ function CheckInPage() {
     const classes: TodayClass[] = rawClasses.map((row) => ({
       id: String(row.id),
       name: String(row.name ?? ""),
+      title_override: (row.title_override as string | null) ?? null,
+      class_type_id: (row.class_type_id as string | null) ?? null,
       class_type: String(row.class_type ?? ""),
       starts_at: String(row.starts_at ?? ""),
       ends_at: String(row.ends_at ?? ""),
@@ -245,7 +253,7 @@ function CheckInPage() {
       );
       return {
         key: c.id,
-        label: c.name,
+        label: classTitle(c),
         time: formatClassTime(c.starts_at),
         total: forClass.length,
         attended,

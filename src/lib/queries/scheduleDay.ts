@@ -6,7 +6,9 @@ import { queryKeys } from "./queryKeys";
 export type ScheduleDayClassRow = {
   id: string;
   name: string;
+  title_override: string | null;
   class_type: string;
+  class_type_id: string | null;
   location: string;
   starts_at: string;
   ends_at: string;
@@ -26,7 +28,7 @@ export async function fetchScheduleDayClasses(
   const { data, error } = await supabase
     .from("classes")
     .select(
-      "id, name, guide_name, class_type, location, starts_at, ends_at, capacity, booked_count, is_cancelled, description, product_id",
+      "id, name, title_override, guide_name, class_type, class_type_id, location, starts_at, ends_at, capacity, booked_count, is_cancelled, description, product_id",
     )
     .gte("starts_at", startUtcIso)
     .lte("starts_at", endUtcIso)

@@ -40,6 +40,8 @@ import { TypeBadge } from "@/components/TypeBadge";
 import { WeekDayStrip, weekdayStripLetter } from "@/components/WeekDayStrip";
 import { CurrentTimeLine, currentTimeLineInsertIndex } from "@/components/CurrentTimeLine";
 import { classTypeTheme } from "@/lib/classTypeTheme";
+import { classTitle, classTypeSlugFor } from "@/lib/classTitle";
+import { useClassCatalog } from "@/contexts/classCatalog";
 import { displayClassType } from "@/types/studio";
 import { useNowMs } from "@/hooks/use-now-ms";
 import { pickFocusClassId } from "@/lib/liveClassList";
@@ -574,9 +576,11 @@ function ScheduleRow({
 }) {
   const [descExpanded, setDescExpanded] = useState(false);
   const desc = session.description?.trim() ?? "";
+  // Subscribe so a class-type rename repaints the row title and badge.
+  useClassCatalog();
 
   const guideName = guideNameFromRow(session.guide_name);
-  const badgeType = displayClassType(session.class_type);
+  const badgeType = displayClassType(classTypeSlugFor(session) ?? session.class_type);
   const typeTheme = classTypeTheme(badgeType);
   const { time, zoneLabel } = formatClassDateTime(
     session.starts_at,
@@ -621,7 +625,7 @@ function ScheduleRow({
             )}
           </div>
           <h3 className="font-display text-sm font-semibold leading-snug tracking-tight break-words text-foreground">
-            {session.name}
+            {classTitle(session)}
           </h3>
           {guideName ? (
             <p className="mt-0.5 text-xs font-medium leading-snug" style={{ color: SAGE }}>

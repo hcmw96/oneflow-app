@@ -10,6 +10,8 @@ import { formatStudioTime12Upper } from "@/lib/timezone";
 import { WalkInSheet } from "@/components/admin/WalkInSheet";
 import { TypeBadge } from "@/components/TypeBadge";
 import { classTypeTheme } from "@/lib/classTypeTheme";
+import { classTitle, classTypeSlugFor } from "@/lib/classTitle";
+import { useClassCatalog } from "@/contexts/classCatalog";
 import { displayClassType } from "@/types/studio";
 import {
   Sheet,
@@ -42,7 +44,9 @@ type BookingStatus = "confirmed" | "attended" | "cancelled" | "no-show";
 type ClassRow = {
   id: string;
   name: string;
+  title_override: string | null;
   class_type: string;
+  class_type_id: string | null;
   starts_at: string;
   ends_at: string;
   capacity: number;
@@ -97,6 +101,8 @@ function rosterStatusClass(status: BookingStatus) {
 }
 
 function BookingClassDetailPage() {
+  // Subscribe so a class-type rename repaints class titles and badges.
+  useClassCatalog();
   const { classId } = Route.useParams();
   const { profile } = useAuth();
   const isGuide = (profile?.role ?? "").toLowerCase() === "guide";
@@ -114,7 +120,7 @@ function BookingClassDetailPage() {
     const { data: classData, error: classErr } = await supabase
       .from("classes")
       .select(
-        "id, name, class_type, starts_at, ends_at, capacity, booked_count, location, guide_name",
+        "id, name, title_override, class_type, class_type_id, starts_at, ends_at, capacity, booked_count, location, guide_name",
       )
       .eq("id", classId)
       .maybeSingle();
@@ -260,7 +266,7 @@ function BookingClassDetailPage() {
     }
   };
 
-  const badgeType = displayClassType(cls?.class_type);
+  const badgeType = displayClassType((cls ? classTypeSlugFor(cls) : null) ?? cls?.class_type);
   const typeTheme = classTypeTheme(badgeType);
 
   return (
@@ -276,7 +282,7 @@ function BookingClassDetailPage() {
       </div>
 
       <PageHeader
-        title={cls?.name ?? "Class roster"}
+        title={(cls ? classTitle(cls) : "") || "Class roster"}
         description={
           cls
             ? `${formatStudioTime12Upper(cls.starts_at)} – ${formatStudioTime12Upper(cls.ends_at)}${

@@ -30,6 +30,8 @@ import {
 import { bookingCreditInsertErrorMessage, isBookableClassCredit } from "@/lib/bookingCredits";
 import { profileEarnsFlowPoints } from "@/lib/flowPoints";
 import { userCreditCoversClassType } from "@/lib/allowedClassTypes";
+import { classTitle } from "@/lib/classTitle";
+import { useClassCatalog } from "@/contexts/classCatalog";
 import { classDateFromStartsAtIso } from "@/lib/mayChallengeCheckIn";
 import { formatTicketPriceLabel } from "@/lib/classTicketProduct";
 import {
@@ -56,7 +58,9 @@ import {
 interface ClassRow {
   id: string;
   name: string;
+  title_override?: string | null;
   class_type: string;
+  class_type_id?: string | null;
   location: string;
   starts_at: string;
   ends_at: string;
@@ -107,6 +111,8 @@ function friendInitials(f: FriendOption): string {
 export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }: Props) {
   const { user } = useAuth();
   const { data: sheetData } = useBookingSheetData(user?.id, user?.email, session, open);
+  // Subscribe so a class-type rename repaints the sheet title.
+  useClassCatalog();
   const [credits, setCredits] = useState<Credit[]>([]);
   const [selectedCredit, setSelectedCredit] = useState<string | null>(null);
   const [flowPoints, setFlowPoints] = useState(0);
@@ -246,7 +252,7 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
 
     const template = bookingConfirmationTemplateForClassType(session.class_type);
     const emailPayload = bookingConfirmationEmailData({
-      className: session.name,
+      className: classTitle(session),
       startsAtIso: session.starts_at,
       guideName: session.guide_name,
       location: session.location,
@@ -431,7 +437,7 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
     await afterBookingConfirmed(booking.id as string);
 
     toast.success("Booking confirmed!", {
-      description: `${session.name} · ${dateLine} at ${timeLine}`,
+      description: `${classTitle(session)} · ${dateLine} at ${timeLine}`,
     });
     setLoading(false);
     onBookingConfirmed?.(session.id);
@@ -767,7 +773,7 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
         >
           <div className="px-6 pb-8 pt-6">
             <SheetHeader className="text-center">
-              <SheetTitle className="font-display text-2xl font-bold">{session.name}</SheetTitle>
+              <SheetTitle className="font-display text-2xl font-bold">{classTitle(session)}</SheetTitle>
               <SheetDescription className="text-sm text-muted-foreground">
                 {dateLine} at {timeLine}
               </SheetDescription>

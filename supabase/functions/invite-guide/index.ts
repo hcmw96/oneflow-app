@@ -35,6 +35,11 @@ const ROLE_EMAIL_LABEL: Record<string, string> = {
 /**
  * Keep in sync with `ALLOWED_CLASS_TYPE_SLUGS` in `src/lib/allowedClassTypes.ts`
  * (Postgres `class_type` enum). Deno edge functions cannot import the app module.
+ *
+ * These are ENUM values, not the client-editable `public.class_types` rows added in
+ * 20260817120000. `guides.disciplines` stores enum slugs, and the enum is unchanged by
+ * that migration, so this list is still correct and must NOT grow when the client creates
+ * a new class type in Master. It only changes if someone runs `ALTER TYPE … ADD VALUE`.
  */
 const DISCIPLINE_SLUGS = new Set([
   "yoga",
