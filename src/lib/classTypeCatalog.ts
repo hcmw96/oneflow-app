@@ -17,6 +17,8 @@ export type ClassCategoryRow = {
   name: string;
   colour: string | null;
   sort_order: number;
+  /** Enum types in this category inherit. Seeded categories match their slug. */
+  legacy_class_type: string;
 };
 
 export type ClassTypeRow = {
@@ -46,7 +48,7 @@ export const EMPTY_CLASS_CATALOG: ClassCatalog = {
   categoryById: new Map(),
 };
 
-const CATEGORY_COLUMNS = "id, slug, name, colour, sort_order";
+const CATEGORY_COLUMNS = "id, slug, name, colour, sort_order, legacy_class_type";
 const TYPE_COLUMNS =
   "id, category_id, slug, name, legacy_class_type, is_free_intro, is_guided, colour, is_active, sort_order";
 
@@ -63,13 +65,30 @@ export async function fetchClassCatalog(): Promise<{
     supabase.from("class_types").select(TYPE_COLUMNS).order("sort_order"),
   ]);
 
-  const error = (catRes.error ?? typeRes.error) as Error | null;
+  let categoryRows = catRes.data;
+  let categoryError = catRes.error;
+  if (categoryError && /legacy_class_type/.test(categoryError.message ?? "")) {
+    const retry = await supabase
+      .from("class_categories")
+      .select("id, slug, name, colour, sort_order")
+      .order("sort_order");
+    categoryRows = retry.data;
+    categoryError = retry.error;
+  }
+
+  const error = (categoryError ?? typeRes.error) as Error | null;
   if (error) {
     console.error("fetchClassCatalog", error);
     return { catalog: EMPTY_CLASS_CATALOG, error };
   }
 
-  const categories = (catRes.data ?? []) as ClassCategoryRow[];
+  const categories = ((categoryRows ?? []) as Omit<ClassCategoryRow, "legacy_class_type">[]).map(
+    (c) => ({
+      ...c,
+      legacy_class_type:
+        (c as { legacy_class_type?: string }).legacy_class_type?.trim() || c.slug,
+    }),
+  );
   const types = (typeRes.data ?? []) as ClassTypeRow[];
   const categoryById = new Map(categories.map((c) => [c.id, c]));
 
@@ -82,11 +101,10 @@ export function catalogEntries(catalog: ClassCatalog): ClassCatalogEntry[] {
     id: c.id,
     slug: c.slug,
     label: c.name,
-    // A category is its own category, so a class stored with a bare category enum value
-    // ("yoga") still resolves to a label, a colour and the right behaviour flags.
     categorySlug: c.slug,
     accent: c.colour,
     isFreeIntro: false,
+    legacyClassType: c.legacy_class_type,
   }));
 
   for (const t of catalog.types) {
@@ -98,6 +116,7 @@ export function catalogEntries(catalog: ClassCatalog): ClassCatalogEntry[] {
       categorySlug: category?.slug ?? "",
       accent: t.colour,
       isFreeIntro: t.is_free_intro,
+      legacyClassType: t.legacy_class_type,
     });
   }
 

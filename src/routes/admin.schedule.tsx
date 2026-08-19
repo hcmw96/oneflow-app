@@ -19,6 +19,13 @@ import { getUser, supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/auth";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { cancelBookingWithPolicy } from "@/lib/bookingCancellation";
+import {
+  cancelClassesAndRefund,
+  notifyCancelledBookings,
+  previewCancelScope,
+  type CancelScope,
+  type CancelScopePreview,
+} from "@/lib/cancelClassScope";
 import { fetchGuidesForClassSelect, type GuideSelectRow } from "@/lib/guidesForSelect";
 import { displayClassType } from "@/types/studio";
 import { classTypeTheme } from "@/lib/classTypeTheme";
@@ -309,7 +316,7 @@ function SchedulePage() {
   const [stats, setStats] = useState({ today: 0, thisWeek: 0, upcoming: 0 });
 
   /** Master has two jobs: schedule the week, and control the class types it draws from. */
-  const [view, setView] = useState<"week" | "types">("week");
+  const [view, setView] = useState<"week" | "types">("types");
 
   // UI state — weekOffset 0 = current Mon–Sun week (JHB)
   const [weekOffset, setWeekOffset] = useState(0);
@@ -357,6 +364,11 @@ function SchedulePage() {
   const [repeatMode, setRepeatMode] = useState<"none" | "weekly">("none");
   const [repeatWeeks, setRepeatWeeks] = useState("4");
   const [deleteFromDialog, setDeleteFromDialog] = useState<ClassRow | null>(null);
+  const [cancelScope, setCancelScope] = useState<CancelScope>("single");
+  const [cancelRangeFrom, setCancelRangeFrom] = useState("");
+  const [cancelRangeTo, setCancelRangeTo] = useState("");
+  const [cancelPreview, setCancelPreview] = useState<CancelScopePreview | null>(null);
+  const [cancelPreviewError, setCancelPreviewError] = useState<string | null>(null);
 
   // Bulk dialogs
   const [bulkCancelOpen, setBulkCancelOpen] = useState(false);
@@ -1240,57 +1252,70 @@ function SchedulePage() {
 
   const confirmDelete = async () => {
     if (!deleteFromDialog || !canManage) return;
-    const classId = deleteFromDialog.id;
-    const { data: bookingsToCancel, error: fetchErr } = await supabase
-      .from("bookings")
-      .select("id")
-      .eq("class_id", classId)
-      .in("status", ["confirmed", "attended"]);
-    if (fetchErr) {
-      console.error("load bookings for class cancel failed", fetchErr);
-      toast.error(supabaseErrorMessage(fetchErr, "Could not load bookings to cancel"));
-      return;
-    }
-    let failed = 0;
-    for (const b of bookingsToCancel ?? []) {
-      try {
-        await cancelBookingWithPolicy({
-          bookingId: (b as { id: string }).id,
-          cancellationReason: "admin_cancelled",
-          waiveLateFee: true,
-        });
-      } catch (e) {
-        failed += 1;
-        console.error("cancelBookingWithPolicy failed", (b as { id: string }).id, e);
+    setSaving(true);
+    try {
+      const preview =
+        cancelPreview ??
+        (await previewCancelScope({
+          cls: deleteFromDialog,
+          scope: cancelScope,
+          rangeFrom: cancelRangeFrom,
+          rangeTo: cancelRangeTo,
+        }));
+      if (preview.classIds.length === 0) {
+        toast.error("No classes in that range");
+        return;
       }
+      const result = await cancelClassesAndRefund(preview.classIds);
+      await notifyCancelledBookings(result.notifications);
+      const classN = result.classes_cancelled;
+      const memberN = result.bookings_cancelled;
+      toast.success(
+        classN === 0 && memberN === 0
+          ? "Already cancelled"
+          : `Cancelled ${classN} class${classN === 1 ? "" : "es"} · ${memberN} member${memberN === 1 ? "" : "s"} refunded and emailed`,
+      );
+      setDeleteFromDialog(null);
+      setDialogOpen(false);
+      setEditingId(null);
+      await load();
+      void loadStats();
+    } catch (e: unknown) {
+      console.error("class cancel failed", e);
+      toast.error(supabaseErrorMessage(e, "Could not cancel class"));
+    } finally {
+      setSaving(false);
     }
-    const { error } = await supabase
-      .from("classes")
-      .update({ is_cancelled: true })
-      .eq("id", classId);
-    if (error) {
-      console.error("class cancel failed", error);
-      toast.error(supabaseErrorMessage(error, "Could not cancel class"));
+  };
+
+  useEffect(() => {
+    if (!deleteFromDialog) {
+      setCancelPreview(null);
+      setCancelPreviewError(null);
       return;
     }
-    if (failed > 0) {
-      toast.warning(
-        `Class cancelled, but ${failed} booking(s) could not be refunded automatically — please check.`,
-      );
-    } else {
-      const n = (bookingsToCancel ?? []).length;
-      toast.success(
-        n > 0
-          ? `Class cancelled · ${n} member${n === 1 ? "" : "s"} refunded and notified`
-          : "Class cancelled",
-      );
-    }
-    setDeleteFromDialog(null);
-    setDialogOpen(false);
-    setEditingId(null);
-    await load();
-    void loadStats();
-  };
+    let cancelled = false;
+    setCancelPreview(null);
+    setCancelPreviewError(null);
+    void previewCancelScope({
+      cls: deleteFromDialog,
+      scope: cancelScope,
+      rangeFrom: cancelRangeFrom,
+      rangeTo: cancelRangeTo,
+    })
+      .then((p) => {
+        if (!cancelled) setCancelPreview(p);
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) {
+          setCancelPreview(null);
+          setCancelPreviewError(supabaseErrorMessage(e, "Could not preview cancellation"));
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [deleteFromDialog, cancelScope, cancelRangeFrom, cancelRangeTo]);
 
   // Bulk actions
   const toggleSelected = (id: string) => {
@@ -2283,7 +2308,11 @@ function SchedulePage() {
                   className="gap-2 border-destructive/40 text-destructive hover:bg-destructive/10"
                   onClick={() => {
                     const cur = rows.find((r) => r.id === editingId);
-                    if (cur) setDeleteFromDialog(cur);
+                    if (!cur) return;
+                    setCancelScope("single");
+                    setCancelRangeFrom(jhbDayKey(cur.starts_at));
+                    setCancelRangeTo(jhbDayKey(cur.starts_at));
+                    setDeleteFromDialog(cur);
                   }}
                 >
                   <Trash2 className="h-4 w-4" /> Delete
@@ -2353,23 +2382,95 @@ function SchedulePage() {
       <AlertDialog open={!!deleteFromDialog} onOpenChange={(o) => !o && setDeleteFromDialog(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Cancel this class?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {deleteFromDialog
-                ? `“${classTitle(deleteFromDialog)}” on ${jhbDayLabel(jhbDayKey(deleteFromDialog.starts_at))} at ${formatTime(deleteFromDialog.starts_at)} will be marked cancelled. Existing bookings may need follow-up.`
-                : null}
+            <AlertDialogTitle>Cancel class?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3 text-sm text-muted-foreground">
+                {deleteFromDialog ? (
+                  <p>
+                    “{classTitle(deleteFromDialog)}” on{" "}
+                    {jhbDayLabel(jhbDayKey(deleteFromDialog.starts_at))} at{" "}
+                    {formatTime(deleteFromDialog.starts_at)}.
+                  </p>
+                ) : null}
+                {deleteFromDialog?.recurring_group_id ? (
+                  <div className="rounded-lg border border-[#c5d4b8]/70 bg-[#f4f7f0]/80 px-3 py-3 text-foreground">
+                    <p className="text-sm font-medium text-[#3d4f36]">Apply cancellation to</p>
+                    <RadioGroup
+                      value={cancelScope}
+                      onValueChange={(v) => setCancelScope(v as CancelScope)}
+                      className="mt-2 gap-2.5"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <RadioGroupItem value="single" id="cancel-scope-single" />
+                        <Label htmlFor="cancel-scope-single" className="cursor-pointer font-normal">
+                          This class only
+                        </Label>
+                      </div>
+                      <div className="flex items-center gap-2.5">
+                        <RadioGroupItem value="range" id="cancel-scope-range" />
+                        <Label htmlFor="cancel-scope-range" className="cursor-pointer font-normal">
+                          A date range in this series
+                        </Label>
+                      </div>
+                      <div className="flex items-center gap-2.5">
+                        <RadioGroupItem value="future" id="cancel-scope-future" />
+                        <Label htmlFor="cancel-scope-future" className="cursor-pointer font-normal">
+                          This and all future classes in the series
+                        </Label>
+                      </div>
+                    </RadioGroup>
+                    {cancelScope === "range" ? (
+                      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                        <div>
+                          <Label htmlFor="cancel-from" className="text-xs">
+                            From
+                          </Label>
+                          <Input
+                            id="cancel-from"
+                            type="date"
+                            value={cancelRangeFrom}
+                            onChange={(e) => setCancelRangeFrom(e.target.value)}
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="cancel-to" className="text-xs">
+                            To
+                          </Label>
+                          <Input
+                            id="cancel-to"
+                            type="date"
+                            value={cancelRangeTo}
+                            onChange={(e) => setCancelRangeTo(e.target.value)}
+                          />
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : (
+                  <p>This class is not in a series — only this occurrence will be cancelled.</p>
+                )}
+                <p className="text-foreground">
+                  {cancelPreviewError
+                    ? cancelPreviewError
+                    : cancelPreview
+                      ? `This will cancel ${cancelPreview.classCount} class${cancelPreview.classCount === 1 ? "" : "es"} and return credits to ${cancelPreview.memberCount} member${cancelPreview.memberCount === 1 ? "" : "s"}. They will be emailed.`
+                      : "Counting classes and bookings…"}
+                </p>
+              </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Keep class</AlertDialogCancel>
+            <AlertDialogCancel disabled={saving}>Keep class</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={saving || !cancelPreview || cancelPreview.classCount === 0}
               onClick={(e) => {
                 e.preventDefault();
                 void confirmDelete();
               }}
             >
-              Cancel class
+              {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Cancel {cancelPreview && cancelPreview.classCount !== 1 ? "classes" : "class"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

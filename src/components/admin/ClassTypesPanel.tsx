@@ -8,11 +8,11 @@
  * Types are retired with `is_active`, never deleted: `guides.disciplines` stores these
  * slugs, so deleting one orphans guide records. There is no DELETE grant on the table.
  *
- * Categories are fixed and not editable here. Credit rules key on category — Wellzone
- * drives the sauna confirmation email and the wellzone credit category, everything outside
- * it drives the Seeker yoga credit set — so a category with no defined billing behaviour
- * would fall through `userCreditCoversClassType`, which returns true when a credit's
- * `allowed_class_types` is empty.
+ * Categories are seeded (Yoga, Sculpt, Pilates, Wellzone, Events) and may be added
+ * only by inheriting an existing category's `legacy_class_type`, so credit rules stay
+ * on the Postgres enum. Standalone billing is deferred. Credit rules for Wellzone vs
+ * everything else still key on that enum — a category with no inherited enum cannot
+ * be created from this dialog.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Loader2, Plus } from "lucide-react";
@@ -95,6 +95,10 @@ export function ClassTypesPanel({ canManage }: Props) {
   const [saving, setSaving] = useState(false);
   /** Type id whose is_active switch is mid-write. */
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [newCategoryOpen, setNewCategoryOpen] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const [inheritFromId, setInheritFromId] = useState("");
+  const [savingCategory, setSavingCategory] = useState(false);
 
   const categories = useMemo(
     () =>
@@ -175,13 +179,13 @@ export function ClassTypesPanel({ canManage }: Props) {
         const previousCategory = catalog.categoryById.get(editingRow.category_id);
         // Only re-inherit the enum value when it was inherited in the first place. Moving
         // "Power" between categories must not silently change which credits cover it —
-        // its legacy_class_type is `power`, not its old category's slug.
+        // its legacy_class_type is `power`, not its old category's billing enum.
+        const parentLegacy = previousCategory?.legacy_class_type ?? previousCategory?.slug;
         const inherited =
-          previousCategory != null &&
-          editingRow.legacy_class_type === previousCategory.slug;
+          previousCategory != null && editingRow.legacy_class_type === parentLegacy;
         const legacy =
           inherited && draft.categoryId !== editingRow.category_id
-            ? category.slug
+            ? category.legacy_class_type
             : editingRow.legacy_class_type;
 
         const { error } = await supabase
@@ -209,9 +213,9 @@ export function ClassTypesPanel({ canManage }: Props) {
           category_id: draft.categoryId,
           slug,
           name,
-          // A new type inherits its category's enum value, so credit eligibility for
-          // classes of this type matches every other class in the category.
-          legacy_class_type: category.slug,
+          // Inherit the category's billing enum — never the category slug, which may not
+          // be a public.class_type value once inherited categories exist.
+          legacy_class_type: category.legacy_class_type,
           is_active: draft.isActive,
           is_free_intro: draft.isFreeIntro,
           is_guided: draft.isGuided,
@@ -246,6 +250,57 @@ export function ClassTypesPanel({ canManage }: Props) {
       return;
     }
     await reload();
+  };
+
+  const inheritParent = catalog.categoryById.get(inheritFromId) ?? null;
+
+  const saveNewCategory = async () => {
+    if (!canManage) return;
+    const name = newCategoryName.trim();
+    if (!name) {
+      toast.error("Category name is required");
+      return;
+    }
+    const parent = catalog.categoryById.get(inheritFromId);
+    if (!parent) {
+      toast.error("Pick a category to inherit payment rules from");
+      return;
+    }
+    const taken = new Set(catalog.categories.map((c) => c.slug));
+    const slug = uniqueSlug(name, taken);
+    if (!slug) {
+      toast.error("Could not derive a slug from that name — try a different one");
+      return;
+    }
+    const sortOrder =
+      Math.max(0, ...catalog.categories.map((c) => c.sort_order)) + 10;
+
+    setSavingCategory(true);
+    try {
+      const { data, error } = await supabase
+        .from("class_categories")
+        .insert({
+          slug,
+          name,
+          colour: parent.colour,
+          sort_order: sortOrder,
+          legacy_class_type: parent.legacy_class_type,
+        })
+        .select("id")
+        .maybeSingle();
+      if (error) throw error;
+      if (!data?.id) throw new Error("Category was created but no id came back");
+      toast.success(`“${name}” added — billing matches ${parent.name}`);
+      setNewCategoryOpen(false);
+      setNewCategoryName("");
+      await reload();
+      setDraft((d) => ({ ...d, categoryId: data.id }));
+    } catch (e: unknown) {
+      console.error("class category create failed", e);
+      toast.error(supabaseErrorMessage(e, "Could not create category"));
+    } finally {
+      setSavingCategory(false);
+    }
   };
 
   if (!ready) {
@@ -422,6 +477,21 @@ export function ClassTypesPanel({ canManage }: Props) {
                   ))}
                 </SelectContent>
               </Select>
+              {canManage ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="mt-1.5 h-7 px-2 text-xs"
+                  onClick={() => {
+                    setInheritFromId(draft.categoryId || categories[0]?.id || "");
+                    setNewCategoryName("");
+                    setNewCategoryOpen(true);
+                  }}
+                >
+                  <Plus className="mr-1 h-3.5 w-3.5" /> New category
+                </Button>
+              ) : null}
             </div>
             <div>
               <Label htmlFor="ct-order">Order within category</Label>
@@ -497,6 +567,66 @@ export function ClassTypesPanel({ canManage }: Props) {
             >
               {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               {editingRow ? "Save changes" : "Create type"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={newCategoryOpen}
+        onOpenChange={(open) => {
+          setNewCategoryOpen(open);
+          if (!open) setNewCategoryName("");
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>New category</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-3 py-2">
+            <div>
+              <Label htmlFor="cat-name">Name</Label>
+              <Input
+                id="cat-name"
+                value={newCategoryName}
+                onChange={(e) => setNewCategoryName(e.target.value)}
+                placeholder="Reformer Classes"
+              />
+            </div>
+            <div>
+              <Label>Inherit payment rules from</Label>
+              <Select value={inheritFromId} onValueChange={setInheritFromId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Pick a category" />
+                </SelectTrigger>
+                <SelectContent>
+                  {categories.map((c: ClassCategoryRow) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {inheritParent ? (
+              <p className="rounded-lg border border-[#c5d4b8]/80 bg-[#f4f7f0]/80 px-3 py-2.5 text-sm text-[#3d4f36]">
+                Classes in this category will be covered by the same passes and credits as{" "}
+                <span className="font-semibold">{inheritParent.name}</span>.
+              </p>
+            ) : null}
+          </div>
+          <DialogFooter className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button type="button" variant="outline" onClick={() => setNewCategoryOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={savingCategory}
+              onClick={() => void saveNewCategory()}
+              className="bg-[#a3b693] text-white hover:bg-[#8fa67d]"
+            >
+              {savingCategory ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Create category
             </Button>
           </DialogFooter>
         </DialogContent>

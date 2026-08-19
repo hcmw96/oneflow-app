@@ -36,7 +36,7 @@ const DOCUMENTED_DB_CLASS_TYPE_ENUM = [
 type Taxonomy = {
   /** `public.class_type` enum labels in declaration order. */
   enum_labels: string[];
-  categories: { slug: string; name: string; sort_order: number }[];
+  categories: { slug: string; name: string; sort_order: number; legacy_class_type: string | null }[];
   types: {
     slug: string;
     name: string;
@@ -76,9 +76,23 @@ cur.execute("""
 enum_labels = [r[0] for r in cur.fetchall()]
 
 cur.execute("""
-  SELECT slug, name, sort_order FROM public.class_categories ORDER BY sort_order, slug
+  SELECT 1 FROM information_schema.columns
+  WHERE table_schema='public' AND table_name='class_categories' AND column_name='legacy_class_type'
 """)
-categories = [{"slug": r[0], "name": r[1], "sort_order": r[2]} for r in cur.fetchall()]
+has_legacy = cur.fetchone() is not None
+if has_legacy:
+    cur.execute("""
+      SELECT slug, name, sort_order, legacy_class_type::text
+      FROM public.class_categories ORDER BY sort_order, slug
+    """)
+    categories = [{"slug": r[0], "name": r[1], "sort_order": r[2], "legacy_class_type": r[3]}
+                  for r in cur.fetchall()]
+else:
+    cur.execute("""
+      SELECT slug, name, sort_order FROM public.class_categories ORDER BY sort_order, slug
+    """)
+    categories = [{"slug": r[0], "name": r[1], "sort_order": r[2], "legacy_class_type": r[0]}
+                  for r in cur.fetchall()]
 
 cur.execute("""
   SELECT t.slug, t.name, c.slug, t.legacy_class_type::text,
@@ -147,13 +161,15 @@ describe("live class taxonomy", () => {
     expect(sorted(DOCUMENTED_DB_CLASS_TYPE_ENUM)).toEqual(sorted(live.enum_labels));
   });
 
-  it("has exactly the five named categories", () => {
-    expect(live.categories.map((c) => c.slug).sort()).toEqual([...CLASS_CATEGORY_SLUGS].sort());
+  it("includes the five seeded categories", () => {
+    const slugs = new Set(live.categories.map((c) => c.slug));
+    for (const slug of CLASS_CATEGORY_SLUGS) expect(slugs.has(slug)).toBe(true);
   });
 
-  it("every category slug is a class_type enum value", () => {
-    // A new type inherits legacy_class_type from its category, and that column is the enum.
-    for (const c of live.categories) expect(enumSlugs).toContain(c.slug);
+  it("every category billing enum is a class_type value", () => {
+    for (const c of live.categories) {
+      expect(enumSlugs).toContain(c.legacy_class_type ?? c.slug);
+    }
   });
 
   it("every type resolves to a category", () => {
