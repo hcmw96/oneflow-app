@@ -47,10 +47,9 @@ const TYPE_ROWS = [
 const CATALOG = [...CATEGORY_ROWS, ...TYPE_ROWS];
 
 describe("category / enum invariants", () => {
-  it("every category slug is a class_type enum value", () => {
-    // A newly created type inherits `legacy_class_type` from its category, and that column
-    // is the Postgres enum. A category slug outside the enum would make every type under
-    // it unschedulable.
+  it("every seeded category slug is a class_type enum value", () => {
+    // Seeded categories match the enum. Client-created categories inherit a parent's
+    // legacy_class_type instead of using their own slug.
     for (const slug of CLASS_CATEGORY_SLUGS) {
       expect(ALLOWED_CLASS_TYPE_SLUGS as readonly string[]).toContain(slug);
     }
@@ -133,6 +132,32 @@ describe("after hydration", () => {
     expect(mod.isWellzoneSaunaClassType("sauna_journey")).toBe(true);
     expect(mod.isWellzoneSaunaClassType("wellzone")).toBe(true);
     expect(mod.isWellzoneSaunaClassType("power")).toBe(false);
+  });
+
+  it("a type under an inherited Wellzone category still takes the sauna branch", async () => {
+    const mod = await freshModule();
+    mod.hydrateClassTypeCatalog([
+      {
+        id: "cat-ref",
+        slug: "reformer",
+        label: "Reformer Classes",
+        categorySlug: "reformer",
+        accent: "#0284c7",
+        isFreeIntro: false,
+        legacyClassType: "wellzone",
+      },
+      {
+        id: "t-ref",
+        slug: "reformer_intro",
+        label: "Intro",
+        categorySlug: "reformer",
+        accent: null,
+        isFreeIntro: false,
+        legacyClassType: "wellzone",
+      },
+    ]);
+    expect(mod.isWellzoneSaunaClassType("reformer_intro")).toBe(true);
+    expect(mod.isWellzoneSaunaClassType("wellzone")).toBe(true);
   });
 
   it("a client-created type inherits its category colour, not fallback grey", () => {

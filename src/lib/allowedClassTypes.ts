@@ -34,7 +34,7 @@ export const ALLOWED_CLASS_TYPE_SLUGS = [
 
 export type AllowedClassTypeSlug = (typeof ALLOWED_CLASS_TYPE_SLUGS)[number];
 
-/** Fixed category slugs. Credit rules key on these, so they are not client-editable. */
+/** Seeded category slugs. Extra categories may be added in Master by inheriting one of these. */
 export const CLASS_CATEGORY_SLUGS = [
   "yoga",
   "sculpt",
@@ -126,7 +126,7 @@ const FREE_INTRO_SET = new Set<string>(FREE_BEGINNER_CLASS_TYPES);
 const WELLZONE_SET = new Set<string>(WELLZONE_CLASS_TYPES);
 
 /** Category slug per catalog slug. Categories map to themselves. */
-const CATEGORY_BY_SLUG: Record<string, ClassCategorySlug> = {
+const CATEGORY_BY_SLUG: Record<string, string> = {
   yoga: "yoga",
   sculpt: "sculpt",
   pilates: "pilates",
@@ -224,7 +224,7 @@ export function resolveClassTypeSlug(typeOrSlug: string | null | undefined): str
 /** Category slug for any catalog slug, or null when unknown. */
 export function classCategorySlugFor(
   typeOrSlug: string | null | undefined,
-): ClassCategorySlug | null {
+): string | null {
   const slug = resolveClassTypeSlug(typeOrSlug);
   return slug ? (CATEGORY_BY_SLUG[slug] ?? null) : null;
 }
@@ -355,6 +355,8 @@ export type ClassCatalogEntry = {
   /** Null inherits the category accent. */
   accent: string | null;
   isFreeIntro: boolean;
+  /** Enum a class of this type stores. Categories store the value types inherit. */
+  legacyClassType?: string;
 };
 
 /** `class_types.id` → slug, populated by hydration. */
@@ -384,7 +386,7 @@ export function hydrateClassTypeCatalog(entries: readonly ClassCatalogEntry[]): 
     CLASS_TYPE_SLUG_LABEL[slug] = entry.label.trim() || humanizeClassTypeSlug(slug);
 
     const category = entry.categorySlug.trim().toLowerCase();
-    if (category) CATEGORY_BY_SLUG[slug] = category as ClassCategorySlug;
+    if (category) CATEGORY_BY_SLUG[slug] = category;
 
     if (entry.accent) {
       const theme = CLASS_TYPE_THEME_BY_SLUG[slug];
@@ -409,7 +411,9 @@ export function hydrateClassTypeCatalog(entries: readonly ClassCatalogEntry[]): 
     // Only move a slug out of the Wellzone set on a row that actually names a category.
     // An unresolved category would otherwise drop `sauna_journey`, silently switching the
     // sauna confirmation email and the late check-in window back to the class defaults.
-    if (category === "wellzone") WELLZONE_SET.add(slug);
-    else if (category) WELLZONE_SET.delete(slug);
+    const billing = (entry.legacyClassType ?? "").trim().toLowerCase();
+    if (category === "wellzone" || billing === "wellzone" || billing === "sauna_journey") {
+      WELLZONE_SET.add(slug);
+    } else if (category) WELLZONE_SET.delete(slug);
   }
 }
