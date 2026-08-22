@@ -468,6 +468,7 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
       body: {
         pack_id: classTicketProduct.id,
         profile_id: userId,
+        class_id: session.id,
         success_url: `${origin}/payment/success?${successQs.toString()}`,
         cancel_url: `${origin}/schedule?class=${session.id}`,
       },
