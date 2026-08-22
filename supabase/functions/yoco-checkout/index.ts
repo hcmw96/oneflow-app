@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { buildBillNote, classTitleFromLookup } from "./billNote.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -16,6 +17,71 @@ function yocoCustomerDescription(text: string): string {
   const trimmed = text.trim();
   if (!trimmed) return "";
   return trimmed.length > 100 ? trimmed.slice(0, 100) : trimmed;
+}
+
+function one<T>(value: T | T[] | null | undefined): T | null {
+  if (value == null) return null;
+  return Array.isArray(value) ? (value[0] ?? null) : value;
+}
+
+function classIdFromInput(raw: Record<string, unknown>, successUrl: string): string | null {
+  const direct = String(raw.class_id ?? raw.classId ?? "").trim();
+  if (direct) return direct;
+  const blob = String(successUrl ?? "");
+  try {
+    const url = blob.includes("://") ? new URL(blob) : new URL(blob, "https://local.invalid");
+    const id = url.searchParams.get("class_id");
+    if (id) return id;
+  } catch {
+    /* ignore */
+  }
+  const m = blob.match(/[?&]class_id=([^&]+)/);
+  return m ? decodeURIComponent(m[1]) : null;
+}
+
+type ClassBillFields = { classTitle: string; startsAt: string | null };
+
+async function lookupClassBillFields(
+  supabase: ReturnType<typeof createClient>,
+  classId: string,
+): Promise<ClassBillFields | null> {
+  const { data } = await supabase
+    .from("classes")
+    .select("id, name, title_override, starts_at, class_type_id")
+    .eq("id", classId)
+    .maybeSingle();
+  if (!data) return null;
+
+  let categoryName: string | null = null;
+  let typeName: string | null = null;
+  const typeId = (data as { class_type_id?: string | null }).class_type_id;
+  if (typeId) {
+    const { data: typeRow } = await supabase
+      .from("class_types")
+      .select("name, category_id")
+      .eq("id", typeId)
+      .maybeSingle();
+    typeName = (typeRow as { name?: string | null } | null)?.name ?? null;
+    const categoryId = (typeRow as { category_id?: string | null } | null)?.category_id;
+    if (categoryId) {
+      const { data: catRow } = await supabase
+        .from("class_categories")
+        .select("name")
+        .eq("id", categoryId)
+        .maybeSingle();
+      categoryName = (catRow as { name?: string | null } | null)?.name ?? null;
+    }
+  }
+
+  return {
+    startsAt: (data as { starts_at?: string | null }).starts_at ?? null,
+    classTitle: classTitleFromLookup({
+      titleOverride: (data as { title_override?: string | null }).title_override,
+      storedName: (data as { name?: string | null }).name,
+      categoryName,
+      typeName,
+    }),
+  };
 }
 
 serve(async (req) => {
@@ -49,7 +115,7 @@ serve(async (req) => {
 
     const { data: inv, error: invErr } = await supabase
       .from("class_invites")
-      .select("id, inviter_id, status, paid_by_inviter, classes(name)")
+      .select("id, inviter_id, status, paid_by_inviter, class_id, classes(id, name)")
       .eq("id", class_invite_id)
       .maybeSingle();
 
@@ -89,13 +155,23 @@ serve(async (req) => {
       .maybeSingle();
     const buyerName =
       [inviterProfile?.first_name, inviterProfile?.last_name].filter(Boolean).join(" ") || "Member";
-    const classJoin = (inv as { classes?: { name?: string } | { name?: string }[] | null }).classes;
-    const className = Array.isArray(classJoin)
-      ? classJoin[0]?.name
-      : classJoin?.name;
+    const classJoin = (inv as { classes?: { id?: string; name?: string } | { id?: string; name?: string }[] | null }).classes;
+    const classRow = one(classJoin);
+    const inviteClassId =
+      String((inv as { class_id?: string | null }).class_id ?? classRow?.id ?? "").trim() || null;
+    const className = classRow?.name;
     const inviteDescription = className
       ? `Class invite — ${className}`
       : "One Flow — class invite (pay for friend)";
+    const inviteClass = inviteClassId ? await lookupClassBillFields(supabase, inviteClassId) : null;
+    const inviteBillNote = buildBillNote({
+      id: class_invite_id,
+      kind: "class",
+      classTitle: inviteClass?.classTitle ?? className ?? "Class invite",
+      startsAt: inviteClass?.startsAt,
+      firstName: inviterProfile?.first_name,
+      lastName: inviterProfile?.last_name,
+    });
 
     const invitePayload = {
       amount: amountCents,
@@ -111,6 +187,7 @@ serve(async (req) => {
         class_invite_id,
         inviter_profile_id,
         buyer_name: buyerName,
+        billNote: inviteBillNote,
       },
     };
     console.log("yoco class_invite request:", JSON.stringify(invitePayload));
@@ -332,6 +409,28 @@ serve(async (req) => {
     });
   }
 
+  const classId = classIdFromInput(
+    raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {},
+    String(success_url ?? ""),
+  );
+  const classBill = classId ? await lookupClassBillFields(supabase, classId) : null;
+  const packBillNote = classBill
+    ? buildBillNote({
+        id: classId!,
+        kind: "class",
+        classTitle: classBill.classTitle,
+        startsAt: classBill.startsAt,
+        firstName: profile?.first_name,
+        lastName: profile?.last_name,
+      })
+    : buildBillNote({
+        id: String(pack_id ?? ""),
+        kind: "package",
+        packageName: packName,
+        firstName: profile?.first_name,
+        lastName: profile?.last_name,
+      });
+
   const packPayload = {
     amount: amountCents,
     currency: "ZAR",
@@ -355,6 +454,7 @@ serve(async (req) => {
       flow_points_used: flowPointsUsed > 0 ? flowPointsUsed : 0,
       flow_points_discount_zar:
         flowDiscountCents > 0 ? Math.round((flowDiscountCents / 100) * 100) / 100 : 0,
+      billNote: packBillNote,
     },
   };
   console.log("yoco pack request:", JSON.stringify(packPayload));
