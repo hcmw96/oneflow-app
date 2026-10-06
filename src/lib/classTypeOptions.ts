@@ -44,6 +44,21 @@ export function slugifyClassTypeName(name: string): string {
     .replace(/^_+|_+$/g, "");
 }
 
+/** Next free slug so two categories can both hold a type called "Flow". */
+export function uniqueClassTaxonomySlug(
+  name: string,
+  taken: ReadonlySet<string>,
+): string | null {
+  const base = slugifyClassTypeName(name);
+  if (!base) return null;
+  if (!taken.has(base)) return base;
+  for (let i = 2; i < 50; i++) {
+    const candidate = `${base}_${i}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+  return null;
+}
+
 export function classTypeLabel(slug: string, custom: readonly CustomClassType[] = []): string {
   const key = slugifyClassTypeName(slug);
   if (isAllowedClassTypeSlug(key)) return CLASS_TYPE_SLUG_LABEL[key];
