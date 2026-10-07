@@ -110,6 +110,7 @@ function BookingClassDetailPage() {
   const [cls, setCls] = useState<ClassRow | null>(null);
   const [roster, setRoster] = useState<BookingRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [walkInOpen, setWalkInOpen] = useState(false);
   const [removeTarget, setRemoveTarget] = useState<BookingRow | null>(null);
   const [waiveLateFee, setWaiveLateFee] = useState(false);
@@ -117,6 +118,8 @@ function BookingClassDetailPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
+    try {
     const { data: classData, error: classErr } = await supabase
       .from("classes")
       .select(
@@ -125,10 +128,19 @@ function BookingClassDetailPage() {
       .eq("id", classId)
       .maybeSingle();
 
-    if (classErr || !classData) {
-      toast.error(supabaseErrorMessage(classErr, "Could not load class"));
+    if (classErr) {
+      const message = supabaseErrorMessage(classErr, "Could not load class");
+      toast.error(message);
       setCls(null);
       setRoster([]);
+      setLoadError(message);
+      setLoading(false);
+      return;
+    }
+    if (!classData) {
+      setCls(null);
+      setRoster([]);
+      setLoadError("Class not found.");
       setLoading(false);
       return;
     }
@@ -144,8 +156,10 @@ function BookingClassDetailPage() {
       .order("created_at", { ascending: true });
 
     if (bookingErr) {
-      toast.error(supabaseErrorMessage(bookingErr, "Could not load roster"));
+      const message = supabaseErrorMessage(bookingErr, "Could not load roster");
+      toast.error(message);
       setRoster([]);
+      setLoadError(message);
       setLoading(false);
       return;
     }
@@ -168,8 +182,7 @@ function BookingClassDetailPage() {
         | null;
     }>;
 
-    const profileIds = raw.map((r) => r.profile_id).filter(Boolean) as string[];
-    const addonAccess = await fetchRosterMemberAddonAccess(profileIds);
+    const addonAccess = await fetchRosterMemberAddonAccess(supabase);
 
     const rows: BookingRow[] = [];
     for (const r of raw) {
@@ -200,7 +213,15 @@ function BookingClassDetailPage() {
 
     rows.sort((a, b) => a.memberFull.localeCompare(b.memberFull));
     setRoster(rows);
-    setLoading(false);
+    } catch (e: unknown) {
+      const message = supabaseErrorMessage(e, "Could not load class roster");
+      toast.error(message);
+      setCls(null);
+      setRoster([]);
+      setLoadError(message);
+    } finally {
+      setLoading(false);
+    }
   }, [classId]);
 
   useEffect(() => {
@@ -306,6 +327,17 @@ function BookingClassDetailPage() {
       {loading ? (
         <div className="rounded-xl border border-border bg-card p-8 text-center text-sm text-muted-foreground">
           Loading roster…
+        </div>
+      ) : loadError ? (
+        <div className="rounded-xl border border-dashed border-border bg-card p-8 text-center">
+          <p className="text-sm text-muted-foreground">{loadError}</p>
+          <button
+            type="button"
+            onClick={() => void load()}
+            className="mt-3 rounded-lg border border-border px-3 py-1.5 text-sm font-medium hover:bg-muted"
+          >
+            Try again
+          </button>
         </div>
       ) : !cls ? (
         <div className="rounded-xl border border-dashed border-border bg-card p-8 text-center text-sm text-muted-foreground">
